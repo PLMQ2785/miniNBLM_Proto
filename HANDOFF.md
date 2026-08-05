@@ -99,7 +99,7 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 - `/chat`의 `document_id`는 기존 FE 호환용 선택 필드이며 검색 범위에는 사용하지 않음
 - 작업공간 chat session은 특정 문서에 귀속하지 않고 `document_id=NULL`로 저장
 - Gemma 4/vLLM 답변 생성
-- source document/page/chunk 반환
+- source document ID/title/page/chunk 반환
 - PDF source page 열기
 - 자료 밖 질문 제한 및 의료 상담성 질문 안전 지침을 포함한 system prompt
 
@@ -140,6 +140,7 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 - 회원가입 및 로그인 화면
 - PDF 업로드, 선택, 상태 polling 및 삭제
 - 질문과 답변, source page 선택
+- 답변 출처를 `문서명 · 페이지`로 표시하고 해당 문서 PDF panel 제목에 연동
 - 모바일 문서 drawer 및 PDF source panel
 - 관리자 preset/알고리즘 화면과 재인덱싱 상태 polling
 - 문서 목록 수동 새로고침과 목록 로드 실패 인라인 재시도
@@ -322,26 +323,23 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 
 ## 11. 다음 작업 권장 순서
 
-1. 작업공간 검색 출처 개선
-   - source 응답에 문서 제목 추가
-   - 답변 출처를 `문서명 · 페이지`로 표시
-2. 문서 선택 의존 UI 제거
+1. 문서 선택 의존 UI 제거
    - indexed 문서가 하나 이상이면 질문창 활성화
    - 문서 목록은 업로드·상태·원문·삭제 용도로 한정
    - FE의 호환용 `document_id` 전송 제거
-3. 대화 이력 복원
+2. 대화 이력 복원
    - chat session/message 조회 API
    - 로그인 및 새로고침 후 기존 작업공간 대화 표시
    - 사용자 소유권 통합 테스트
-4. API Docker 의존성 분리
+3. API Docker 의존성 분리
    - API에서 `torch`, `sentence-transformers`, CUDA package 제거
    - embedding 전용 dependency group 또는 별도 lock/build 구성
-5. 운영 보안
+4. 운영 보안
    - 기본 관리자 비밀번호 변경 강제
    - HTTPS와 secure cookie
    - 회원가입/로그인 rate limit과 계정 잠금
    - PostgreSQL 백업/복원 및 구조화 로그
-6. 이후 확장
+5. 이후 확장
    - Redis + RQ worker, MinIO/S3, 다중 문서 검색, 용어 정규화, reranker,
      OCR/Vision, streaming, 문서 버전, 이메일 인증, 학습 피드백
 

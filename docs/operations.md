@@ -175,7 +175,12 @@ PyMuPDF가 열 수 없는 손상 파일 또는 암호화된 파일은 HTTP 400�
 {
   "answer": "답변 내용",
   "sources": [
-    {"document_id": 1, "page": 1, "chunk_id": 1}
+    {
+      "document_id": 1,
+      "document_title": "기본간호학.pdf",
+      "page": 1,
+      "chunk_id": 1
+    }
   ]
 }
 ```

@@ -268,7 +268,7 @@ export class AppController {
     const pdfUrl = source
       ? this.apiClient.getPdfUrl(source.document_id, source.page)
       : null;
-    this.sourcePanel.render(source, pdfUrl, selected?.title || "");
+    this.sourcePanel.render(source, pdfUrl, source?.document_title || "");
   }
 
   isPdf(file) {

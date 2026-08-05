@@ -131,7 +131,9 @@ export class ChatPanel {
         button.className = "source-reference";
         button.dataset.messageIndex = messageIndex;
         button.dataset.sourceIndex = sourceIndex;
-        button.textContent = formatPage(source.page);
+        const label = `${source.document_title || "문서"} · ${formatPage(source.page)}`;
+        button.textContent = label;
+        button.title = label;
         sourceList.append(button);
       });
       article.append(sourceList);

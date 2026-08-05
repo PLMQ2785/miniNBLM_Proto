@@ -16,6 +16,7 @@ from app.search_algorithms import SearchAlgorithmKey
 class RetrievedChunk:
     chunk_id: int
     document_id: int
+    document_title: str
     content: str
     page_start: int | None
     page_end: int | None
@@ -46,13 +47,14 @@ def retrieve_chunks(
         RetrievedChunk(
             chunk_id=chunk.id,
             document_id=chunk.document_id,
+            document_title=document_title,
             content=chunk.content,
             page_start=chunk.page_start,
             page_end=chunk.page_end,
             score=score,
             source_refs=chunk.source_refs or {},
         )
-        for chunk, score in rows
+        for chunk, score, document_title in rows
     ]
 
 
@@ -94,11 +96,16 @@ def _dense_search(db: Session, owner_id: int, question: str, top_k: int):
 
 def _reciprocal_rank_fusion(result_sets, top_k: int):
     chunks_by_id = {}
+    titles_by_id = {}
     scores: dict[int, float] = {}
     for rows in result_sets:
-        for rank, (chunk, _) in enumerate(rows, start=1):
+        for rank, (chunk, _, document_title) in enumerate(rows, start=1):
             chunks_by_id[chunk.id] = chunk
+            titles_by_id[chunk.id] = document_title
             scores[chunk.id] = scores.get(chunk.id, 0.0) + 1.0 / (60 + rank)
 
     ranked_ids = sorted(scores, key=lambda chunk_id: (-scores[chunk_id], chunk_id))[:top_k]
-    return [(chunks_by_id[chunk_id], scores[chunk_id]) for chunk_id in ranked_ids]
+    return [
+        (chunks_by_id[chunk_id], scores[chunk_id], titles_by_id[chunk_id])
+        for chunk_id in ranked_ids
+    ]

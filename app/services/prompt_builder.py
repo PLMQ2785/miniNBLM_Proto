@@ -18,6 +18,7 @@ def build_context(chunks: list[RetrievedChunk]) -> str:
             "\n".join(
                 [
                     f"[Source {index}]",
+                    f"Document: {chunk.document_title}",
                     f"Document ID: {chunk.document_id}",
                     f"Page: {page}",
                     f"Chunk ID: {chunk.chunk_id}",

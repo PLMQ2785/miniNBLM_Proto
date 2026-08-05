@@ -9,6 +9,7 @@ class ChatRequest(BaseModel):
 
 class SourceRef(BaseModel):
     document_id: int
+    document_title: str
     page: int | None
     chunk_id: int
 

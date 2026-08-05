@@ -16,6 +16,7 @@ def generate_answer(question: str, chunks: list[RetrievedChunk]) -> GeneratedAns
     sources = [
         SourceRef(
             document_id=chunk.document_id,
+            document_title=chunk.document_title,
             page=chunk.page_start,
             chunk_id=chunk.chunk_id,
         )

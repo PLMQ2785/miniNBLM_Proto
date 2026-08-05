@@ -87,6 +87,7 @@ def test_real_pdf_embedding_retrieval_generation_and_safety() -> None:
             assert "청록색" in grounded["answer"]
             assert "삼각" in grounded["answer"]
             assert any(source["page"] == 1 for source in grounded["sources"])
+            assert all(source["document_title"] == pdf_path.name for source in grounded["sources"])
 
             outside = _ask(
                 client,

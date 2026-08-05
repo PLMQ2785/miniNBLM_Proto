@@ -67,7 +67,7 @@ focus를 이동하지 않는다.
 3. Poll an uploaded document until it becomes `indexed` or `failed`.
 4. Select an indexed document as the chat context.
 5. Ask a question and display the generated answer.
-6. Display source page references returned with the answer.
+6. Display source document titles and page references returned with the answer.
 7. Open the original PDF at a referenced page.
 8. Present loading, empty, failure, and retry states.
 9. Work on desktop, tablet, and mobile viewports.
@@ -102,7 +102,7 @@ focus를 이동하지 않는다.
 | FR-07 | Submit question | Empty or whitespace-only questions are rejected locally. |
 | FR-08 | Prevent duplicate request | The composer is disabled while one answer is being generated. |
 | FR-09 | Show answer | The assistant answer preserves line breaks and wraps long terms safely. |
-| FR-10 | Show sources | Each source shows a page label and opens the corresponding PDF page. |
+| FR-10 | Show sources | Each source shows its document title and page label and opens the corresponding PDF page. |
 | FR-11 | Show failure | Upload, indexing, retrieval, and generation failures are distinguishable. |
 | FR-12 | Retry recoverable action | Document refresh and failed question submission can be retried. |
 | FR-13 | Safety notice | The interface states that it is a course-material learning aid, not a clinical tool. |
@@ -350,6 +350,7 @@ classDiagram
 
     class SourceReference {
         +number document_id
+        +string document_title
         +number? page
         +number chunk_id
     }

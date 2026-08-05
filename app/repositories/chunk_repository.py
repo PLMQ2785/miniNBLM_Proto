@@ -39,10 +39,10 @@ def search_chunks_by_embedding(
     owner_id: int,
     query_embedding: list[float],
     top_k: int,
-) -> list[tuple[Chunk, float]]:
+) -> list[tuple[Chunk, float, str]]:
     distance = Chunk.embedding.cosine_distance(query_embedding).label("distance")
     rows = (
-        db.query(Chunk, distance)
+        db.query(Chunk, distance, Document.title)
         .join(Document, Document.id == Chunk.document_id)
         .filter(
             Document.owner_id == owner_id,
@@ -55,7 +55,7 @@ def search_chunks_by_embedding(
         .limit(top_k)
         .all()
     )
-    return [(chunk, float(score)) for chunk, score in rows]
+    return [(chunk, float(score), title) for chunk, score, title in rows]
 
 
 def search_chunks_by_keyword(
@@ -63,12 +63,12 @@ def search_chunks_by_keyword(
     owner_id: int,
     question: str,
     top_k: int,
-) -> list[tuple[Chunk, float]]:
+) -> list[tuple[Chunk, float, str]]:
     document_vector = func.to_tsvector("simple", Chunk.content)
     query = func.plainto_tsquery("simple", question)
     rank = func.ts_rank_cd(document_vector, query).label("rank")
     rows = (
-        db.query(Chunk, rank)
+        db.query(Chunk, rank, Document.title)
         .join(Document, Document.id == Chunk.document_id)
         .filter(
             Document.owner_id == owner_id,
@@ -81,7 +81,7 @@ def search_chunks_by_keyword(
         .limit(top_k)
         .all()
     )
-    return [(chunk, float(score)) for chunk, score in rows]
+    return [(chunk, float(score), title) for chunk, score, title in rows]
 
 
 def search_chunks_by_substring(
@@ -89,13 +89,13 @@ def search_chunks_by_substring(
     owner_id: int,
     question: str,
     top_k: int,
-) -> list[tuple[Chunk, float]]:
+) -> list[tuple[Chunk, float, str]]:
     similarity = func.greatest(
         func.similarity(Chunk.content, question),
         func.word_similarity(question, Chunk.content),
     ).label("similarity")
     rows = (
-        db.query(Chunk, similarity)
+        db.query(Chunk, similarity, Document.title)
         .join(Document, Document.id == Chunk.document_id)
         .filter(
             Document.owner_id == owner_id,
@@ -108,4 +108,4 @@ def search_chunks_by_substring(
         .limit(top_k)
         .all()
     )
-    return [(chunk, float(score)) for chunk, score in rows]
+    return [(chunk, float(score), title) for chunk, score, title in rows]

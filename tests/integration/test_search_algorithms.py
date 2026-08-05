@@ -61,6 +61,7 @@ def test_all_search_algorithms_return_the_matching_chunk(
 
         assert results
         assert results[0].chunk_id == target_id
+        assert results[0].document_title == document.title
         assert results[0].page_start == 3
 
 
@@ -131,4 +132,8 @@ def test_all_search_algorithms_are_scoped_to_the_owners_indexed_documents(
         assert {result.document_id for result in results} == {
             first_document.id,
             second_document.id,
+        }
+        assert {result.document_title for result in results} == {
+            first_document.title,
+            second_document.title,
         }

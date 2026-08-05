@@ -160,7 +160,7 @@ curl -b session.cookie \
 - pgvector Dense, PostgreSQL FTS, pg_trgm 및 RRF Hybrid 검색
 - 로그인 사용자의 모든 indexed 문서를 대상으로 하는 작업공간 RAG 검색
 - Gemma 4 12B W4A16 모델을 사용한 답변 생성
-- 답변 출처와 원본 PDF 페이지 연결
+- `문서명 · 페이지` 답변 출처와 원본 PDF 페이지 연결
 - 반응형 Web UI와 문서 처리 상태 polling
 - 관리자 청킹 프리셋 5개, 검색 알고리즘 4개와 변경 영향 판정
 - API 재시작 시 중단된 PDF 인덱싱과 전체 재인덱싱 자동 복구

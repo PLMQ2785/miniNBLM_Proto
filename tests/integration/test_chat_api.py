@@ -29,6 +29,7 @@ def test_chat_persists_messages_and_returns_sources(
     retrieved = RetrievedChunk(
         chunk_id=101,
         document_id=document.id,
+        document_title=document.title,
         content="낙상 발생 시 환자를 바로 일으키지 않고 손상 여부를 확인한다.",
         page_start=4,
         page_end=4,
@@ -47,7 +48,14 @@ def test_chat_persists_messages_and_returns_sources(
         "generate_answer",
         lambda **kwargs: GeneratedAnswer(
             answer="손상 여부를 먼저 확인합니다.",
-            sources=[SourceRef(document_id=document.id, page=4, chunk_id=101)],
+            sources=[
+                SourceRef(
+                    document_id=document.id,
+                    document_title=document.title,
+                    page=4,
+                    chunk_id=101,
+                )
+            ],
         ),
     )
 
@@ -58,7 +66,12 @@ def test_chat_persists_messages_and_returns_sources(
 
     assert response.status_code == 200
     assert response.json()["sources"] == [
-        {"document_id": document.id, "page": 4, "chunk_id": 101}
+        {
+            "document_id": document.id,
+            "document_title": document.title,
+            "page": 4,
+            "chunk_id": 101,
+        }
     ]
     db.expire_all()
     assert db.scalar(select(func.count()).select_from(ChatSession)) == 1
