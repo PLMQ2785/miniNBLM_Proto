@@ -1,0 +1,36 @@
+[project]
+name = "mininblm"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12, <3.13"
+dependencies = [
+    "alembic==1.16.2",
+    "fastapi==0.115.14",
+    "httpx==0.28.1",
+    "openai==1.93.0",
+    "pgvector==0.4.1",
+    "psycopg[binary]==3.2.9",
+    "pwdlib[argon2]>=0.3.0",
+    "pydantic-settings==2.10.1",
+    "pymupdf==1.26.3",
+    "python-multipart==0.0.20",
+    "sentence-transformers==4.1.0",
+    "sqlalchemy==2.0.41",
+    "torch==2.7.1",
+    "uvicorn[standard]==0.35.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+markers = [
+    "integration: requires the isolated PostgreSQL test database",
+    "e2e: requires real embedding and vLLM services",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==8.4.1",
+]

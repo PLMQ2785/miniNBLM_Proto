@@ -1,0 +1,20 @@
+--- gemma4_unified.py
++++ gemma4_unified.py
+@@ -231,6 +231,8 @@
+             Gemma4MultimodalEmbedder(
+                 config.vision_config,
+                 config.text_config,
++                quant_config=quant_config,
++                prefix=maybe_prefix(prefix, "embed_vision"),
+             )
+             if config.vision_config is not None
+             else None
+@@ -240,6 +242,8 @@
+             Gemma4MultimodalEmbedder(
+                 config.audio_config,
+                 config.text_config,
++                quant_config=quant_config,
++                prefix=maybe_prefix(prefix, "embed_audio"),
+             )
+             if config.audio_config is not None
+             else None

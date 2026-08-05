@@ -1,0 +1,363 @@
+# miniNBLM 개발 핸드오프
+
+## 1. 현재 상태
+
+- 기준일: 2026-08-05 (Asia/Seoul)
+- 프로젝트: 간호학 수업자료 PDF 기반 RAG 학습 튜터 PoC
+- 현재 단계: 1차 MVP 구현 및 기본 안정화 완료
+- 패키지 관리: `uv`
+- 런타임: Docker Compose의 `api`, `db`, `embedding`, `llm` 4개 서비스
+- Web UI: React 없이 FastAPI가 Vanilla HTML/CSS/JavaScript 정적 파일 제공
+- 현재 컨테이너 상태: 4개 서비스 모두 실행 중이며 `db`는 healthy
+
+최근 검증 결과:
+
+- 빠른 단위/API 통합 테스트: `37 passed`, 실제 모델 E2E `1 skipped`
+- 실제 BGE-M3/Gemma 4 E2E: `1 passed`
+- API 재빌드 후 `GET /health`: `{"status":"ok"}`
+- E2E 및 일반 테스트용 임시 컨테이너는 테스트 종료 후 정리됨
+
+## 2. 시스템 구성
+
+```text
+Browser
+  -> api:8080
+       -> db:5432             PostgreSQL 17 + pgvector
+       -> embedding:8070      BAAI/bge-m3
+       -> llm:8010            vLLM + Gemma 4 12B W4A16
+```
+
+| 서비스 | 주소 | 역할 | GPU |
+|---|---|---|---|
+| `api` | `0.0.0.0:8080` | FastAPI, Web UI, 문서 처리 조정 | 아니요 |
+| `db` | `127.0.0.1:5432` | PostgreSQL 17, pgvector | 아니요 |
+| `embedding` | `127.0.0.1:8070` | BGE-M3 embedding HTTP API | 예 |
+| `llm` | `127.0.0.1:8010` | vLLM OpenAI-compatible API | 예 |
+
+WSL mirrored networking에서 Docker bridge port가 Windows localhost로 전달되지
+않는 문제가 있어 모든 런타임 서비스가 `network_mode: host`를 사용한다. API만
+외부에 bind하고 DB, embedding, LLM은 loopback에만 bind한다.
+
+## 3. 모델 및 GPU 설정
+
+- Embedding model: `BAAI/bge-m3`
+- Embedding dimension: `1024`
+- LLM: Gemma 4 12B instruction model, W4A16 compressed-tensors 양자화
+- 기본 모델 경로: `./google/google-gemma-4-12B-it-W4A16`
+- vLLM image: `mininblm-vllm:0.25.0-gemma4-unified-quant`
+- 기본 max model length: `8192`
+- 기본 GPU memory utilization: `0.65`
+- 기본 max sequences: `4`
+
+`Dockerfile.llm`은 Gemma 4 unified quantization을 vLLM 0.25.0에서 읽도록 로컬
+patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
+`VLLM_WSL2_ENABLE_PIN_MEMORY=1`과 `ipc: host`가 필요하다. vLLM 또는 모델
+구조를 변경하면 실제 completion E2E를 반드시 다시 실행한다.
+
+## 4. 구현 완료 기능
+
+### 인증 및 사용자 격리
+
+- 공개 회원가입, 로그인, 로그아웃, 현재 사용자 조회
+- Argon2id 비밀번호 해시
+- 원문을 저장하지 않는 SHA-256 세션 토큰 해시
+- `HttpOnly`, `SameSite=Lax` 세션 쿠키
+- 사용자별 문서, PDF 원본, 질문, 대화 및 삭제 접근 격리
+- 다른 사용자의 문서 ID 접근 시 HTTP 404
+- `admin` 역할과 관리자 CLI
+- 개발 기본 관리자 `admin/admin`
+
+### PDF 문서 처리
+
+- PDF 업로드, 목록, 상태 조회, 원본 inline 조회, 삭제
+- PyMuPDF page 단위 텍스트 추출
+- 문자 수 기반 page 단위 chunking
+- BGE-M3 embedding 생성 및 pgvector 저장
+- 문서 상태: `uploaded`, `processing`, `indexed`, `failed`
+- 처리 중 문서 삭제 시 HTTP 409
+- API 재시작 시 중단된 `uploaded/processing` 문서 자동 복구
+- 원본 파일이 사라진 중단 문서는 원인을 기록하고 `failed` 처리
+
+업로드 검증:
+
+- 기본 50MB 서버 파일 제한 (`MAX_UPLOAD_BYTES=52428800`)
+- `.pdf` 파일명과 PDF MIME type 요구
+- `%PDF-` 시그니처 검사
+- PyMuPDF를 이용한 PDF 구조 및 page 존재 검사
+- 손상된 PDF와 암호화된 PDF는 HTTP 400
+- 용량 초과는 HTTP 413
+- 거절된 업로드의 DB 행과 부분 파일 자동 정리
+- 텍스트가 없는 정상 PDF는 업로드 후 인덱싱 단계에서 `failed`
+
+### 검색 및 답변
+
+- 선택한 단일 문서에 대한 질문
+- Gemma 4/vLLM 답변 생성
+- source document/page/chunk 반환
+- PDF source page 열기
+- 자료 밖 질문 제한 및 의료 상담성 질문 안전 지침을 포함한 system prompt
+
+검색 알고리즘 4개:
+
+| Key | 구현 |
+|---|---|
+| `dense` | BGE-M3 + pgvector cosine/HNSW |
+| `keyword` | PostgreSQL FTS, `simple` config |
+| `substring` | pg_trgm similarity |
+| `hybrid` | Dense + FTS + pg_trgm 결과의 RRF |
+
+### 관리자 검색 설정
+
+- built-in 청킹 preset 5개
+- 검색 알고리즘 4개 독립 선택
+- 알고리즘 변경은 재인덱싱 없이 즉시 적용
+- 청크 크기/오버랩 변경은 전체 문서 재청킹 및 재임베딩
+- 재인덱싱 중 질문과 문서 변경을 유지보수 모드로 차단
+- 작업 상태 및 진행률 조회
+- 실패 작업 재시도 API
+- API 재시작 시 중단된 전체 재인덱싱을 처음부터 자동 복구
+- 기존 사용자, 세션, 원본 PDF는 보존
+
+초기 preset은 다음과 같다.
+
+| Key | chunk size | overlap | top-k |
+|---|---:|---:|---:|
+| `fine_grained` | 200 | 40 | 20 |
+| `standard` | 500 | 75 | 12 |
+| `balanced` | 1000 | 150 | 8 |
+| `broad_context` | 2000 | 300 | 5 |
+| `long_form` | 3500 | 500 | 4 |
+
+### Web UI
+
+- 반응형 데스크톱/모바일 작업공간
+- 회원가입 및 로그인 화면
+- PDF 업로드, 선택, 상태 polling 및 삭제
+- 질문과 답변, source page 선택
+- 모바일 문서 drawer 및 PDF source panel
+- 관리자 preset/알고리즘 화면과 재인덱싱 상태 polling
+- 모델 출력은 HTML로 해석하지 않고 text로 렌더링
+
+## 5. 주요 API
+
+| Method | Path | 설명 |
+|---|---|---|
+| `GET` | `/health` | API 프로세스 liveness |
+| `POST` | `/auth/register` | 회원가입과 세션 발급 |
+| `POST` | `/auth/login` | 로그인 |
+| `POST` | `/auth/logout` | 세션 폐기 |
+| `GET` | `/auth/me` | 현재 사용자 |
+| `POST` | `/documents` | PDF 업로드 |
+| `GET` | `/documents` | 현재 사용자 문서 목록 |
+| `GET` | `/documents/{id}` | 문서 처리 상태 |
+| `GET` | `/documents/{id}/file` | 원본 PDF inline 응답 |
+| `DELETE` | `/documents/{id}` | 문서 및 관련 데이터 삭제 |
+| `POST` | `/chat` | 단일 문서 RAG 질문 |
+| `GET` | `/admin/retrieval` | 관리자 검색 설정 상태 |
+| `POST` | `/admin/retrieval/presets/{key}/activate` | preset 변경/재인덱싱 |
+| `POST` | `/admin/retrieval/algorithms/{key}/activate` | 알고리즘 즉시 변경 |
+| `GET` | `/admin/retrieval/jobs/{id}` | 재인덱싱 작업 조회 |
+| `POST` | `/admin/retrieval/jobs/{id}/retry` | 실패 작업 재시도 |
+
+현재 `/health`는 API 프로세스만 확인한다. DB, embedding, LLM을 종합하는
+`/health/ready`는 아직 구현되지 않았다.
+
+## 6. 실행 방법
+
+최초 또는 이미지 재빌드가 필요한 실행:
+
+```bash
+cp .env.example .env   # .env가 없을 때만
+./run.sh
+```
+
+이미지가 준비된 이후 빠른 실행:
+
+```bash
+./run.sh --no-build
+```
+
+관리 명령:
+
+```bash
+./run.sh status
+./run.sh logs
+./down.sh
+```
+
+접속 주소:
+
+- WSL/Linux/Windows host: `http://localhost:8080/`
+- mirrored WSL에서 LAN: `http://<Windows_HOST_IP>:8080/`
+
+Windows Host IP는 PowerShell의 `ipconfig`에서 실제 Wi-Fi/Ethernet adapter의
+IPv4 주소를 사용한다.
+
+기존 일반 계정의 관리자 권한 변경:
+
+```bash
+docker compose exec api python -m app.cli.set_admin <username>
+docker compose exec api python -m app.cli.set_admin --revoke <username>
+```
+
+## 7. 테스트
+
+### 빠른 단위/API 통합 테스트
+
+```bash
+./scripts/test.sh -q
+```
+
+- `docker-compose.test.yml` 사용
+- 임시 PostgreSQL/pgvector: `127.0.0.1:55432`
+- DB: `rag_test_db`, tmpfs
+- 운영 DB, 업로드 파일, GPU, embedding, LLM을 사용하지 않음
+- embedding과 LLM 호출은 test double로 대체
+- 테스트 종료 시 컨테이너 자동 정리
+- 운영 DB 오접속을 막는 `MININBLM_TEST_DATABASE=1` 안전장치 존재
+- 마지막 결과: `37 passed`, 실제 모델 E2E `1 skipped`
+
+단위 테스트만 실행:
+
+```bash
+uv run pytest tests/unit -q
+```
+
+### 실제 모델 E2E
+
+먼저 운영 `embedding:8070`, `llm:8010`이 실행 중이어야 한다.
+
+```bash
+./scripts/e2e.sh -q
+```
+
+- `docker-compose.e2e.yml` 사용
+- 전용 API: `127.0.0.1:18080`
+- 전용 PostgreSQL: `127.0.0.1:55433`, tmpfs
+- 실제 BGE-M3와 Gemma 4만 운영 endpoint를 공유
+- fixture: `sample_fall_prevention.pdf` 4페이지
+- 1024차원 embedding 저장, 정답/source page, 자료 밖 질문, 의료 안전 응답 검증
+- 테스트 종료 시 전용 API, DB 및 업로드 데이터 자동 정리
+- 마지막 결과: `1 passed`
+
+PyMuPDF SWIG 타입에서 발생하는 5개의 deprecation warning은 현재 알려진
+비차단 경고다.
+
+## 8. DB 및 데이터 보존
+
+Alembic migration:
+
+1. `0001_initial_schema.py`
+2. `0002_user_auth_and_ownership.py`
+3. `0003_retrieval_presets.py`
+4. `0004_search_algorithms.py`
+
+영속 데이터:
+
+- PostgreSQL: Docker volume `postgres_data`
+- 업로드 PDF: 호스트 `./data`, 컨테이너 `/app/data`
+- Hugging Face cache: Docker volume `hf_cache`
+- 양자화 모델: 호스트 경로를 `/models/gemma4:ro`로 mount
+
+`docker compose down`과 `./down.sh`는 위 데이터를 보존한다. `docker compose
+down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없으면 실행하지
+않는다.
+
+## 9. 주요 파일
+
+| 경로 | 역할 |
+|---|---|
+| `task.md` | 전체 요구사항, 설계 초안, 현재 구현 상태 |
+| `README.md` | 사용자용 실행 및 개요 |
+| `docs/operations.md` | 운영, 검증, 장애 대응 |
+| `docs/frontend-design.md` | FE 요구사항과 구조 설계 |
+| `docs/retrieval-presets.md` | preset 및 검색 알고리즘 정책 |
+| `docker-compose.yml` | 운영 4개 서비스 |
+| `docker-compose.test.yml` | 빠른 테스트용 임시 DB |
+| `docker-compose.e2e.yml` | 실제 모델 E2E용 API/DB |
+| `run.sh`, `down.sh` | 전체 서비스 시작/종료 |
+| `scripts/test.sh` | 단위/API 통합 테스트 진입점 |
+| `scripts/e2e.sh` | 실제 모델 E2E 진입점 |
+| `app/main.py` | FastAPI 조립 및 lifespan |
+| `app/api/` | HTTP API router |
+| `app/services/` | 문서 처리, 검색, 답변, 복구 orchestration |
+| `app/repositories/` | SQLAlchemy DB 접근 |
+| `app/storage/local_storage.py` | 로컬 PDF 저장소 |
+| `app/services/upload_validation.py` | PDF 업로드 검증 |
+| `app/static/` | Vanilla JS Web UI |
+| `embedding_service/` | BGE-M3 HTTP 서비스 |
+| `alembic/versions/` | DB migration |
+| `tests/unit/` | DB 불필요 단위 테스트 |
+| `tests/integration/` | 격리 DB API 통합 테스트 |
+| `tests/e2e/` | 실제 embedding/LLM E2E |
+
+## 10. 알려진 제한사항
+
+- `/health`는 liveness만 제공하며 통합 readiness가 없다.
+- 브라우저 대화는 새로고침 시 사라진다. DB에는 저장되지만 조회 API가 없다.
+- 질문 하나는 선택한 문서 하나만 검색한다.
+- 문서 처리와 재인덱싱이 API process의 background task를 사용한다.
+- 별도 worker/영속 queue가 없어 API process 수명과 자원을 공유한다.
+- 텍스트 기반 PDF만 지원하며 scanned PDF OCR은 없다.
+- 표, 그림, 도표용 Vision caption이 없다.
+- 답변 streaming이 없다.
+- 이메일 확인, 비밀번호 재설정, 계정 잠금, rate limit이 없다.
+- 기본 HTTP/LAN 설정은 `AUTH_COOKIE_SECURE=false`다.
+- API 이미지가 필요 없는 `torch`, `sentence-transformers`, CUDA 의존성을 포함해
+  첫 빌드 및 image export가 매우 크다.
+- 업로드 파일 자체는 50MB로 제한하지만 reverse proxy 수준의 전체 request body
+  제한은 별도로 구성하지 않았다.
+
+## 11. 다음 작업 권장 순서
+
+1. `/health/ready` 구현
+   - DB `SELECT 1`, embedding `/health`, vLLM `/v1/models` 확인
+   - 구성요소별 상태와 실패 원인을 반환하고 하나라도 실패하면 HTTP 503
+   - `run.sh`와 Docker healthcheck가 readiness를 사용하도록 변경
+   - 외부 서비스 timeout과 통합 테스트 추가
+2. 프런트엔드 사용성 마무리
+   - 실패 작업 재시도 버튼
+   - 문서 목록 수동 새로고침
+   - 새 답변 및 오류 메시지로 keyboard focus 이동
+3. 대화 이력 복원
+   - chat session/message 조회 API
+   - 문서 선택 및 새로고침 후 기존 대화 표시
+   - 사용자 소유권 통합 테스트
+4. API Docker 의존성 분리
+   - API에서 `torch`, `sentence-transformers`, CUDA package 제거
+   - embedding 전용 dependency group 또는 별도 lock/build 구성
+5. 운영 보안
+   - 기본 관리자 비밀번호 변경 강제
+   - HTTPS와 secure cookie
+   - 회원가입/로그인 rate limit과 계정 잠금
+   - PostgreSQL 백업/복원 및 구조화 로그
+6. 이후 확장
+   - Redis + RQ worker, MinIO/S3, 다중 문서 검색, 용어 정규화, reranker,
+     OCR/Vision, streaming, 문서 버전, 이메일 인증, 학습 피드백
+
+## 12. Git 및 작업공간 주의사항
+
+현재 `git status --short` 기준으로 프로젝트 파일 대부분이 `??`인 미추적
+상태다. 아직 신뢰할 수 있는 baseline commit이 없는 것으로 취급해야 한다.
+
+현재 `.gitignore`는 다음 대용량/민감 경로를 제외한다.
+
+- `.env`
+- `data/`
+- `id_container` 및 private-key 파일 패턴
+- `google/` (현재 약 7.2GB)
+- `google-gemma-4-12B-it-W4A16-w4a16.tar` (현재 약 7.2GB)
+- `*.tar`
+- `*:Zone.Identifier`
+
+2026-08-05에 작업공간의 50MB 초과 파일을 전수 확인했으며, 모델 weight와 tar는
+각각 `google/`, `*.safetensors`, `*.tar` 규칙에, CUDA 라이브러리는 `.venv`
+규칙에 의해 모두 제외되는 것을 `git check-ignore`로 검증했다. 기존 사용자
+데이터와 모델 파일은 코드 저장소에 포함하지 않는다.
+
+다만 baseline commit은 아직 없으므로 첫 commit 전 `git status --short`와 실제
+staging 목록을 반드시 다시 확인한다.
+
+또한 작업공간에 사용자가 만든 변경이 있을 수 있으므로 확인 없이 파일을
+되돌리거나 `git reset --hard`, `git checkout --`, `down -v` 같은 파괴적 명령을
+사용하지 않는다.

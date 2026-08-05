@@ -1,0 +1,42 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Local environment and runtime data
+.env
+data/
+
+# Private keys and credential containers
+/id_container
+id_rsa
+id_ed25519
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local model weights and archives
+google/
+*.safetensors
+*.gguf
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.tar
+*.tar.*
+
+# OS metadata
+*:Zone.Identifier
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

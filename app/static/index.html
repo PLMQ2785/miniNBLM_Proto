@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>Nursing PDF Tutor</title>
+    <link rel="stylesheet" href="/static/styles/tokens.css">
+    <link rel="stylesheet" href="/static/styles/layout.css">
+    <link rel="stylesheet" href="/static/styles/components.css">
+  </head>
+  <body>
+    <section id="auth-view" class="auth-view" aria-labelledby="auth-title" hidden>
+      <div class="auth-panel">
+        <header class="auth-header">
+          <span class="brand-mark" aria-hidden="true">N</span>
+          <div>
+            <strong>Nursing PDF Tutor</strong>
+            <span>수업자료 작업공간</span>
+          </div>
+        </header>
+
+        <div class="auth-tabs" role="tablist" aria-label="계정 접속 방식">
+          <button id="login-tab" type="button" role="tab" aria-selected="true">로그인</button>
+          <button id="register-tab" type="button" role="tab" aria-selected="false">회원가입</button>
+        </div>
+
+        <form id="auth-form" class="auth-form">
+          <h1 id="auth-title">로그인</h1>
+          <label for="auth-username">사용자명</label>
+          <input id="auth-username" name="username" type="text" minlength="3" maxlength="32" pattern="[A-Za-z0-9_.-]+" autocomplete="username" required>
+          <label for="auth-password">비밀번호</label>
+          <input id="auth-password" name="password" type="password" minlength="1" maxlength="128" autocomplete="current-password" required>
+          <p id="auth-error" class="auth-error" role="alert"></p>
+          <button id="auth-submit" type="submit">로그인</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="admin-view" class="admin-view" hidden>
+      <header class="admin-header">
+        <div class="brand-block">
+          <span class="brand-mark" aria-hidden="true">N</span>
+          <div>
+            <strong>검색 설정 관리</strong>
+            <span id="admin-username" class="service-status"></span>
+          </div>
+        </div>
+        <div class="admin-header-actions">
+          <button id="admin-close" type="button">작업공간</button>
+          <button id="admin-logout-button" type="button">로그아웃</button>
+        </div>
+      </header>
+
+      <main class="admin-content">
+        <section class="admin-summary" aria-labelledby="preset-heading">
+          <div>
+            <p class="panel-eyebrow">RETRIEVAL CONFIGURATION</p>
+            <h1 id="preset-heading">검색 Preset</h1>
+          </div>
+          <dl class="admin-state-list">
+            <div><dt>청킹 preset</dt><dd id="active-preset">-</dd></div>
+            <div><dt>검색 알고리즘</dt><dd id="active-algorithm">-</dd></div>
+            <div><dt>Index version</dt><dd id="active-index-version">-</dd></div>
+            <div><dt>상태</dt><dd id="maintenance-status">-</dd></div>
+          </dl>
+        </section>
+
+        <form id="preset-form" class="preset-form">
+          <div id="preset-list" class="preset-grid"></div>
+          <div class="preset-actions">
+            <p id="preset-error" class="admin-error" role="alert"></p>
+            <button id="activate-preset-button" type="submit" disabled>선택한 Preset 적용</button>
+          </div>
+        </form>
+
+        <section class="algorithm-section" aria-labelledby="algorithm-heading">
+          <div class="admin-section-heading">
+            <p class="panel-eyebrow">SEARCH ALGORITHM</p>
+            <h2 id="algorithm-heading">검색 알고리즘</h2>
+          </div>
+          <form id="algorithm-form" class="algorithm-form">
+            <div id="algorithm-list" class="algorithm-grid"></div>
+            <div class="preset-actions">
+              <span class="algorithm-change-note">알고리즘 변경은 기존 chunk와 embedding을 그대로 사용합니다.</span>
+              <button id="activate-algorithm-button" type="submit" disabled>선택한 알고리즘 적용</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="job-section" aria-labelledby="job-heading">
+          <div class="job-heading-row">
+            <div>
+              <p class="panel-eyebrow">LATEST JOB</p>
+              <h2 id="job-heading">재인덱싱 작업</h2>
+            </div>
+            <button id="retry-job-button" type="button" hidden>재시도</button>
+          </div>
+          <div id="job-status" class="job-status">작업 이력이 없습니다.</div>
+        </section>
+      </main>
+    </section>
+
+    <div id="app" class="app-shell" hidden>
+      <header class="app-header">
+        <button id="documents-toggle" class="mobile-nav-button" type="button" aria-controls="document-panel" aria-expanded="false">
+          문서
+        </button>
+        <div class="brand-block">
+          <span class="brand-mark" aria-hidden="true">N</span>
+          <div>
+            <strong>Nursing PDF Tutor</strong>
+            <span id="service-status" class="service-status">연결 확인 중</span>
+          </div>
+        </div>
+        <p class="safety-notice">수업자료 기반 학습 보조 도구이며 진단·처방을 제공하지 않습니다.</p>
+        <div class="account-block">
+          <span id="current-username"></span>
+          <button id="admin-button" type="button" hidden>관리</button>
+          <button id="logout-button" type="button">로그아웃</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside id="document-panel" class="document-panel" aria-label="문서">
+          <div class="panel-heading">
+            <div>
+              <p class="panel-eyebrow">COURSE MATERIALS</p>
+              <h1>문서</h1>
+            </div>
+            <button id="documents-close" class="mobile-close-button" type="button" aria-label="문서 패널 닫기">×</button>
+          </div>
+
+          <form id="upload-form" class="upload-form">
+            <input id="pdf-input" class="visually-hidden" type="file" accept="application/pdf,.pdf">
+            <label for="pdf-input" class="upload-button">PDF 추가</label>
+            <span id="upload-status" class="upload-status" aria-live="polite"></span>
+          </form>
+
+          <div id="document-list" class="document-list" aria-live="polite"></div>
+        </aside>
+
+        <section class="chat-panel" aria-label="질문과 답변">
+          <header class="chat-header">
+            <div class="chat-title-block">
+              <p class="panel-eyebrow">SELECTED DOCUMENT</p>
+              <h2 id="selected-document-title">문서를 선택하세요</h2>
+              <span id="selected-document-status" class="selected-document-status"></span>
+            </div>
+            <button id="source-mobile-toggle" class="source-mobile-toggle" type="button" hidden>출처 보기</button>
+          </header>
+
+          <div id="message-list" class="message-list" aria-live="polite" aria-relevant="additions"></div>
+
+          <form id="chat-form" class="chat-composer">
+            <label for="question-input" class="visually-hidden">질문</label>
+            <textarea id="question-input" rows="2" maxlength="4000" placeholder="선택한 자료에 대해 질문하세요" disabled></textarea>
+            <button id="send-button" type="submit" disabled>질문 보내기</button>
+          </form>
+        </section>
+
+        <aside id="source-panel" class="source-panel" aria-label="출처 PDF">
+          <header class="source-header">
+            <div>
+              <p class="panel-eyebrow">SOURCE</p>
+              <h2 id="source-title">출처</h2>
+              <span id="source-page-label" class="source-page-label"></span>
+            </div>
+            <button id="source-close" class="source-close-button" type="button" aria-label="출처 닫기">×</button>
+          </header>
+          <div id="source-content" class="source-content"></div>
+        </aside>
+      </main>
+
+      <div id="drawer-backdrop" class="drawer-backdrop" hidden></div>
+      <div id="notification-region" class="notification-region" aria-live="assertive"></div>
+    </div>
+    <script type="module" src="/static/js/main.js"></script>
+  </body>
+</html>

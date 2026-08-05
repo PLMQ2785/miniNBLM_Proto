@@ -1,0 +1,223 @@
+const PRESET_LABELS = {
+  fine_grained: "세밀 검색",
+  standard: "짧은 문단",
+  balanced: "균형",
+  broad_context: "넓은 문맥",
+  long_form: "긴 서술",
+};
+
+const JOB_STATUS_LABELS = {
+  pending: "대기 중",
+  running: "처리 중",
+  completed: "완료",
+  completed_with_errors: "일부 실패",
+  failed: "실패",
+};
+
+export class AdminView {
+  constructor({
+    root,
+    presetList,
+    form,
+    activateButton,
+    algorithmList,
+    algorithmForm,
+    activateAlgorithmButton,
+    error,
+    activePreset,
+    activeAlgorithm,
+    indexVersion,
+    maintenance,
+    jobStatus,
+    retryButton,
+  }) {
+    this.root = root;
+    this.presetList = presetList;
+    this.form = form;
+    this.activateButton = activateButton;
+    this.algorithmList = algorithmList;
+    this.algorithmForm = algorithmForm;
+    this.activateAlgorithmButton = activateAlgorithmButton;
+    this.error = error;
+    this.activePreset = activePreset;
+    this.activeAlgorithm = activeAlgorithm;
+    this.indexVersion = indexVersion;
+    this.maintenance = maintenance;
+    this.jobStatus = jobStatus;
+    this.retryButton = retryButton;
+    this.state = null;
+    this.selectedKey = null;
+    this.selectedAlgorithmKey = null;
+    this.activateHandler = null;
+    this.activateAlgorithmHandler = null;
+    this.retryHandler = null;
+
+    this.form.addEventListener("change", () => {
+      this.selectedKey = new FormData(this.form).get("preset");
+      this.syncActivateButton();
+    });
+    this.form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (this.activateHandler && this.selectedKey) this.activateHandler(this.selectedKey);
+    });
+    this.algorithmForm.addEventListener("change", () => {
+      this.selectedAlgorithmKey = new FormData(this.algorithmForm).get("algorithm");
+      this.syncAlgorithmButton();
+    });
+    this.algorithmForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (this.activateAlgorithmHandler && this.selectedAlgorithmKey) {
+        this.activateAlgorithmHandler(this.selectedAlgorithmKey);
+      }
+    });
+    this.retryButton.addEventListener("click", () => {
+      if (this.retryHandler && this.state?.latest_job) this.retryHandler(this.state.latest_job.job_id);
+    });
+  }
+
+  onActivate(handler) {
+    this.activateHandler = handler;
+  }
+
+  onRetry(handler) {
+    this.retryHandler = handler;
+  }
+
+  onActivateAlgorithm(handler) {
+    this.activateAlgorithmHandler = handler;
+  }
+
+  show() {
+    this.root.hidden = false;
+  }
+
+  hide() {
+    this.root.hidden = true;
+  }
+
+  render(state) {
+    this.state = state;
+    this.selectedKey = state.pending_preset_key || state.active_preset_key;
+    this.selectedAlgorithmKey = state.active_search_algorithm_key;
+    this.activePreset.textContent = state.active_preset_key;
+    this.activeAlgorithm.textContent = state.active_search_algorithm_key;
+    this.indexVersion.textContent = String(state.index_version);
+    this.maintenance.textContent = state.maintenance_mode ? "재인덱싱 중" : "사용 가능";
+    this.maintenance.dataset.state = state.maintenance_mode ? "busy" : "ready";
+    this.presetList.replaceChildren();
+
+    for (const preset of state.presets) {
+      const label = document.createElement("label");
+      label.className = "preset-option";
+      label.dataset.active = String(preset.key === state.active_preset_key);
+
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = "preset";
+      input.value = preset.key;
+      input.checked = preset.key === this.selectedKey;
+      input.disabled = state.maintenance_mode;
+
+      const heading = document.createElement("span");
+      heading.className = "preset-option-heading";
+      heading.textContent = PRESET_LABELS[preset.key] || preset.display_name;
+
+      const key = document.createElement("code");
+      key.textContent = preset.key;
+
+      const values = document.createElement("span");
+      values.className = "preset-values";
+      values.textContent = `${preset.chunk_size_chars} / overlap ${preset.chunk_overlap_chars} / top ${preset.top_k}`;
+
+      heading.append(key);
+      label.append(input, heading, values);
+      this.presetList.append(label);
+    }
+
+    this.renderAlgorithms(state);
+    this.renderJob(state.latest_job);
+    this.syncActivateButton();
+    this.syncAlgorithmButton();
+  }
+
+  renderAlgorithms(state) {
+    this.algorithmList.replaceChildren();
+    for (const algorithm of state.search_algorithms) {
+      const label = document.createElement("label");
+      label.className = "algorithm-option";
+      label.dataset.active = String(algorithm.key === state.active_search_algorithm_key);
+
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = "algorithm";
+      input.value = algorithm.key;
+      input.checked = algorithm.key === this.selectedAlgorithmKey;
+      input.disabled = state.maintenance_mode;
+
+      const heading = document.createElement("span");
+      heading.className = "algorithm-option-heading";
+      heading.textContent = algorithm.display_name;
+
+      const key = document.createElement("code");
+      key.textContent = algorithm.key;
+
+      const description = document.createElement("span");
+      description.className = "algorithm-description";
+      description.textContent = algorithm.description;
+
+      heading.append(key);
+      label.append(input, heading, description);
+      this.algorithmList.append(label);
+    }
+  }
+
+  renderJob(job) {
+    this.jobStatus.removeAttribute("title");
+    this.retryButton.hidden = !job || !["failed", "completed_with_errors"].includes(job.status);
+    if (!job) {
+      this.jobStatus.textContent = "작업 이력이 없습니다.";
+      this.jobStatus.dataset.state = "empty";
+      return;
+    }
+
+    const status = JOB_STATUS_LABELS[job.status] || job.status;
+    this.jobStatus.textContent = `${status} · ${job.completed_documents}/${job.total_documents} 완료 · ${job.failed_documents} 실패`;
+    this.jobStatus.dataset.state = job.status;
+    if (job.error_message) this.jobStatus.title = job.error_message;
+  }
+
+  setBusy(isBusy) {
+    const locked = isBusy || Boolean(this.state?.maintenance_mode);
+    for (const input of this.presetList.querySelectorAll("input")) input.disabled = locked;
+    for (const input of this.algorithmList.querySelectorAll("input")) input.disabled = locked;
+    this.retryButton.disabled = locked;
+    if (isBusy) {
+      this.activateButton.disabled = true;
+    } else {
+      this.syncActivateButton();
+    }
+    if (isBusy) {
+      this.activateAlgorithmButton.disabled = true;
+    } else {
+      this.syncAlgorithmButton();
+    }
+  }
+
+  showError(message) {
+    this.error.textContent = message;
+  }
+
+  syncActivateButton() {
+    this.activateButton.disabled = !this.state
+      || this.state.maintenance_mode
+      || !this.selectedKey
+      || this.selectedKey === this.state.active_preset_key;
+  }
+
+  syncAlgorithmButton() {
+    this.activateAlgorithmButton.disabled = !this.state
+      || this.state.maintenance_mode
+      || !this.selectedAlgorithmKey
+      || this.selectedAlgorithmKey === this.state.active_search_algorithm_key;
+  }
+}

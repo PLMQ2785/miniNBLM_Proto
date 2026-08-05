@@ -1,0 +1,95 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    network_mode: host
+    command:
+      - postgres
+      - -c
+      - listen_addresses=127.0.0.1
+    environment:
+      POSTGRES_DB: rag_db
+      POSTGRES_USER: rag_user
+      POSTGRES_PASSWORD: rag_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag_user -d rag_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://rag_user:rag_password@127.0.0.1:5432/rag_db
+      UPLOAD_DIR: /app/data/uploads
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-52428800}
+      EMBEDDING_BASE_URL: http://127.0.0.1:8070
+      VLLM_BASE_URL: http://127.0.0.1:8010/v1
+      VLLM_API_KEY: EMPTY
+      VLLM_MODEL: gemma4
+      AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-168}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-admin}
+    # Native Docker bridge ports are not forwarded to Windows localhost in
+    # mirrored WSL networking. Host mode binds the API directly on WSL:8080.
+    network_mode: host
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+      embedding:
+        condition: service_started
+
+  embedding:
+    build:
+      context: .
+      dockerfile: Dockerfile.embedding
+    gpus: all
+    network_mode: host
+    environment:
+      EMBEDDING_MODEL: BAAI/bge-m3
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+
+  llm:
+    build:
+      context: .
+      dockerfile: Dockerfile.llm
+    image: mininblm-vllm:0.25.0-gemma4-unified-quant
+    gpus: all
+    network_mode: host
+    ipc: host
+    environment:
+      HF_HOME: /root/.cache/huggingface
+      # vLLM disables pinned memory on WSL by default; Model Runner V2 needs it for UVA.
+      VLLM_WSL2_ENABLE_PIN_MEMORY: "1"
+    command:
+      - /models/gemma4
+      - --served-model-name
+      - gemma4
+      - --dtype
+      - bfloat16
+      - --max-model-len
+      - ${VLLM_MAX_MODEL_LEN:-8192}
+      - --gpu-memory-utilization
+      - ${VLLM_GPU_MEMORY_UTILIZATION:-0.65}
+      - --max-num-seqs
+      - ${VLLM_MAX_NUM_SEQS:-4}
+      - --host
+      - 127.0.0.1
+      - --port
+      - "8010"
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+      - ${VLLM_MODEL_PATH:-./google/google-gemma-4-12B-it-W4A16}:/models/gemma4:ro
+    profiles:
+      - llm
+
+volumes:
+  postgres_data:
+  hf_cache:

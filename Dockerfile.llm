@@ -1,0 +1,13 @@
+FROM vllm/vllm-openai:latest
+
+USER root
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends patch \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY docker/vllm-gemma4-unified-quant.patch /tmp/vllm-gemma4-unified-quant.patch
+
+RUN patch --forward --batch \
+    /usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/gemma4_unified.py \
+    /tmp/vllm-gemma4-unified-quant.patch
