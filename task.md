@@ -1647,6 +1647,8 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
 - uv 공통/API/embedding/dev dependency group 분리 및 API 이미지에서 ML/CUDA stack 제거
 - 기본 관리자 제거, 명시적 bootstrap 관리자 생성과 최초 로그인 비밀번호 변경 강제
 - 관리자 비밀번호 변경 시 현재 세션을 제외한 기존 로그인 세션 폐기
+- 12페이지 retrieval 평가 fixture와 5 preset x 4 알고리즘 Recall@5·MRR·latency benchmark
+- 격리된 tmpfs DB와 실제 BGE-M3를 사용하는 benchmark 자동 실행 스크립트
 
 빠른 테스트는 `./scripts/test.sh -q`, 실제 모델 E2E는 네 서비스 실행 후
 `./scripts/e2e.sh -q`로 수행한다. E2E API와 DB는 운영 데이터와 분리된다.

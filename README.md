@@ -151,6 +151,14 @@ tmpfs 테스트 DB는 `55433`에 따로 기동합니다. 운영 DB와 업로드 
 않습니다. 샘플 PDF의 파싱·임베딩·검색·답변·출처와 자료 외 질문 및 의료
 상담성 질문의 안전 동작을 검증합니다.
 
+실제 BGE-M3를 사용해 5개 preset과 4개 검색 알고리즘의 Recall@5, MRR와
+retrieval 지연을 비교할 때는 다음 명령을 사용합니다. LLM은 필요하지 않으며
+전용 tmpfs DB를 사용합니다.
+
+```bash
+./scripts/benchmark-retrieval.sh
+```
+
 회원가입, 문서 업로드와 질문 요청 예시:
 
 ```bash
@@ -174,6 +182,7 @@ curl -b session.cookie \
 - [요구사항 및 데이터 설계](task.md)
 - [프런트엔드 요구사항과 구조 설계](docs/frontend-design.md)
 - [검색 preset 요구사항](docs/retrieval-presets.md)
+- [Retrieval 품질 평가 및 benchmark](docs/retrieval-evaluation.md)
 - [운영, 검증 및 문제 해결](docs/operations.md)
 
 ## 현재 MVP 범위

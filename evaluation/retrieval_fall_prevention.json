@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "name": "fall-prevention-retrieval-v1",
+  "description": "병동 낙상 예방 샘플 PDF의 페이지 단위 retrieval 평가 fixture",
+  "documents": [
+    {
+      "path": "../sample_fall_prevention.pdf",
+      "title": "sample_fall_prevention.pdf"
+    },
+    {
+      "path": "retrieval_distractor_nursing_topics.pdf",
+      "title": "retrieval_distractor_nursing_topics.pdf"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "risk-marker",
+      "question": "위험 환자를 구분하기 위해 사용하는 색상과 모양은 무엇인가?",
+      "relevant_sources": [{"document": "sample_fall_prevention.pdf", "page": 1}]
+    },
+    {
+      "case_id": "prevention-process",
+      "question": "위험도 평가 환자 보호자 교육 교대 간 인계 상태 변화 시 재평가",
+      "relevant_sources": [{"document": "sample_fall_prevention.pdf", "page": 1}]
+    },
+    {
+      "case_id": "initial-assessment",
+      "question": "입원 후 2시간 이내 최초 평가",
+      "relevant_sources": [{"document": "sample_fall_prevention.pdf", "page": 2}]
+    },
+    {
+      "case_id": "assessment-record",
+      "question": "환자 상태 변화로 다시 평가했다면 기록에 무엇을 함께 남겨야 하나?",
+      "relevant_sources": [{"document": "sample_fall_prevention.pdf", "page": 2}]
+    },
+    {
+      "case_id": "night-rounding",
+      "question": "야간 2시간 간격",
+      "relevant_sources": [{"document": "sample_fall_prevention.pdf", "page": 3}]
+    },
+    {
+      "case_id": "teach-back",
+      "question": "환자가 주의사항을 이해했는지 어떤 교육 방식으로 확인하는가?",
+      "relevant_sources": [{"document": "sample_fall_prevention.pdf", "page": 3}]
+    },
+    {
+      "case_id": "post-fall-deadline",
+      "question": "사고 발생 후 30분 이내",
+      "relevant_sources": [{"document": "sample_fall_prevention.pdf", "page": 4}]
+    },
+    {
+      "case_id": "immediate-check",
+      "question": "낙상 환자를 바로 일으키기 전에 무엇을 확인해야 하나?",
+      "relevant_sources": [{"document": "sample_fall_prevention.pdf", "page": 4}]
+    }
+  ]
+}

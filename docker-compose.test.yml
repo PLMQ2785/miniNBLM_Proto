@@ -1,13 +1,8 @@
 services:
   db-test:
     image: pgvector/pgvector:pg17
-    network_mode: host
-    command:
-      - postgres
-      - -c
-      - listen_addresses=127.0.0.1
-      - -p
-      - "55432"
+    ports:
+      - "127.0.0.1:55432:5432"
     environment:
       POSTGRES_DB: rag_test_db
       POSTGRES_USER: rag_test_user
@@ -15,7 +10,7 @@ services:
     tmpfs:
       - /var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 55432 -U rag_test_user -d rag_test_db"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U rag_test_user -d rag_test_db"]
       interval: 1s
       timeout: 3s
       retries: 30

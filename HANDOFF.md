@@ -4,7 +4,7 @@
 
 - 기준일: 2026-08-05 (Asia/Seoul)
 - 프로젝트: 간호학 수업자료 PDF 기반 RAG 학습 튜터 PoC
-- 현재 단계: 1차 MVP, 기본 안정화, API 이미지 경량화 및 관리자 bootstrap 보안 완료
+- 현재 단계: 1차 MVP, 기본 안정화, 관리자 보안 및 retrieval 품질 benchmark 완료
 - 패키지 관리: `uv`
 - 런타임: Docker Compose의 `api`, `db`, `embedding`, `llm` 4개 서비스
 - Web UI: React 없이 FastAPI가 Vanilla HTML/CSS/JavaScript 정적 파일 제공
@@ -12,7 +12,7 @@
 
 최근 검증 결과:
 
-- 빠른 단위/API 통합 테스트: `63 passed`, 실제 모델 E2E `1 skipped`
+- 빠른 단위/API 통합 테스트: `68 passed`, 실제 모델 E2E `1 skipped`
 - 실제 BGE-M3/Gemma 4 E2E: `1 passed`
 - 자료 밖 질문 E2E에서 거부 응답의 source가 빈 배열인지 확인
 - 실제 `GET /health/ready`: DB, embedding, LLM 모두 `ok`, HTTP 200
@@ -32,6 +32,8 @@
 - E2E 및 일반 테스트용 임시 컨테이너는 테스트 종료 후 정리됨
 - 기본 관리자 계정 제거, 명시적 bootstrap과 최초 로그인 비밀번호 변경 강제,
   다른 로그인 세션 폐기 검증 완료
+- 12페이지/8질문 fixture로 5 preset x 4 알고리즘 Recall@5·MRR·latency matrix 완료
+- 실측 Recall@5: Dense `0.875~1.0`, Keyword `0.125`, Substring/Hybrid `1.0`
 
 최근 작업:
 
@@ -275,7 +277,7 @@ docker compose exec api python -m app.cli.set_admin --revoke <username>
 - embedding과 LLM 호출은 test double로 대체
 - 테스트 종료 시 컨테이너 자동 정리
 - 운영 DB 오접속을 막는 `MININBLM_TEST_DATABASE=1` 안전장치 존재
-- 마지막 결과: `63 passed`, 실제 모델 E2E `1 skipped`
+- 마지막 결과: `68 passed`, 실제 모델 E2E `1 skipped`
 
 단위 테스트만 실행:
 
@@ -299,6 +301,20 @@ uv run pytest tests/unit -q
 - 1024차원 embedding 저장, 정답/source page, 자료 밖 질문, 의료 안전 응답 검증
 - 테스트 종료 시 전용 API, DB 및 업로드 데이터 자동 정리
 - 마지막 결과: `1 passed`
+
+### Retrieval 품질 benchmark
+
+```bash
+./scripts/benchmark-retrieval.sh
+```
+
+- 전용 tmpfs PostgreSQL과 API dependency 기반 runner 사용
+- 운영 BGE-M3만 공유하고 운영 DB/업로드/LLM은 사용하지 않음
+- 정답 PDF 4페이지 + 혼동 PDF 8페이지, 평가 질문 8개
+- 5 preset x Dense/Keyword/Substring/Hybrid 20개 조합
+- warmup 1회, 질문별 3회, Recall@5·Hit rate@5·MRR@5·p50/p95 측정 완료
+- 결과는 `benchmark_results/retrieval/`에 저장되며 Git에서 제외
+- Keyword의 자연어 질문 Recall 저하가 확인되어 query 구성 개선 필요
 
 PyMuPDF SWIG 타입에서 발생하는 5개의 deprecation warning은 현재 알려진
 비차단 경고다.
@@ -334,12 +350,17 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 | `docs/operations.md` | 운영, 검증, 장애 대응 |
 | `docs/frontend-design.md` | FE 요구사항과 구조 설계 |
 | `docs/retrieval-presets.md` | preset 및 검색 알고리즘 정책 |
+| `docs/retrieval-evaluation.md` | retrieval 평가 fixture, 지표와 benchmark 결과 |
 | `docker-compose.yml` | 운영 4개 서비스 |
 | `docker-compose.test.yml` | 빠른 테스트용 임시 DB |
 | `docker-compose.e2e.yml` | 실제 모델 E2E용 API/DB |
+| `docker-compose.benchmark.yml` | retrieval benchmark용 격리 DB/runner |
 | `run.sh`, `down.sh` | 전체 서비스 시작/종료 |
 | `scripts/test.sh` | 단위/API 통합 테스트 진입점 |
 | `scripts/e2e.sh` | 실제 모델 E2E 진입점 |
+| `scripts/benchmark-retrieval.sh` | preset/알고리즘 품질·지연 benchmark 진입점 |
+| `evaluation/` | 버전 관리되는 질문/source fixture와 혼동 문서 |
+| `app/evaluation/` | fixture 검증, metric 계산과 benchmark runner |
 | `app/main.py` | FastAPI 조립 및 lifespan |
 | `app/api/` | HTTP API router |
 | `app/services/` | 문서 처리, 검색, 답변, 복구 orchestration |
@@ -382,7 +403,7 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 
 - Redis + RQ/Celery worker로 문서 처리와 재인덱싱 분리
 - MinIO/S3 object storage 전환
-- 검색 품질 평가 fixture와 알고리즘/preset별 recall·latency benchmark
+- 실제 간호학 강의자료로 평가 fixture 확대 및 Keyword FTS query 구성 개선
 - 간호학 용어·약어 정규화 및 reranker 비교
 - OCR과 표/그림/도표 Vision caption
 - 답변 streaming, 문서 버전 관리, 이메일 인증, 학습 피드백

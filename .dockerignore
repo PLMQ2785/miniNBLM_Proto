@@ -9,6 +9,7 @@ __pycache__/
 .venv/
 venv/
 data/
+benchmark_results/
 *.egg-info/
 google/
 quant/

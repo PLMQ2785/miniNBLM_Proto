@@ -397,3 +397,18 @@ PostgreSQL, 관리자 계정, 업로드 경로는 다음과 같이 격리되고 
 page 1 출처 검색, 자료에 없는 질문 제한, 실제 환자 산소 투여량 질문에 대한
 안전 안내, 테스트 문서 삭제입니다. 생성 모델 결과는 문장 전체가 아니라 필수
 용어, 출처 page, 금지된 구체 처치 지시 여부로 판정합니다.
+
+### Retrieval 품질 benchmark
+
+LLM 생성과 분리해 검색 품질과 지연만 비교할 때 실행합니다.
+
+```bash
+./scripts/benchmark-retrieval.sh
+```
+
+`docker-compose.benchmark.yml`은 tmpfs PostgreSQL과 API dependency 기반 runner를
+같은 Docker network에서 실행한다. 운영 embedding만 공유하며 운영 DB, 업로드
+파일과 LLM은 사용하지 않는다. 12페이지 평가 corpus를 5개 preset으로 각각
+재인덱싱하고 4개 알고리즘의 Recall@5, Hit rate@5, MRR@5, p50/p95 retrieval
+지연과 indexing 시간을 JSON/Markdown으로 저장한다. 자세한 fixture와 옵션은
+`docs/retrieval-evaluation.md`를 참조한다.

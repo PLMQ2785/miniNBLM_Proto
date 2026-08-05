@@ -1,0 +1,40 @@
+services:
+  db-benchmark:
+    image: pgvector/pgvector:pg17
+    network_mode: host
+    command:
+      - postgres
+      - -c
+      - listen_addresses=127.0.0.1
+      - -p
+      - "55434"
+    environment:
+      POSTGRES_DB: rag_benchmark_db
+      POSTGRES_USER: rag_benchmark_user
+      POSTGRES_PASSWORD: rag_benchmark_password
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 55434 -U rag_benchmark_user -d rag_benchmark_db"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+  benchmark:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    network_mode: host
+    user: "${BENCHMARK_UID:-1000}:${BENCHMARK_GID:-1000}"
+    environment:
+      DATABASE_URL: postgresql+psycopg://rag_benchmark_user:rag_benchmark_password@127.0.0.1:55434/rag_benchmark_db
+      EMBEDDING_BASE_URL: http://127.0.0.1:8070
+    volumes:
+      - ./evaluation:/app/evaluation:ro
+      - ./sample_fall_prevention.pdf:/app/sample_fall_prevention.pdf:ro
+      - ./benchmark_results:/app/benchmark_results
+    depends_on:
+      db-benchmark:
+        condition: service_healthy
+    profiles:
+      - runner
