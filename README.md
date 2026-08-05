@@ -70,6 +70,8 @@ docker compose exec api python -m app.cli.set_admin <username>
 ## 로컬 API 개발
 
 DB, embedding, LLM은 컨테이너로 실행하고 API만 호스트에서 구동할 수 있습니다.
+기본 `dev` dependency group은 API group과 pytest를 포함하며 Torch/CUDA stack은
+설치하지 않습니다.
 
 ```bash
 cp .env.example .env
@@ -78,6 +80,23 @@ docker compose --profile llm up -d llm
 uv sync
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --port 8080
+```
+
+`pyproject.toml`의 dependency group은 다음처럼 분리되어 있습니다.
+
+| Group | 용도 |
+|---|---|
+| `common` | FastAPI, Pydantic settings, Uvicorn |
+| `api` | DB, PDF, 인증, embedding/LLM HTTP client |
+| `embedding` | Sentence Transformers, Torch/CUDA |
+| `dev` | API group과 pytest를 포함한 기본 로컬 개발 환경 |
+
+Dockerfile은 API에 `uv sync --frozen --only-group api`, embedding에
+`uv sync --frozen --only-group embedding`을 사용합니다. 빌드 후 그룹 분리를
+다시 확인하려면 다음 명령을 실행합니다.
+
+```bash
+./scripts/check-image-dependencies.sh
 ```
 
 ## 기본 점검

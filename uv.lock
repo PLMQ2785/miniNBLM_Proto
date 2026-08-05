@@ -390,7 +390,9 @@ wheels = [
 name = "mininblm"
 version = "0.1.0"
 source = { virtual = "." }
-dependencies = [
+
+[package.dev-dependencies]
+api = [
     { name = "alembic" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -401,19 +403,41 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pymupdf" },
     { name = "python-multipart" },
-    { name = "sentence-transformers" },
     { name = "sqlalchemy" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+common = [
+    { name = "fastapi" },
+    { name = "pydantic-settings" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+dev = [
+    { name = "alembic" },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "openai" },
+    { name = "pgvector" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "pwdlib", extra = ["argon2"] },
+    { name = "pydantic-settings" },
+    { name = "pymupdf" },
+    { name = "pytest" },
+    { name = "python-multipart" },
+    { name = "sqlalchemy" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+embedding = [
+    { name = "fastapi" },
+    { name = "pydantic-settings" },
+    { name = "sentence-transformers" },
     { name = "torch" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
 [package.metadata]
-requires-dist = [
+
+[package.metadata.requires-dev]
+api = [
     { name = "alembic", specifier = "==1.16.2" },
     { name = "fastapi", specifier = "==0.115.14" },
     { name = "httpx", specifier = "==0.28.1" },
@@ -424,14 +448,36 @@ requires-dist = [
     { name = "pydantic-settings", specifier = "==2.10.1" },
     { name = "pymupdf", specifier = "==1.26.3" },
     { name = "python-multipart", specifier = "==0.0.20" },
-    { name = "sentence-transformers", specifier = "==4.1.0" },
     { name = "sqlalchemy", specifier = "==2.0.41" },
+    { name = "uvicorn", extras = ["standard"], specifier = "==0.35.0" },
+]
+common = [
+    { name = "fastapi", specifier = "==0.115.14" },
+    { name = "pydantic-settings", specifier = "==2.10.1" },
+    { name = "uvicorn", extras = ["standard"], specifier = "==0.35.0" },
+]
+dev = [
+    { name = "alembic", specifier = "==1.16.2" },
+    { name = "fastapi", specifier = "==0.115.14" },
+    { name = "httpx", specifier = "==0.28.1" },
+    { name = "openai", specifier = "==1.93.0" },
+    { name = "pgvector", specifier = "==0.4.1" },
+    { name = "psycopg", extras = ["binary"], specifier = "==3.2.9" },
+    { name = "pwdlib", extras = ["argon2"], specifier = ">=0.3.0" },
+    { name = "pydantic-settings", specifier = "==2.10.1" },
+    { name = "pymupdf", specifier = "==1.26.3" },
+    { name = "pytest", specifier = "==8.4.1" },
+    { name = "python-multipart", specifier = "==0.0.20" },
+    { name = "sqlalchemy", specifier = "==2.0.41" },
+    { name = "uvicorn", extras = ["standard"], specifier = "==0.35.0" },
+]
+embedding = [
+    { name = "fastapi", specifier = "==0.115.14" },
+    { name = "pydantic-settings", specifier = "==2.10.1" },
+    { name = "sentence-transformers", specifier = "==4.1.0" },
     { name = "torch", specifier = "==2.7.1" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.35.0" },
 ]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = "==8.4.1" }]
 
 [[package]]
 name = "mpmath"

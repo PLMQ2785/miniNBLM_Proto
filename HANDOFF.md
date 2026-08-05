@@ -4,7 +4,7 @@
 
 - 기준일: 2026-08-05 (Asia/Seoul)
 - 프로젝트: 간호학 수업자료 PDF 기반 RAG 학습 튜터 PoC
-- 현재 단계: 1차 MVP, 작업공간 대화 이력, 다중 PDF 업로드 및 기본 안정화 완료
+- 현재 단계: 1차 MVP, 기본 안정화 및 API Docker 이미지 경량화 완료
 - 패키지 관리: `uv`
 - 런타임: Docker Compose의 `api`, `db`, `embedding`, `llm` 4개 서비스
 - Web UI: React 없이 FastAPI가 Vanilla HTML/CSS/JavaScript 정적 파일 제공
@@ -16,6 +16,9 @@
 - 실제 BGE-M3/Gemma 4 E2E: `1 passed`
 - 자료 밖 질문 E2E에서 거부 응답의 source가 빈 배열인지 확인
 - 실제 `GET /health/ready`: DB, embedding, LLM 모두 `ok`, HTTP 200
+- API 이미지: `6,555,721,208` bytes에서 `206,676,250` bytes로 약 96.8% 감소
+- API 이미지의 Torch/Sentence Transformers/Transformers 제거 및 embedding 이미지의
+  Torch/Sentence Transformers 유지 확인
 - Playwright FE 사용성 smoke: 문서 refresh 실패/복구, 질문 실패/재시도,
   답변·오류 focus, 390px 모바일 overflow 검증 통과
 - 최신 Playwright 확인: 로그인 후 문서 선택 없이 전체 작업공간 질문 가능,
@@ -350,25 +353,12 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 - 답변 streaming이 없다.
 - 이메일 확인, 비밀번호 재설정, 계정 잠금, rate limit이 없다.
 - 기본 HTTP/LAN 설정은 `AUTH_COOKIE_SECURE=false`다.
-- API 이미지가 필요 없는 `torch`, `sentence-transformers`, CUDA 의존성을 포함해
-  첫 빌드 및 image export가 매우 크다.
 - 업로드 파일 자체는 50MB로 제한하지만 reverse proxy 수준의 전체 request body
   제한은 별도로 구성하지 않았다.
 
 ## 11. 남은 작업 권장 순서
 
-### 1순위: API Docker 의존성 경량화
-
-- 공통/API/embedding 의존성 group을 `pyproject.toml`에서 분리
-- API image에서 `torch`, `sentence-transformers`, CUDA package 제거
-- lockfile 재현성을 유지하면서 API와 embedding image가 필요한 group만 설치
-- build, health/readiness, 단위·통합·실제 모델 E2E 재검증
-
-완료 기준: API가 embedding HTTP client만 사용하고, API image와 최초 build 시간이
-유의미하게 줄어들어야 한다. 현재는 정적 파일만 바꿔도 CUDA/PyTorch layer 때문에
-API image export가 오래 걸린다.
-
-### 2순위: 운영 전 필수 보강
+### 1순위: 운영 전 필수 보강
 
 - 최초 로그인 시 기본 관리자 `admin/admin` 비밀번호 변경 강제 또는 bootstrap
   환경변수 기반 관리자 생성으로 교체
@@ -378,7 +368,7 @@ API image export가 오래 걸린다.
 - 구조화 로그, request ID, 기본 오류/지연 metric 추가
 - reverse proxy request body 제한을 애플리케이션의 50MB 제한과 일치시킴
 
-### 3순위: 처리 안정성과 RAG 품질 확장
+### 2순위: 처리 안정성과 RAG 품질 확장
 
 - Redis + RQ/Celery worker로 문서 처리와 재인덱싱 분리
 - MinIO/S3 object storage 전환

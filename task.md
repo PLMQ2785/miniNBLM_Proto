@@ -1644,6 +1644,7 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
 - 로그인 사용자별 여러 작업공간 대화 세션 저장·조회·삭제
 - 최근 대화 자동 복원, 메시지 pagination과 제한된 이전 문맥 기반 후속 질문
 - 삭제된 PDF의 과거 source label 보존 및 원본 열기 비활성화
+- uv 공통/API/embedding/dev dependency group 분리 및 API 이미지에서 ML/CUDA stack 제거
 
 빠른 테스트는 `./scripts/test.sh -q`, 실제 모델 E2E는 네 서비스 실행 후
 `./scripts/e2e.sh -q`로 수행한다. E2E API와 DB는 운영 데이터와 분리된다.

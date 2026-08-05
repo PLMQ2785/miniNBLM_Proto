@@ -302,11 +302,14 @@ KV cache is needed, which is larger than the available KV cache memory
 - 프리셋 재인덱싱은 DB 작업 상태를 이용해 API 재시작 시 처음부터 복구하지만 별도 worker/queue가 없어 API process 수명과 자원을 공유합니다.
 - 텍스트 기반 PDF만 처리하며 scanned PDF용 OCR은 없습니다.
 - 답변은 streaming하지 않습니다.
-- API Docker 이미지가 외부 embedding 서비스에서는 사용하지 않는 `torch`와 `sentence-transformers`까지 포함해 첫 빌드가 큽니다. 의존성 그룹 분리가 필요합니다.
 
 ## 9. 완료된 검증
 
 - 네 컨테이너 동시 실행
+- uv `common`/`api`/`embedding`/`dev` dependency group 분리
+- API 이미지에서 Torch, Sentence Transformers, Transformers 및 CUDA wheel 제거
+- API 이미지 크기 `6,555,721,208` bytes에서 `206,676,250` bytes로 감소
+- embedding 이미지의 Torch/Sentence Transformers 및 GPU embedding 구동 유지
 - BGE-M3 health 및 embedding 생성
 - Gemma 4 12B W4A16 vLLM 모델 적재와 completion
 - PDF 업로드, text 추출, chunk embedding과 pgvector 저장
