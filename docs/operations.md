@@ -135,8 +135,8 @@ docker compose exec api python -m app.cli.set_admin --revoke <username>
 version을 활성화합니다. 작업 중에는 문서 업로드·삭제와 질문을 HTTP 503으로
 차단하지만 문서 목록과 상태 조회는 허용합니다. 사용자, 세션, 원본 PDF는
 보존됩니다. 문서에 직접 연결된 기존 대화는 재인덱싱 시 삭제되지만, 작업공간
-대화는 특정 문서에 귀속되지 않습니다. 대화 이력 조회를 구현할 때 삭제되거나
-재인덱싱된 chunk 출처를 정리하는 정책이 추가로 필요합니다.
+대화는 특정 문서에 귀속되지 않습니다. 재인덱싱 후에도 대화와 문서/page source
+표시는 유지되며, 삭제된 문서의 과거 source는 열 수 없는 상태로 반환됩니다.
 API가 작업 중 재시작되면 `pending` 또는 `running` 작업을 감지해 진행률을
 초기화하고 모든 문서를 처음부터 다시 처리합니다.
 
@@ -173,17 +173,46 @@ PyMuPDF가 열 수 없는 손상 파일 또는 암호화된 파일은 HTTP 400�
 
 ```json
 {
+  "session": {
+    "session_id": 12,
+    "title": "업로드한 자료의 핵심 내용을 설명해 주세요.",
+    "created_at": "2026-08-05T10:00:00Z",
+    "updated_at": "2026-08-05T10:00:00Z"
+  },
   "answer": "답변 내용",
   "sources": [
     {
       "document_id": 1,
       "document_title": "기본간호학.pdf",
       "page": 1,
-      "chunk_id": 1
+      "chunk_id": 1,
+      "available": true
     }
   ]
 }
 ```
+
+첫 질문은 `session_id`를 생략하며, 응답의 `session.session_id`를 후속 요청에
+보내면 같은 대화에 메시지가 추가된다.
+
+```json
+{
+  "session_id": 12,
+  "question": "앞에서 설명한 내용의 예시도 알려주세요."
+}
+```
+
+세션 API:
+
+| Method | Path | 설명 |
+|---|---|---|
+| `GET` | `/chat/sessions` | 최근 활동순 대화 목록 |
+| `GET` | `/chat/sessions/{id}` | 메시지와 source 복원, `limit`/`before_id` 페이지 조회 |
+| `DELETE` | `/chat/sessions/{id}` | 현재 사용자 소유 대화 삭제 |
+
+후속 질문 생성에는 같은 세션의 최근 8개 메시지를 최대 8,000자까지 포함한다.
+삭제된 PDF를 참조하는 과거 source는 문서명을 보존하지만 `available=false`로
+반환되어 원본 열기를 차단한다.
 
 ## 5. 상태 확인
 
@@ -261,7 +290,9 @@ KV cache is needed, which is larger than the available KV cache memory
 
 - 이메일 확인, 비밀번호 재설정, 계정 잠금과 가입 rate limit이 없습니다.
 - HTTP로 실행하는 로컬/LAN 기본 설정에서는 `AUTH_COOKIE_SECURE=false`입니다. 외부 운영 환경은 HTTPS와 `true` 설정이 필요합니다.
-- 브라우저에 보이는 대화는 새로고침하면 사라집니다. 백엔드는 메시지를 저장하지만 조회 API는 아직 없습니다.
+- 대화 생성 문맥은 최근 8개 메시지, 최대 8,000자로 제한됩니다. 검색 query는
+  현재 질문만 사용하므로 대명사 위주의 후속 질문은 구체적인 용어를 포함한
+  질문보다 검색 recall이 낮을 수 있습니다.
 - 질문은 로그인 사용자의 모든 `indexed` 문서를 검색하며, 처리 중이거나 실패한
   문서는 검색 대상에서 제외됩니다.
 - 문서 처리는 API process의 `BackgroundTasks`를 사용하며 재시작 시 처음부터 복구하지만 별도 worker/queue가 없어 API process 수명과 자원을 공유합니다.
@@ -314,7 +345,7 @@ KV cache is needed, which is larger than the available KV cache memory
 클라이언트는 테스트 대역으로 교체하므로 GPU 서비스도 필요하지 않습니다.
 
 현재 자동화 범위는 프리셋 유효성·변경 영향, 인증 입력, RRF 병합, 회원가입과
-세션, 사용자별 문서 격리, PDF 업로드·삭제 제약, 대화 저장, 관리자 권한과
+세션, 사용자별 문서 격리, PDF 업로드·삭제 제약, 대화 저장·복원·소유권·페이지 조회, 관리자 권한과
 프리셋 전환, 네 검색 알고리즘의 실제 PostgreSQL 질의, 문서 및 재인덱싱 복구를
 포함합니다. 실제 PDF 파싱·embedding·LLM 생성과 브라우저 레이아웃은 별도의
 서비스 및 UI smoke 검증 범위입니다.

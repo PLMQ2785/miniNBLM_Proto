@@ -83,11 +83,28 @@ export class ApiClient {
     return this.request(`/documents/${documentId}`, { method: "DELETE" });
   }
 
-  async sendQuestion(question) {
+  async listChatSessions() {
+    const response = await this.request("/chat/sessions");
+    return response.sessions;
+  }
+
+  async getChatSession(sessionId, { limit = 100, beforeId = null } = {}) {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (beforeId !== null) params.set("before_id", String(beforeId));
+    return this.request(`/chat/sessions/${sessionId}?${params}`);
+  }
+
+  async deleteChatSession(sessionId) {
+    return this.request(`/chat/sessions/${sessionId}`, { method: "DELETE" });
+  }
+
+  async sendQuestion(question, sessionId = null) {
+    const payload = { question };
+    if (sessionId !== null) payload.session_id = sessionId;
     return this.request("/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify(payload),
     });
   }
 
@@ -114,7 +131,7 @@ export class ApiClient {
       if (response.status === 401 && !path.startsWith("/auth/")) {
         window.dispatchEvent(new CustomEvent("authrequired"));
       }
-      throw new ApiError(this.errorMessage(response.status, detail), {
+      throw new ApiError(this.errorMessage(response.status, detail, path), {
         status: response.status,
         detail,
       });
@@ -122,10 +139,11 @@ export class ApiClient {
     return payload;
   }
 
-  errorMessage(status, detail) {
+  errorMessage(status, detail, path = "") {
     if (status === 400) return detail || "요청한 파일을 확인해 주세요.";
     if (status === 401) return "사용자명 또는 비밀번호를 확인해 주세요.";
     if (status === 403) return "이 작업을 수행할 권한이 없습니다.";
+    if (status === 404 && path.startsWith("/chat/")) return "요청한 대화를 찾을 수 없습니다.";
     if (status === 404) return "요청한 문서를 찾을 수 없습니다.";
     if (status === 409) return "문서 처리가 아직 완료되지 않았습니다.";
     if (status === 422) return "입력 내용을 확인해 주세요.";

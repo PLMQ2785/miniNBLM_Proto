@@ -12,13 +12,15 @@
 
 최근 검증 결과:
 
-- 빠른 단위/API 통합 테스트: `44 passed`, 실제 모델 E2E `1 skipped`
+- 빠른 단위/API 통합 테스트: `48 passed`, 실제 모델 E2E `1 skipped`
 - 실제 BGE-M3/Gemma 4 E2E: `1 passed`
 - 실제 `GET /health/ready`: DB, embedding, LLM 모두 `ok`, HTTP 200
 - Playwright FE 사용성 smoke: 문서 refresh 실패/복구, 질문 실패/재시도,
   답변·오류 focus, 390px 모바일 overflow 검증 통과
 - 최신 Playwright 확인: 로그인 후 문서 선택 없이 전체 작업공간 질문 가능,
   source 문서명 표시, `전체 문서 검색` 제목과 질문 입력 placeholder 제거 확인
+- 대화 세션 Playwright 확인: 생성, 후속 질문 session 재사용, 새로고침 자동
+  복원, 새 대화, 전환·삭제와 390px 반응형 배치 통과
 - 최신 정적 검사: 전체 Vanilla JS `node --check`, `git diff --check` 통과
 - E2E 및 일반 테스트용 임시 컨테이너는 테스트 종료 후 정리됨
 
@@ -108,8 +110,12 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 
 - 로그인 사용자의 모든 `indexed` 문서에 대한 작업공간 단위 질문
 - Dense/Keyword/Substring/Hybrid 쿼리에서 `documents.owner_id` 직접 JOIN 검증
-- `/chat` 요청은 `question`만 받고 문서 선택값을 사용하지 않음
+- `/chat` 요청은 `question`과 선택적 `session_id`만 받고 문서 선택값을 사용하지 않음
 - 작업공간 chat session은 특정 문서에 귀속하지 않고 `document_id=NULL`로 저장
+- 사용자별 여러 대화 세션, 최근 활동순 목록, 메시지 pagination과 삭제
+- 로그인·새로고침 시 최근 대화 자동 복원
+- 후속 질문 생성에 최근 8개 메시지를 최대 8,000자까지 전달
+- 삭제된 PDF의 과거 source 제목은 보존하고 원본 접근은 비활성화
 - Gemma 4/vLLM 답변 생성
 - source document ID/title/page/chunk 반환
 - PDF source page 열기
@@ -152,7 +158,8 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 - 회원가입 및 로그인 화면
 - PDF 업로드, 상태 polling 및 삭제 관리 목록
 - indexed 문서가 하나 이상이면 선택 없이 활성화되는 작업공간 질문창
-- 브라우저 메모리에서 유지되는 단일 작업공간 대화
+- DB에 저장되는 여러 작업공간 대화와 최근 대화 자동 복원
+- 대화 선택, 새 대화, 삭제와 이전 메시지 페이지 불러오기
 - 질문과 답변, source page 선택
 - 답변 출처를 `문서명 · 페이지`로 표시하고 해당 문서 PDF panel 제목에 연동
 - 모바일 문서 drawer 및 PDF source panel
@@ -178,7 +185,10 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 | `GET` | `/documents/{id}` | 문서 처리 상태 |
 | `GET` | `/documents/{id}/file` | 원본 PDF inline 응답 |
 | `DELETE` | `/documents/{id}` | 문서 및 관련 데이터 삭제 |
-| `POST` | `/chat` | 현재 사용자의 전체 indexed 문서 RAG 질문 |
+| `POST` | `/chat` | 전체 indexed 문서 질문 및 세션 생성/후속 메시지 |
+| `GET` | `/chat/sessions` | 현재 사용자의 최근 대화 목록 |
+| `GET` | `/chat/sessions/{id}` | 대화 메시지/source 페이지 조회 |
+| `DELETE` | `/chat/sessions/{id}` | 현재 사용자 소유 대화 삭제 |
 | `GET` | `/admin/retrieval` | 관리자 검색 설정 상태 |
 | `POST` | `/admin/retrieval/presets/{key}/activate` | preset 변경/재인덱싱 |
 | `POST` | `/admin/retrieval/algorithms/{key}/activate` | 알고리즘 즉시 변경 |
@@ -242,7 +252,7 @@ docker compose exec api python -m app.cli.set_admin --revoke <username>
 - embedding과 LLM 호출은 test double로 대체
 - 테스트 종료 시 컨테이너 자동 정리
 - 운영 DB 오접속을 막는 `MININBLM_TEST_DATABASE=1` 안전장치 존재
-- 마지막 결과: `44 passed`, 실제 모델 E2E `1 skipped`
+- 마지막 결과: `48 passed`, 실제 모델 E2E `1 skipped`
 
 단위 테스트만 실행:
 
@@ -278,6 +288,7 @@ Alembic migration:
 2. `0002_user_auth_and_ownership.py`
 3. `0003_retrieval_presets.py`
 4. `0004_search_algorithms.py`
+5. `0005_chat_session_history.py`
 
 영속 데이터:
 
@@ -320,10 +331,9 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 
 ## 10. 알려진 제한사항
 
-- 브라우저 대화는 새로고침 시 사라진다. DB에는 저장되지만 조회 API가 없다.
-- 현재 `/chat` 호출마다 `document_id=NULL`인 새 `chat_session`을 만들기 때문에
-  화면의 연속 대화와 DB session 경계가 일치하지 않는다. 이전 대화 내용도 다음
-  LLM 요청의 context로 전달되지 않아 답변은 질문별 단발성이다.
+- 이전 대화 생성 문맥은 최근 8개 메시지, 최대 8,000자로 제한된다.
+- retrieval query는 현재 질문만 사용하므로 대명사 위주의 후속 질문에는 별도
+  query rewriting이 적용되지 않는다.
 - 문서 처리와 재인덱싱이 API process의 background task를 사용한다.
 - 별도 worker/영속 queue가 없어 API process 수명과 자원을 공유한다.
 - 텍스트 기반 PDF만 지원하며 scanned PDF OCR은 없다.
@@ -338,19 +348,7 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 
 ## 11. 다음 작업 권장 순서
 
-### 1순위: 대화 세션 및 이력 완성
-
-- 작업공간 대화의 session 정책 결정: 계정당 현재 session 하나 또는 여러 대화 목록
-- 기존 session에 후속 질문을 추가할 수 있도록 `/chat` 계약 확장
-- session/message 목록·상세 조회 및 새 대화 시작 API 추가
-- 새로고침과 재로그인 후 대화 및 source 복원
-- 필요한 범위의 이전 메시지를 LLM context에 포함
-- 사용자별 session 소유권, 다른 사용자 접근 404, pagination 통합 테스트
-
-완료 기준: 로그인 사용자가 대화를 이어서 질문할 수 있고, 새로고침 후에도 같은
-대화가 복원되며 다른 계정에서는 접근할 수 없어야 한다.
-
-### 2순위: API Docker 의존성 경량화
+### 1순위: API Docker 의존성 경량화
 
 - 공통/API/embedding 의존성 group을 `pyproject.toml`에서 분리
 - API image에서 `torch`, `sentence-transformers`, CUDA package 제거
@@ -361,7 +359,7 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 유의미하게 줄어들어야 한다. 현재는 정적 파일만 바꿔도 CUDA/PyTorch layer 때문에
 API image export가 오래 걸린다.
 
-### 3순위: 운영 전 필수 보강
+### 2순위: 운영 전 필수 보강
 
 - 최초 로그인 시 기본 관리자 `admin/admin` 비밀번호 변경 강제 또는 bootstrap
   환경변수 기반 관리자 생성으로 교체
@@ -371,7 +369,7 @@ API image export가 오래 걸린다.
 - 구조화 로그, request ID, 기본 오류/지연 metric 추가
 - reverse proxy request body 제한을 애플리케이션의 50MB 제한과 일치시킴
 
-### 4순위: 처리 안정성과 RAG 품질 확장
+### 3순위: 처리 안정성과 RAG 품질 확장
 
 - Redis + RQ/Celery worker로 문서 처리와 재인덱싱 분리
 - MinIO/S3 object storage 전환
@@ -382,10 +380,10 @@ API image export가 오래 걸린다.
 
 ## 12. Git 및 작업공간 주의사항
 
-Git baseline은 `ceb4d37 V0.3.0`이며 현재 최신 commit은
-`13c88fb Simplify workspace chat labels`이다. 통합 readiness 이후 작업공간
-전체 검색, source 문서명, 문서 선택 제거 및 UI 문구 정리가 순서대로 반영되어
-있다. 이 문서 갱신 직전 작업 트리는 clean이다. 최초 commit에 실수로 포함된
+Git baseline은 `ceb4d37 V0.3.0`이다. 이후 통합 readiness, 작업공간 전체 검색,
+source 문서명, 문서 선택 제거, UI 문구 정리와 대화 세션 이력 기능이 순서대로
+반영되었다. 정확한 최신 commit은 `git log -1 --oneline`으로 확인한다. 최초
+commit에 실수로 포함된
 `id_container` RSA private key는 commit amend, reflog 만료 및 unreachable object
 정리를 통해 작업공간과 전체 로컬 이력에서 제거했다. Remote는 아직 없다.
 

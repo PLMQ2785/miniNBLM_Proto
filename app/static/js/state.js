@@ -1,14 +1,30 @@
 export function createInitialState() {
   return {
     documents: [],
+    chatSessions: [],
+    activeSessionId: null,
     conversation: [],
     selectedSource: null,
     isLoadingDocuments: true,
+    isLoadingSessions: true,
+    isLoadingConversation: false,
+    isLoadingOlderMessages: false,
+    hasOlderMessages: false,
+    deletingSessionId: null,
     documentLoadError: null,
     isUploading: false,
     deletingDocumentId: null,
     isGenerating: false,
   };
+}
+
+export function upsertChatSession(sessions, incoming) {
+  const next = sessions.filter((session) => session.session_id !== incoming.session_id);
+  next.push(incoming);
+  return next.sort((a, b) => {
+    const dateDifference = new Date(b.updated_at) - new Date(a.updated_at);
+    return dateDifference || b.session_id - a.session_id;
+  });
 }
 
 export function upsertDocument(documents, incoming) {

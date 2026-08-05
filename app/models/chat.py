@@ -10,13 +10,17 @@ from app.database import Base
 
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
-    __table_args__ = (Index("chat_sessions_owner_idx", "owner_id", "created_at"),)
+    __table_args__ = (
+        Index("chat_sessions_owner_idx", "owner_id", "created_at"),
+        Index("chat_sessions_owner_updated_idx", "owner_id", "updated_at"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     owner_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     document_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("documents.id"))
     title: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     owner = relationship("User", back_populates="chat_sessions")
     document = relationship("Document", back_populates="chat_sessions")

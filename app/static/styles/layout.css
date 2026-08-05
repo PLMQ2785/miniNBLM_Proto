@@ -350,6 +350,10 @@
   min-width: 0;
 }
 
+.chat-title-block {
+  flex: 1 1 auto;
+}
+
 .panel-eyebrow {
   margin: 0;
   color: var(--text-muted);
@@ -483,6 +487,8 @@
 
   .chat-header {
     min-height: 66px;
+    align-items: stretch;
+    flex-direction: column;
     padding: 10px 12px;
   }
 

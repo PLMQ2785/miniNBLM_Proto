@@ -10,8 +10,8 @@
   호출하지 않는다.
 - 문서 처리 상태는 2초 polling으로 확인하고 `indexed` 이후에만 질문을
   허용한다.
-- 대화 내용은 MVP에서 브라우저 메모리에만 유지하며, 현재 DB의 대화 저장
-  구조를 조회하는 기능은 이후 범위로 둔다.
+- 사용자별 여러 대화 세션을 DB에 저장하고 가장 최근 대화를 자동 복원한다.
+- 작업공간 헤더에서 새 대화, 이전 대화 전환과 현재 대화 삭제를 제공한다.
 - 답변 출처는 원본 PDF의 해당 페이지를 브라우저 내장 PDF viewer로 연다.
 - 백엔드에 `GET /documents/{document_id}/file`을 추가해 원본 PDF를 inline으로 제공한다.
 - 모델 출력은 HTML로 해석하지 않고 `textContent`와 줄바꿈 보존 스타일로
@@ -34,9 +34,8 @@ a medical consultation or clinical decision interface.
 - The backend searches every indexed document owned by the signed-in account.
 - The frontend enables workspace chat when at least one indexed document exists;
   document rows never define retrieval scope.
-- Chat history is retained in browser memory for the current page session only.
-- The backend continues to persist chat messages, but history retrieval is not
-  part of this frontend iteration.
+- Chat sessions and messages are persisted per account and the most recently
+  active session is restored after sign-in or refresh.
 - PDF viewing uses the browser's built-in PDF viewer.
 - The application and API use the same origin, so production CORS configuration
   is unnecessary.
@@ -49,7 +48,7 @@ a medical consultation or clinical decision interface.
 
 ### 3.0 Implementation Status
 
-2026-08-04 기준으로 MVP Web UI, 정적 파일 serving, PDF 원문 endpoint,
+2026-08-05 기준으로 MVP Web UI, 정적 파일 serving, PDF 원문 endpoint,
 반응형 drawer와 공개 회원가입·로그인·로그아웃 화면을 구현했다. 관리자 전용
 청킹 프리셋, 검색 알고리즘 선택 화면과 재인덱싱 상태 polling도 구현했다. Playwright로 인증 전
 작업공간 차단, 회원가입, 로그인, 로그아웃, 관리자 프리셋 전환과 모바일
@@ -62,8 +61,10 @@ focus를 이동하지 않는다.
 
 질문 범위를 선택 문서에서 로그인 사용자의 전체 indexed 문서로 전환했다.
 문서 목록은 업로드·처리 상태·삭제만 담당하고, indexed 문서가 하나 이상이면
-작업공간 질문창을 활성화한다. 브라우저 메모리의 대화도 문서별 Map이 아닌
-작업공간 대화 하나로 관리한다.
+작업공간 질문창을 활성화한다. 화면 상태는 문서별 Map 대신 현재 선택한 작업공간
+세션 하나를 표시한다. 여러 세션의 목록·상세·삭제 API와
+최근 대화 자동 복원, 새 대화, 전환, 삭제 UI를 구현했다. 삭제된 PDF의 과거
+source label은 유지하되 원본 열기 동작은 비활성화한다.
 
 ### 3.1 MVP Scope
 
@@ -80,11 +81,12 @@ focus를 이동하지 않는다.
 11. Delete an indexed or failed document after explicit confirmation.
 12. Register, sign in, sign out, and show only the authenticated user's workspace.
 13. Allow administrators to activate one of five retrieval presets and monitor reindexing.
+14. Restore the latest persisted conversation after sign-in or refresh.
+15. Start, switch, page through, and delete user-owned chat sessions.
 
 ### 3.2 Out of Scope
 
 - Email verification and password recovery
-- Persisted chat history navigation
 - Document version management
 - Token streaming
 - OCR or image-based page analysis
@@ -114,6 +116,11 @@ focus를 이동하지 않는다.
 | FR-15 | Register and sign in | A valid account receives an `HttpOnly` session cookie and enters its workspace. |
 | FR-16 | Isolate workspace | Documents, PDF sources, questions, and deletion are limited to the signed-in owner. |
 | FR-17 | Sign out | The server session is revoked and the authentication view replaces the workspace. |
+| FR-18 | Restore chat | The most recently active user-owned session is restored on workspace entry. |
+| FR-19 | Continue chat | Follow-up questions reuse the selected session and include bounded recent context. |
+| FR-20 | Navigate sessions | The conversation select control switches between persisted sessions. |
+| FR-21 | Start and delete chat | Users can start a blank conversation and delete the selected session after confirmation. |
+| FR-22 | Handle deleted sources | Historical labels remain visible while unavailable PDF actions are disabled. |
 
 ## 5. Non-functional Requirements
 
@@ -453,6 +460,9 @@ Existing endpoints used as-is:
 | `GET` | `/documents/{id}` | Indexing status polling |
 | `DELETE` | `/documents/{id}` | Delete a terminal-state document and related data |
 | `POST` | `/chat` | Retrieval and answer generation |
+| `GET` | `/chat/sessions` | Recent user-owned conversation list |
+| `GET` | `/chat/sessions/{id}` | Paginated messages and stored sources |
+| `DELETE` | `/chat/sessions/{id}` | Delete a user-owned conversation |
 
 Required endpoint:
 
@@ -507,9 +517,10 @@ Recommended backend hardening before UI release:
 - Implement management list, upload, deletion, and polling.
 - Handle processing and failed documents.
 
-### Phase 4: Chat and sources
+### Phase 4: Chat, history, and sources
 
-- Implement one workspace-level in-memory conversation.
+- Implement persisted workspace conversation sessions and bounded history context.
+- Restore, switch, page through, start, and delete conversations.
 - Implement question submission, retry, and source actions.
 - Implement embedded PDF view and mobile new-tab fallback.
 

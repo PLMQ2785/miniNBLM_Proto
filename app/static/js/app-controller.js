@@ -1,4 +1,4 @@
-import { getConversation, upsertDocument } from "./state.js";
+import { getConversation, upsertChatSession, upsertDocument } from "./state.js";
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 const ACTIVE_STATUSES = new Set(["uploaded", "processing"]);
@@ -18,6 +18,13 @@ export class AppController {
     this.documentPanel.onRefresh(() => this.loadDocuments({ announceSuccess: true }));
     this.chatPanel.onSubmit((question) => this.submitQuestion(question));
     this.chatPanel.onRetry((messageIndex) => this.retryQuestion(messageIndex));
+    this.chatPanel.onSessionSelect((sessionId) => {
+      if (sessionId) this.selectChatSession(Number(sessionId));
+      else this.startNewConversation();
+    });
+    this.chatPanel.onNewSession(() => this.startNewConversation());
+    this.chatPanel.onDeleteSession(() => this.deleteConversation(this.state.activeSessionId));
+    this.chatPanel.onLoadOlder(() => this.loadOlderMessages());
     this.chatPanel.onSourceSelect((messageIndex, sourceIndex) => {
       const source = getConversation(this.state)[messageIndex]?.sources?.[sourceIndex];
       if (source) this.selectSource(source);
@@ -31,7 +38,155 @@ export class AppController {
   }
 
   async start() {
-    await Promise.allSettled([this.checkHealth(), this.loadDocuments()]);
+    await Promise.allSettled([
+      this.checkHealth(),
+      this.loadDocuments(),
+      this.loadChatSessions(),
+    ]);
+  }
+
+  async loadChatSessions() {
+    this.state.isLoadingSessions = true;
+    this.render();
+    try {
+      this.state.chatSessions = await this.apiClient.listChatSessions();
+      const activeSession = this.state.chatSessions.find(
+        (session) => session.session_id === this.state.activeSessionId,
+      ) || this.state.chatSessions[0];
+      if (activeSession) {
+        await this.selectChatSession(activeSession.session_id);
+      } else {
+        this.startNewConversation({ focus: false });
+      }
+    } catch (error) {
+      this.notificationView.showError(error.message, {
+        actionLabel: "대화 다시 불러오기",
+        onAction: () => this.loadChatSessions(),
+      });
+    } finally {
+      this.state.isLoadingSessions = false;
+      this.render();
+    }
+  }
+
+  async selectChatSession(sessionId) {
+    if (!sessionId || this.state.isGenerating) return;
+    this.state.activeSessionId = sessionId;
+    this.state.isLoadingConversation = true;
+    this.state.isLoadingOlderMessages = false;
+    this.state.hasOlderMessages = false;
+    this.state.conversation = [];
+    this.clearSelectedSource();
+    this.render();
+    try {
+      const session = await this.apiClient.getChatSession(sessionId);
+      if (this.state.activeSessionId !== sessionId) return;
+      this.state.chatSessions = upsertChatSession(this.state.chatSessions, session);
+      this.state.conversation = session.messages.map((message) => this.toConversationMessage(message));
+      this.state.hasOlderMessages = session.has_more;
+    } catch (error) {
+      const sessionWasRemoved = error.status === 404;
+      if (error.status === 404) {
+        this.state.chatSessions = this.state.chatSessions.filter(
+          (session) => session.session_id !== sessionId,
+        );
+        this.state.activeSessionId = null;
+      }
+      this.notificationView.showError(error.message, {
+        actionLabel: "대화 다시 불러오기",
+        onAction: () => (
+          sessionWasRemoved ? this.loadChatSessions() : this.selectChatSession(sessionId)
+        ),
+      });
+    } finally {
+      this.state.isLoadingConversation = false;
+      this.render();
+    }
+  }
+
+  startNewConversation({ focus = true } = {}) {
+    if (this.state.isGenerating) return;
+    this.state.activeSessionId = null;
+    this.state.conversation = [];
+    this.state.isLoadingConversation = false;
+    this.state.hasOlderMessages = false;
+    this.clearSelectedSource();
+    this.render();
+    if (focus) this.chatPanel.focusComposer();
+  }
+
+  async deleteConversation(sessionId, { skipConfirmation = false } = {}) {
+    if (sessionId === null || this.state.isGenerating || this.state.deletingSessionId !== null) return;
+    const session = this.state.chatSessions.find((item) => item.session_id === sessionId);
+    if (!skipConfirmation
+        && !window.confirm(`“${session?.title || "이 대화"}” 이력을 삭제할까요?`)) return;
+
+    this.state.deletingSessionId = sessionId;
+    this.render();
+    try {
+      await this.apiClient.deleteChatSession(sessionId);
+      this.state.chatSessions = this.state.chatSessions.filter(
+        (item) => item.session_id !== sessionId,
+      );
+      this.state.activeSessionId = null;
+      this.state.conversation = [];
+      this.state.hasOlderMessages = false;
+      this.clearSelectedSource();
+      const [nextSession] = this.state.chatSessions;
+      if (nextSession) await this.selectChatSession(nextSession.session_id);
+      else this.render();
+      this.notificationView.showStatus("대화 이력을 삭제했습니다.");
+    } catch (error) {
+      this.notificationView.showError(error.message, {
+        actionLabel: "삭제 재시도",
+        onAction: () => this.deleteConversation(sessionId, { skipConfirmation: true }),
+      });
+    } finally {
+      this.state.deletingSessionId = null;
+      this.render();
+    }
+  }
+
+  clearSelectedSource() {
+    this.state.selectedSource = null;
+    this.sourcePanel.closeMobile();
+  }
+
+  toConversationMessage(message) {
+    return {
+      messageId: message.message_id,
+      role: message.role,
+      content: message.content,
+      sources: message.sources || [],
+    };
+  }
+
+  async loadOlderMessages() {
+    const sessionId = this.state.activeSessionId;
+    const oldestMessageId = this.state.conversation[0]?.messageId;
+    if (sessionId === null || !oldestMessageId || !this.state.hasOlderMessages
+        || this.state.isLoadingOlderMessages) return;
+
+    const scrollPosition = this.chatPanel.captureScrollPosition();
+    this.state.isLoadingOlderMessages = true;
+    this.render();
+    try {
+      const session = await this.apiClient.getChatSession(sessionId, { beforeId: oldestMessageId });
+      this.state.conversation = [
+        ...session.messages.map((message) => this.toConversationMessage(message)),
+        ...this.state.conversation,
+      ];
+      this.state.hasOlderMessages = session.has_more;
+    } catch (error) {
+      this.notificationView.showError(error.message, {
+        actionLabel: "다시 시도",
+        onAction: () => this.loadOlderMessages(),
+      });
+    } finally {
+      this.state.isLoadingOlderMessages = false;
+      this.render();
+      this.chatPanel.restoreScrollPosition(scrollPosition);
+    }
   }
 
   async checkHealth() {
@@ -123,12 +278,13 @@ export class AppController {
       );
       this.state.conversation = this.state.conversation.map((message) => ({
         ...message,
-        sources: message.sources?.filter((source) => source.document_id !== documentId) || [],
+        sources: message.sources?.map((source) => (
+          source.document_id === documentId ? { ...source, available: false } : source
+        )) || [],
       }));
 
       if (this.state.selectedSource?.document_id === documentId) {
-        this.state.selectedSource = null;
-        this.sourcePanel.closeMobile();
+        this.clearSelectedSource();
       }
       this.notificationView.showStatus(`${documentSummary.title} 문서를 삭제했습니다.`);
     } catch (error) {
@@ -143,7 +299,7 @@ export class AppController {
   }
 
   async submitQuestion(question) {
-    if (!this.hasIndexedDocuments() || this.state.isGenerating) return;
+    if (!this.hasIndexedDocuments() || this.state.isGenerating || this.state.isLoadingConversation) return;
 
     const messages = [...getConversation(this.state), { role: "user", content: question, sources: [] }];
     this.chatPanel.clearInput();
@@ -168,7 +324,9 @@ export class AppController {
     let focusMessageIndex = null;
 
     try {
-      const result = await this.apiClient.sendQuestion(question);
+      const result = await this.apiClient.sendQuestion(question, this.state.activeSessionId);
+      this.state.activeSessionId = result.session.session_id;
+      this.state.chatSessions = upsertChatSession(this.state.chatSessions, result.session);
       const nextMessages = [
         ...messages,
         { role: "assistant", content: result.answer, sources: result.sources },
@@ -196,6 +354,10 @@ export class AppController {
   }
 
   selectSource(source) {
+    if (source.available === false) {
+      this.notificationView.showError("삭제된 문서의 원본은 열 수 없습니다.");
+      return;
+    }
     this.state.selectedSource = source;
     this.render();
     if (window.matchMedia("(max-width: 900px)").matches) this.sourcePanel.openMobile();
@@ -250,6 +412,13 @@ export class AppController {
     this.chatPanel.render(this.state.documents, conversation, {
       isGenerating: this.state.isGenerating,
       isLoading: this.state.isLoadingDocuments,
+      chatSessions: this.state.chatSessions,
+      activeSessionId: this.state.activeSessionId,
+      isLoadingSessions: this.state.isLoadingSessions,
+      isLoadingConversation: this.state.isLoadingConversation,
+      isLoadingOlderMessages: this.state.isLoadingOlderMessages,
+      hasOlderMessages: this.state.hasOlderMessages,
+      deletingSessionId: this.state.deletingSessionId,
     });
 
     const source = this.state.selectedSource;

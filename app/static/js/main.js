@@ -61,6 +61,9 @@ const chatPanel = new ChatPanel({
   form: byId("chat-form"),
   input: byId("question-input"),
   sendButton: byId("send-button"),
+  sessionSelect: byId("conversation-select"),
+  newSessionButton: byId("new-conversation-button"),
+  deleteSessionButton: byId("delete-conversation-button"),
 });
 
 const sourcePanel = new SourcePanel({

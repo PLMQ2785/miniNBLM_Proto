@@ -569,6 +569,34 @@
   margin-top: 12px;
 }
 
+.load-older-messages {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 18px;
+}
+
+.load-older-messages button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text-body);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.load-older-messages button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.load-older-messages button:disabled {
+  color: var(--text-muted);
+  cursor: wait;
+}
+
 .source-reference {
   max-width: min(100%, 320px);
   height: 28px;
@@ -588,6 +616,71 @@
 .source-reference:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+.source-reference:disabled {
+  border-color: var(--border);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+
+.chat-header-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.conversation-select {
+  width: clamp(130px, 16vw, 220px);
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 28px 0 9px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text-strong);
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+
+.new-conversation-button,
+.delete-conversation-button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text-strong);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.new-conversation-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.delete-conversation-button {
+  color: var(--danger);
+}
+
+.delete-conversation-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+  background: var(--danger-soft);
+}
+
+.conversation-select:disabled,
+.new-conversation-button:disabled,
+.delete-conversation-button:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .chat-composer {
@@ -720,6 +813,15 @@
 }
 
 @media (max-width: 600px) {
+  .chat-header-actions {
+    width: 100%;
+  }
+
+  .conversation-select {
+    width: auto;
+    flex: 1;
+  }
+
   .message {
     max-width: 92%;
   }

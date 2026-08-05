@@ -30,12 +30,17 @@ def build_context(chunks: list[RetrievedChunk]) -> str:
     return "\n\n".join(sections)
 
 
-def build_tutor_messages(question: str, chunks: list[RetrievedChunk]) -> list[dict[str, str]]:
+def build_tutor_messages(
+    question: str,
+    chunks: list[RetrievedChunk],
+    history: list[dict[str, str]] | None = None,
+) -> list[dict[str, str]]:
     context = build_context(chunks)
     system_prompt = load_system_prompt()
     user_prompt = f"[Context]\n{context}\n\n[Question]\n{question}\n\n[Answer]"
     return [
         {"role": "system", "content": system_prompt},
+        *(history or []),
         {"role": "user", "content": user_prompt},
     ]
 

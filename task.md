@@ -380,7 +380,7 @@ Request:
 
 ```json
 {
-  "document_id": 1,
+  "session_id": null,
   "question": "COPD 환자에게 고농도 산소 투여 시 주의할 점은?"
 }
 ```
@@ -389,12 +389,18 @@ Response:
 
 ```json
 {
+  "session": {
+    "session_id": 1,
+    "title": "COPD 환자에게 고농도 산소 투여 시 주의할 점은?"
+  },
   "answer": "업로드된 자료 기준으로 COPD 환자는 ...",
   "sources": [
     {
       "document_id": 1,
+      "document_title": "성인간호학_호흡기계.pdf",
       "page": 12,
-      "chunk_id": 34
+      "chunk_id": 34,
+      "available": true
     }
   ]
 }
@@ -505,7 +511,7 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
 pgvector 검색.
 
 ```python
-def retrieve_chunks(question: str, document_id: int, top_k: int = 5) -> list[Chunk]:
+def retrieve_chunks(question: str, owner_id: int, top_k: int = 5) -> list[Chunk]:
     pass
 ```
 
@@ -1327,12 +1333,12 @@ Exception 발생
 Client
 → POST /chat
 → api/chat.py
-→ document status 확인
-→ retriever.retrieve_chunks(document_id, question)
+→ 사용자 session 소유권 확인 또는 새 session 생성
+→ retriever.retrieve_chunks(owner_id, question)
 → prompt_builder.build_tutor_prompt(question, chunks)
 → generator.generate_answer(question, chunks)
-→ chat_messages 저장, optional
-→ response { answer, sources }
+→ chat_messages 저장
+→ response { session, answer, sources }
 ```
 
 ---
@@ -1635,6 +1641,9 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
 - 격리된 PostgreSQL을 사용하는 단위·API 통합 테스트
 - 실제 BGE-M3와 Gemma 4를 사용하는 PDF RAG E2E smoke 테스트
 - DB, embedding, vLLM 통합 readiness와 Docker/run.sh 시작 판정 연동
+- 로그인 사용자별 여러 작업공간 대화 세션 저장·조회·삭제
+- 최근 대화 자동 복원, 메시지 pagination과 제한된 이전 문맥 기반 후속 질문
+- 삭제된 PDF의 과거 source label 보존 및 원본 열기 비활성화
 
 빠른 테스트는 `./scripts/test.sh -q`, 실제 모델 E2E는 네 서비스 실행 후
 `./scripts/e2e.sh -q`로 수행한다. E2E API와 DB는 운영 데이터와 분리된다.

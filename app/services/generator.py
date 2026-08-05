@@ -12,7 +12,11 @@ class GeneratedAnswer:
     sources: list[SourceRef]
 
 
-def generate_answer(question: str, chunks: list[RetrievedChunk]) -> GeneratedAnswer:
+def generate_answer(
+    question: str,
+    chunks: list[RetrievedChunk],
+    history: list[dict[str, str]] | None = None,
+) -> GeneratedAnswer:
     sources = [
         SourceRef(
             document_id=chunk.document_id,
@@ -32,6 +36,6 @@ def generate_answer(question: str, chunks: list[RetrievedChunk]) -> GeneratedAns
             sources=[],
         )
 
-    messages = build_tutor_messages(question, chunks)
+    messages = build_tutor_messages(question, chunks, history)
     answer = VLLMClient().chat_completion(messages)
     return GeneratedAnswer(answer=answer, sources=sources)
