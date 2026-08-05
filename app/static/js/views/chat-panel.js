@@ -1,8 +1,7 @@
 import { formatPage } from "../formatters.js";
 
 export class ChatPanel {
-  constructor({ title, status, messageList, form, input, sendButton }) {
-    this.title = title;
+  constructor({ status, messageList, form, input, sendButton }) {
     this.status = status;
     this.messageList = messageList;
     this.form = form;
@@ -65,7 +64,6 @@ export class ChatPanel {
     const failedCount = documents.filter((document) => document.status === "failed").length;
     const isReady = indexedCount > 0;
 
-    this.title.textContent = "전체 문서 검색";
     this.status.textContent = this.workspaceStatus({
       indexedCount,
       processingCount,
@@ -74,9 +72,6 @@ export class ChatPanel {
     });
     this.input.disabled = !isReady || isGenerating;
     this.sendButton.disabled = !isReady || isGenerating;
-    this.input.placeholder = isReady
-      ? "업로드한 전체 자료에 대해 질문하세요"
-      : "검색 가능한 PDF를 추가하세요";
     this.sendButton.textContent = isGenerating ? "답변 생성 중" : "질문 보내기";
     this.messageList.replaceChildren();
 

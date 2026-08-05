@@ -56,7 +56,6 @@ const documentPanel = new DocumentPanel({
 });
 
 const chatPanel = new ChatPanel({
-  title: byId("workspace-chat-title"),
   status: byId("workspace-chat-status"),
   messageList: byId("message-list"),
   form: byId("chat-form"),
