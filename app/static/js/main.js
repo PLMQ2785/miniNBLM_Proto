@@ -52,6 +52,7 @@ const documentPanel = new DocumentPanel({
   uploadForm: byId("upload-form"),
   fileInput: byId("pdf-input"),
   uploadStatus: byId("upload-status"),
+  refreshButton: byId("documents-refresh"),
 });
 
 const chatPanel = new ChatPanel({

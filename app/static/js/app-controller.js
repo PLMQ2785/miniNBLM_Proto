@@ -16,7 +16,9 @@ export class AppController {
     this.documentPanel.onUpload((file) => this.uploadDocument(file));
     this.documentPanel.onSelect((documentId) => this.selectDocument(documentId));
     this.documentPanel.onDelete((documentId) => this.deleteDocument(documentId));
+    this.documentPanel.onRefresh(() => this.loadDocuments({ announceSuccess: true }));
     this.chatPanel.onSubmit((question) => this.submitQuestion(question));
+    this.chatPanel.onRetry((messageIndex) => this.retryQuestion(messageIndex));
     this.chatPanel.onSourceSelect((messageIndex, sourceIndex) => {
       const source = getConversation(this.state)[messageIndex]?.sources?.[sourceIndex];
       if (source) this.selectSource(source);
@@ -45,8 +47,9 @@ export class AppController {
     }
   }
 
-  async loadDocuments() {
+  async loadDocuments({ announceSuccess = false } = {}) {
     this.state.isLoadingDocuments = true;
+    this.state.documentLoadError = null;
     this.render();
     try {
       this.state.documents = await this.apiClient.listDocuments();
@@ -55,13 +58,17 @@ export class AppController {
         this.state.selectedDocumentId = this.state.documents.find(
           (documentSummary) => documentSummary.status === "indexed",
         )?.document_id ?? this.state.documents[0]?.document_id ?? null;
+        this.state.selectedSource = null;
+        this.sourcePanel.closeMobile();
       }
       this.syncPolling();
+      if (announceSuccess) this.notificationView.showStatus("문서 목록을 새로고침했습니다.");
     } catch (error) {
-      this.notificationView.showError(error.message);
+      this.state.documentLoadError = error.message;
     } finally {
       this.state.isLoadingDocuments = false;
       this.render();
+      if (this.state.documentLoadError) this.documentPanel.focusLoadError();
     }
   }
 
@@ -87,7 +94,10 @@ export class AppController {
       this.startPolling(documentSummary.document_id);
       this.notificationView.showStatus("PDF를 업로드했습니다.");
     } catch (error) {
-      this.notificationView.showError(error.message);
+      this.notificationView.showError(error.message, {
+        actionLabel: "업로드 재시도",
+        onAction: () => this.uploadDocument(file),
+      });
     } finally {
       this.state.isUploading = false;
       this.documentPanel.clearFileInput();
@@ -104,7 +114,7 @@ export class AppController {
     if (selected?.status === "indexed") this.chatPanel.focusComposer();
   }
 
-  async deleteDocument(documentId) {
+  async deleteDocument(documentId, { skipConfirmation = false } = {}) {
     const documentSummary = this.state.documents.find(
       (document) => document.document_id === documentId,
     );
@@ -113,7 +123,8 @@ export class AppController {
       this.notificationView.showError("인덱싱이 끝난 후 문서를 삭제할 수 있습니다.");
       return;
     }
-    if (!window.confirm(`“${documentSummary.title}” 문서와 관련 대화를 모두 삭제할까요?`)) return;
+    if (!skipConfirmation
+        && !window.confirm(`“${documentSummary.title}” 문서와 관련 대화를 모두 삭제할까요?`)) return;
 
     this.state.deletingDocumentId = documentId;
     this.render();
@@ -134,7 +145,10 @@ export class AppController {
       }
       this.notificationView.showStatus(`${documentSummary.title} 문서를 삭제했습니다.`);
     } catch (error) {
-      this.notificationView.showError(error.message);
+      this.notificationView.showError(error.message, {
+        actionLabel: "삭제 재시도",
+        onAction: () => this.deleteDocument(documentId, { skipConfirmation: true }),
+      });
     } finally {
       this.state.deletingDocumentId = null;
       this.render();
@@ -146,23 +160,55 @@ export class AppController {
     if (!selected || selected.status !== "indexed" || this.state.isGenerating) return;
 
     const messages = [...getConversation(this.state), { role: "user", content: question, sources: [] }];
-    this.state.conversations.set(selected.document_id, messages);
-    this.state.isGenerating = true;
     this.chatPanel.clearInput();
+    await this.generateAnswer(selected.document_id, question, messages);
+  }
+
+  async retryQuestion(messageIndex) {
+    const selected = getSelectedDocument(this.state);
+    const conversation = getConversation(this.state);
+    const failedMessage = conversation[messageIndex];
+    if (!selected || selected.status !== "indexed" || this.state.isGenerating
+        || failedMessage?.status !== "error" || !failedMessage.retryQuestion) return;
+
+    const messages = conversation.filter((_, index) => index !== messageIndex);
+    await this.generateAnswer(selected.document_id, failedMessage.retryQuestion, messages);
+  }
+
+  async generateAnswer(documentId, question, messages) {
+    this.state.conversations.set(documentId, messages);
+    this.state.isGenerating = true;
     this.render();
 
+    let focusMessageIndex = null;
+
     try {
-      const result = await this.apiClient.sendQuestion(selected.document_id, question);
-      this.state.conversations.set(selected.document_id, [
+      const result = await this.apiClient.sendQuestion(documentId, question);
+      const nextMessages = [
         ...messages,
         { role: "assistant", content: result.answer, sources: result.sources },
-      ]);
+      ];
+      this.state.conversations.set(documentId, nextMessages);
+      focusMessageIndex = nextMessages.length - 1;
     } catch (error) {
-      this.notificationView.showError(error.message);
+      const nextMessages = [
+        ...messages,
+        {
+          role: "assistant",
+          content: error.message,
+          sources: [],
+          status: "error",
+          retryQuestion: question,
+        },
+      ];
+      this.state.conversations.set(documentId, nextMessages);
+      focusMessageIndex = nextMessages.length - 1;
     } finally {
       this.state.isGenerating = false;
       this.render();
-      this.chatPanel.focusComposer();
+      if (this.state.selectedDocumentId === documentId && focusMessageIndex !== null) {
+        this.chatPanel.focusMessage(focusMessageIndex);
+      }
     }
   }
 
@@ -188,7 +234,11 @@ export class AppController {
         }
         return true;
       } catch (error) {
-        this.notificationView.showError(error.message);
+        this.notificationView.showError(error.message, {
+          actionLabel: "목록 새로고침",
+          onAction: () => this.loadDocuments({ announceSuccess: true }),
+          focus: false,
+        });
         return false;
       }
     });
@@ -208,6 +258,7 @@ export class AppController {
     const conversation = getConversation(this.state);
     this.documentPanel.render(this.state.documents, this.state.selectedDocumentId, {
       isLoading: this.state.isLoadingDocuments,
+      loadError: this.state.documentLoadError,
       isUploading: this.state.isUploading,
       deletingDocumentId: this.state.deletingDocumentId,
     });

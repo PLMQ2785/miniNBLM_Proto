@@ -1,21 +1,31 @@
 import { formatDate, formatStatus } from "../formatters.js";
 
 export class DocumentPanel {
-  constructor({ listRoot, uploadForm, fileInput, uploadStatus }) {
+  constructor({ listRoot, uploadForm, fileInput, uploadStatus, refreshButton }) {
     this.listRoot = listRoot;
     this.uploadForm = uploadForm;
     this.fileInput = fileInput;
     this.uploadStatus = uploadStatus;
+    this.refreshButton = refreshButton;
     this.uploadHandler = null;
     this.selectHandler = null;
     this.deleteHandler = null;
+    this.refreshHandler = null;
 
     this.fileInput.addEventListener("change", () => {
       const [file] = this.fileInput.files;
       if (file && this.uploadHandler) this.uploadHandler(file);
     });
     this.uploadForm.addEventListener("submit", (event) => event.preventDefault());
+    this.refreshButton.addEventListener("click", () => {
+      if (this.refreshHandler) this.refreshHandler();
+    });
     this.listRoot.addEventListener("click", (event) => {
+      const refreshButton = event.target.closest("[data-refresh-documents]");
+      if (refreshButton && this.refreshHandler) {
+        this.refreshHandler();
+        return;
+      }
       const deleteButton = event.target.closest("[data-delete-document-id]");
       if (deleteButton && this.deleteHandler) {
         this.deleteHandler(Number(deleteButton.dataset.deleteDocumentId));
@@ -40,17 +50,32 @@ export class DocumentPanel {
     this.deleteHandler = handler;
   }
 
+  onRefresh(handler) {
+    this.refreshHandler = handler;
+  }
+
   clearFileInput() {
     this.fileInput.value = "";
   }
 
-  render(documents, selectedId, { isLoading, isUploading, deletingDocumentId }) {
+  render(documents, selectedId, {
+    isLoading,
+    loadError,
+    isUploading,
+    deletingDocumentId,
+  }) {
     this.uploadStatus.textContent = isUploading ? "업로드 중" : "";
     this.fileInput.disabled = isUploading;
+    this.refreshButton.disabled = isLoading;
+    this.refreshButton.dataset.loading = String(isLoading);
     this.listRoot.replaceChildren();
 
     if (isLoading) {
       this.listRoot.append(this.emptyState("문서를 불러오는 중입니다."));
+      return;
+    }
+    if (loadError) {
+      this.listRoot.append(this.errorState(loadError));
       return;
     }
     if (documents.length === 0) {
@@ -110,5 +135,25 @@ export class DocumentPanel {
     element.className = "panel-empty-state";
     element.textContent = message;
     return element;
+  }
+
+  errorState(message) {
+    const element = document.createElement("div");
+    element.className = "panel-error-state";
+    element.tabIndex = -1;
+
+    const text = document.createElement("p");
+    text.textContent = message;
+
+    const retryButton = document.createElement("button");
+    retryButton.type = "button";
+    retryButton.dataset.refreshDocuments = "true";
+    retryButton.textContent = "다시 시도";
+    element.append(text, retryButton);
+    return element;
+  }
+
+  focusLoadError() {
+    this.listRoot.querySelector(".panel-error-state")?.focus();
   }
 }

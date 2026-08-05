@@ -326,6 +326,12 @@
   border-bottom: 1px solid var(--border);
 }
 
+.panel-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .panel-heading h1,
 .chat-header h2,
 .source-header h2 {

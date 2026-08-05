@@ -288,6 +288,7 @@
 }
 
 .upload-button,
+.document-refresh-button,
 .mobile-nav-button,
 .mobile-close-button,
 .source-mobile-toggle,
@@ -304,6 +305,37 @@
   font-size: 13px;
   font-weight: 650;
   text-decoration: none;
+}
+
+.document-refresh-button {
+  display: inline-flex;
+  width: 34px;
+  min-height: 34px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.refresh-icon {
+  display: inline-block;
+}
+
+.document-refresh-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.document-refresh-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.document-refresh-button[data-loading="true"] .refresh-icon {
+  animation: refresh-spin 900ms linear infinite;
+}
+
+@keyframes refresh-spin {
+  to { transform: rotate(360deg); }
 }
 
 .upload-button {
@@ -432,6 +464,43 @@
   text-align: center;
 }
 
+.panel-error-state {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  margin: auto;
+  padding: 20px 12px;
+  color: var(--danger);
+  text-align: center;
+}
+
+.panel-error-state p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 19px;
+}
+
+.panel-error-state button,
+.message-retry-button,
+.notification-action {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text-strong);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.panel-error-state button:hover,
+.message-retry-button:hover:not(:disabled),
+.notification-action:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
 .chat-empty-state {
   display: grid;
   min-height: 100%;
@@ -477,6 +546,26 @@
 .message-pending {
   color: var(--text-muted);
   font-size: 13px;
+}
+
+.message-error {
+  padding: 12px 14px;
+  border-left-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.message-error .message-content {
+  color: var(--danger);
+}
+
+.message-retry-button {
+  margin-top: 10px;
+}
+
+.message-retry-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .message-sources {
@@ -590,6 +679,10 @@
 }
 
 .notification {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
   padding: 12px 14px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
@@ -598,6 +691,15 @@
   color: var(--text-strong);
   font-size: 13px;
   line-height: 20px;
+}
+
+.notification p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.notification-action {
+  white-space: nowrap;
 }
 
 .notification-error {
@@ -632,5 +734,18 @@
 
   .chat-composer button {
     width: 88px;
+  }
+
+  .notification-region {
+    top: 66px;
+    right: 12px;
+    bottom: auto;
+    width: calc(100vw - 24px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .document-refresh-button[data-loading="true"] .refresh-icon {
+    animation: none;
   }
 }

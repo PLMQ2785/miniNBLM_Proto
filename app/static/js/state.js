@@ -5,6 +5,7 @@ export function createInitialState() {
     conversations: new Map(),
     selectedSource: null,
     isLoadingDocuments: true,
+    documentLoadError: null,
     isUploading: false,
     deletingDocumentId: null,
     isGenerating: false,

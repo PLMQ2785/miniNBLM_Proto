@@ -10,6 +10,7 @@ export class ChatPanel {
     this.sendButton = sendButton;
     this.submitHandler = null;
     this.sourceHandler = null;
+    this.retryHandler = null;
 
     this.form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -23,6 +24,11 @@ export class ChatPanel {
       }
     });
     this.messageList.addEventListener("click", (event) => {
+      const retryButton = event.target.closest("[data-retry-message-index]");
+      if (retryButton && this.retryHandler) {
+        this.retryHandler(Number(retryButton.dataset.retryMessageIndex));
+        return;
+      }
       const button = event.target.closest("[data-source-index]");
       if (!button || !this.sourceHandler) return;
       const messageIndex = Number(button.dataset.messageIndex);
@@ -37,6 +43,10 @@ export class ChatPanel {
 
   onSourceSelect(handler) {
     this.sourceHandler = handler;
+  }
+
+  onRetry(handler) {
+    this.retryHandler = handler;
   }
 
   clearInput() {
@@ -71,25 +81,45 @@ export class ChatPanel {
       this.messageList.append(this.emptyState("아직 대화가 없습니다."));
     } else {
       messages.forEach((message, messageIndex) => {
-        this.messageList.append(this.messageElement(message, messageIndex));
+        this.messageList.append(this.messageElement(message, messageIndex, isGenerating));
       });
     }
     if (isGenerating) this.messageList.append(this.pendingElement());
     this.messageList.scrollTop = this.messageList.scrollHeight;
   }
 
-  messageElement(message, messageIndex) {
+  messageElement(message, messageIndex, isGenerating) {
     const article = document.createElement("article");
     article.className = `message message-${message.role}`;
+    article.dataset.messageIndex = messageIndex;
+    if (message.status === "error") {
+      article.classList.add("message-error");
+      article.setAttribute("role", "alert");
+      article.tabIndex = -1;
+    } else if (message.role === "assistant") {
+      article.tabIndex = -1;
+    }
 
     const role = document.createElement("span");
     role.className = "message-role";
-    role.textContent = message.role === "user" ? "나" : "Tutor";
+    role.textContent = message.role === "user"
+      ? "나"
+      : message.status === "error" ? "오류" : "Tutor";
 
     const content = document.createElement("p");
     content.className = "message-content";
     content.textContent = message.content;
     article.append(role, content);
+
+    if (message.status === "error" && message.retryQuestion) {
+      const retryButton = document.createElement("button");
+      retryButton.type = "button";
+      retryButton.className = "message-retry-button";
+      retryButton.dataset.retryMessageIndex = messageIndex;
+      retryButton.disabled = isGenerating;
+      retryButton.textContent = "질문 다시 시도";
+      article.append(retryButton);
+    }
 
     if (message.sources?.length) {
       const sourceList = document.createElement("div");
@@ -107,6 +137,13 @@ export class ChatPanel {
       article.append(sourceList);
     }
     return article;
+  }
+
+  focusMessage(messageIndex) {
+    const message = this.messageList.querySelector(`[data-message-index="${messageIndex}"]`);
+    if (!message) return;
+    message.focus({ preventScroll: true });
+    message.scrollIntoView({ block: "nearest" });
   }
 
   pendingElement() {

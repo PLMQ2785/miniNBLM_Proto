@@ -61,6 +61,11 @@ a:focus-visible {
   outline-offset: 2px;
 }
 
+[tabindex="-1"]:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--focus) 35%, transparent);
+  outline-offset: 2px;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

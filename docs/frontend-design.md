@@ -53,9 +53,10 @@ a medical consultation or clinical decision interface.
 작업공간 차단, 회원가입, 로그인, 로그아웃, 관리자 프리셋 전환과 모바일
 레이아웃과 네 검색 알고리즘의 독립 전환을 검증했다.
 
-이 문서의 요구사항 중 명시적인 실패 작업 재시도 버튼, 새 답변으로의 focus
-이동, 문서 수동 refresh는 아직 구현되지 않았다. 현재는 오류 알림 후 사용자가
-동일 작업을 다시 수행하며, 문서 상태 갱신은 자동 polling으로 처리한다.
+문서 목록 수동 refresh와 목록 로드 실패 재시도, 실패한 질문의 인라인 재시도,
+업로드·삭제 실패 알림의 재시도 액션을 구현했다. 새 답변과 직접 작업 오류에는
+키보드 focus가 이동하며, 자동 polling 오류는 현재 작업을 방해하지 않도록
+focus를 이동하지 않는다.
 
 ### 3.1 MVP Scope
 
@@ -268,10 +269,11 @@ classDiagram
         +loadDocuments()
         +uploadDocument(file)
         +selectDocument(documentId)
+        +deleteDocument(documentId, options)
         +submitQuestion(question)
+        +retryQuestion(messageIndex)
         +selectSource(source)
-        +refreshDocument(documentId)
-        -setState(patch)
+        -generateAnswer(documentId, question, messages)
         -render()
     }
 
@@ -300,16 +302,19 @@ classDiagram
         +render(documents, selectedId, uiState)
         +onUpload(handler)
         +onSelect(handler)
+        +onDelete(handler)
         +onRefresh(handler)
+        +focusLoadError()
     }
 
     class ChatPanel {
         -HTMLElement root
         +render(document, messages, isGenerating)
         +onSubmit(handler)
+        +onRetry(handler)
         +onSourceSelect(handler)
         +focusComposer()
-        +focusLatestResponse()
+        +focusMessage(messageIndex)
     }
 
     class SourcePanel {
@@ -321,7 +326,7 @@ classDiagram
 
     class NotificationView {
         -HTMLElement root
-        +showError(error)
+        +showError(message, options)
         +showStatus(message)
         +clear()
     }

@@ -15,6 +15,8 @@
 - 빠른 단위/API 통합 테스트: `44 passed`, 실제 모델 E2E `1 skipped`
 - 실제 BGE-M3/Gemma 4 E2E: `1 passed`
 - 실제 `GET /health/ready`: DB, embedding, LLM 모두 `ok`, HTTP 200
+- Playwright FE 사용성 smoke: 문서 refresh 실패/복구, 질문 실패/재시도,
+  답변·오류 focus, 390px 모바일 overflow 검증 통과
 - E2E 및 일반 테스트용 임시 컨테이너는 테스트 종료 후 정리됨
 
 ## 2. 시스템 구성
@@ -137,6 +139,10 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 - 질문과 답변, source page 선택
 - 모바일 문서 drawer 및 PDF source panel
 - 관리자 preset/알고리즘 화면과 재인덱싱 상태 polling
+- 문서 목록 수동 새로고침과 목록 로드 실패 인라인 재시도
+- 실패한 질문의 대화 내 재시도와 업로드·삭제 실패 알림 액션
+- 새 답변 및 직접 작업 오류로 keyboard focus 이동
+- 자동 polling 오류는 사용자 입력 focus를 유지
 - 모델 출력은 HTML로 해석하지 않고 text로 렌더링
 
 ## 5. 주요 API
@@ -312,29 +318,26 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 
 ## 11. 다음 작업 권장 순서
 
-1. 프런트엔드 사용성 마무리
-   - 실패 작업 재시도 버튼
-   - 문서 목록 수동 새로고침
-   - 새 답변 및 오류 메시지로 keyboard focus 이동
-2. 대화 이력 복원
+1. 대화 이력 복원
    - chat session/message 조회 API
    - 문서 선택 및 새로고침 후 기존 대화 표시
    - 사용자 소유권 통합 테스트
-3. API Docker 의존성 분리
+2. API Docker 의존성 분리
    - API에서 `torch`, `sentence-transformers`, CUDA package 제거
    - embedding 전용 dependency group 또는 별도 lock/build 구성
-4. 운영 보안
+3. 운영 보안
    - 기본 관리자 비밀번호 변경 강제
    - HTTPS와 secure cookie
    - 회원가입/로그인 rate limit과 계정 잠금
    - PostgreSQL 백업/복원 및 구조화 로그
-5. 이후 확장
+4. 이후 확장
    - Redis + RQ worker, MinIO/S3, 다중 문서 검색, 용어 정규화, reranker,
      OCR/Vision, streaming, 문서 버전, 이메일 인증, 학습 피드백
 
 ## 12. Git 및 작업공간 주의사항
 
-Git baseline은 `ceb4d37 V0.3.0`으로 생성되어 있다. 최초 commit에 실수로 포함된
+Git baseline은 `ceb4d37 V0.3.0`이며 통합 readiness 변경은 `640c83d`에
+기록되어 있다. 최초 commit에 실수로 포함된
 `id_container` RSA private key는 commit amend, reflog 만료 및 unreachable object
 정리를 통해 작업공간과 전체 로컬 이력에서 제거했다. Remote는 아직 없다.
 

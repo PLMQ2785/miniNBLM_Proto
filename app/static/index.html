@@ -28,7 +28,7 @@
         <form id="auth-form" class="auth-form">
           <h1 id="auth-title">로그인</h1>
           <label for="auth-username">사용자명</label>
-          <input id="auth-username" name="username" type="text" minlength="3" maxlength="32" pattern="[A-Za-z0-9_.-]+" autocomplete="username" required>
+          <input id="auth-username" name="username" type="text" minlength="3" maxlength="32" pattern="[A-Za-z0-9_.\-]+" autocomplete="username" required>
           <label for="auth-password">비밀번호</label>
           <input id="auth-password" name="password" type="password" minlength="1" maxlength="128" autocomplete="current-password" required>
           <p id="auth-error" class="auth-error" role="alert"></p>
@@ -128,7 +128,12 @@
               <p class="panel-eyebrow">COURSE MATERIALS</p>
               <h1>문서</h1>
             </div>
-            <button id="documents-close" class="mobile-close-button" type="button" aria-label="문서 패널 닫기">×</button>
+            <div class="panel-heading-actions">
+              <button id="documents-refresh" class="document-refresh-button" type="button" aria-label="문서 목록 새로고침" title="문서 목록 새로고침">
+                <span class="refresh-icon" aria-hidden="true">↻</span>
+              </button>
+              <button id="documents-close" class="mobile-close-button" type="button" aria-label="문서 패널 닫기">×</button>
+            </div>
           </div>
 
           <form id="upload-form" class="upload-form">
