@@ -4,7 +4,7 @@
 
 - 기준일: 2026-08-05 (Asia/Seoul)
 - 프로젝트: 간호학 수업자료 PDF 기반 RAG 학습 튜터 PoC
-- 현재 단계: 1차 MVP 구현 및 기본 안정화 완료
+- 현재 단계: 1차 MVP 구현, 작업공간 전체 문서 검색 전환 및 기본 안정화 완료
 - 패키지 관리: `uv`
 - 런타임: Docker Compose의 `api`, `db`, `embedding`, `llm` 4개 서비스
 - Web UI: React 없이 FastAPI가 Vanilla HTML/CSS/JavaScript 정적 파일 제공
@@ -17,7 +17,19 @@
 - 실제 `GET /health/ready`: DB, embedding, LLM 모두 `ok`, HTTP 200
 - Playwright FE 사용성 smoke: 문서 refresh 실패/복구, 질문 실패/재시도,
   답변·오류 focus, 390px 모바일 overflow 검증 통과
+- 최신 Playwright 확인: 로그인 후 문서 선택 없이 전체 작업공간 질문 가능,
+  source 문서명 표시, `전체 문서 검색` 제목과 질문 입력 placeholder 제거 확인
+- 최신 정적 검사: 전체 Vanilla JS `node --check`, `git diff --check` 통과
 - E2E 및 일반 테스트용 임시 컨테이너는 테스트 종료 후 정리됨
+
+최근 작업:
+
+| Commit | 내용 |
+|---|---|
+| `e49d13b` | 사용자 소유의 모든 indexed 문서를 검색하도록 API/검색 쿼리 전환 |
+| `39ef1e7` | RAG source에 문서 제목을 포함하고 UI/PDF panel에 표시 |
+| `2b1f005` | 채팅 요청과 UI에서 문서 선택 개념 제거 |
+| `13c88fb` | 검색 제목과 질문 입력 placeholder 제거 |
 
 ## 2. 시스템 구성
 
@@ -309,6 +321,9 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 ## 10. 알려진 제한사항
 
 - 브라우저 대화는 새로고침 시 사라진다. DB에는 저장되지만 조회 API가 없다.
+- 현재 `/chat` 호출마다 `document_id=NULL`인 새 `chat_session`을 만들기 때문에
+  화면의 연속 대화와 DB session 경계가 일치하지 않는다. 이전 대화 내용도 다음
+  LLM 요청의 context로 전달되지 않아 답변은 질문별 단발성이다.
 - 문서 처리와 재인덱싱이 API process의 background task를 사용한다.
 - 별도 worker/영속 queue가 없어 API process 수명과 자원을 공유한다.
 - 텍스트 기반 PDF만 지원하며 scanned PDF OCR은 없다.
@@ -323,26 +338,54 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 
 ## 11. 다음 작업 권장 순서
 
-1. 대화 이력 복원
-   - chat session/message 조회 API
-   - 로그인 및 새로고침 후 기존 작업공간 대화 표시
-   - 사용자 소유권 통합 테스트
-2. API Docker 의존성 분리
-   - API에서 `torch`, `sentence-transformers`, CUDA package 제거
-   - embedding 전용 dependency group 또는 별도 lock/build 구성
-3. 운영 보안
-   - 기본 관리자 비밀번호 변경 강제
-   - HTTPS와 secure cookie
-   - 회원가입/로그인 rate limit과 계정 잠금
-   - PostgreSQL 백업/복원 및 구조화 로그
-4. 이후 확장
-   - Redis + RQ worker, MinIO/S3, 용어 정규화, reranker,
-     OCR/Vision, streaming, 문서 버전, 이메일 인증, 학습 피드백
+### 1순위: 대화 세션 및 이력 완성
+
+- 작업공간 대화의 session 정책 결정: 계정당 현재 session 하나 또는 여러 대화 목록
+- 기존 session에 후속 질문을 추가할 수 있도록 `/chat` 계약 확장
+- session/message 목록·상세 조회 및 새 대화 시작 API 추가
+- 새로고침과 재로그인 후 대화 및 source 복원
+- 필요한 범위의 이전 메시지를 LLM context에 포함
+- 사용자별 session 소유권, 다른 사용자 접근 404, pagination 통합 테스트
+
+완료 기준: 로그인 사용자가 대화를 이어서 질문할 수 있고, 새로고침 후에도 같은
+대화가 복원되며 다른 계정에서는 접근할 수 없어야 한다.
+
+### 2순위: API Docker 의존성 경량화
+
+- 공통/API/embedding 의존성 group을 `pyproject.toml`에서 분리
+- API image에서 `torch`, `sentence-transformers`, CUDA package 제거
+- lockfile 재현성을 유지하면서 API와 embedding image가 필요한 group만 설치
+- build, health/readiness, 단위·통합·실제 모델 E2E 재검증
+
+완료 기준: API가 embedding HTTP client만 사용하고, API image와 최초 build 시간이
+유의미하게 줄어들어야 한다. 현재는 정적 파일만 바꿔도 CUDA/PyTorch layer 때문에
+API image export가 오래 걸린다.
+
+### 3순위: 운영 전 필수 보강
+
+- 최초 로그인 시 기본 관리자 `admin/admin` 비밀번호 변경 강제 또는 bootstrap
+  환경변수 기반 관리자 생성으로 교체
+- HTTPS reverse proxy와 `AUTH_COOKIE_SECURE=true` 운영 구성
+- 회원가입/로그인 rate limit, 계정 잠금, 비밀번호 재설정
+- PostgreSQL 및 업로드 원본의 백업/복원 절차와 복구 리허설
+- 구조화 로그, request ID, 기본 오류/지연 metric 추가
+- reverse proxy request body 제한을 애플리케이션의 50MB 제한과 일치시킴
+
+### 4순위: 처리 안정성과 RAG 품질 확장
+
+- Redis + RQ/Celery worker로 문서 처리와 재인덱싱 분리
+- MinIO/S3 object storage 전환
+- 검색 품질 평가 fixture와 알고리즘/preset별 recall·latency benchmark
+- 간호학 용어·약어 정규화 및 reranker 비교
+- OCR과 표/그림/도표 Vision caption
+- 답변 streaming, 문서 버전 관리, 이메일 인증, 학습 피드백
 
 ## 12. Git 및 작업공간 주의사항
 
-Git baseline은 `ceb4d37 V0.3.0`이며 통합 readiness 변경은 `640c83d`에
-기록되어 있다. 최초 commit에 실수로 포함된
+Git baseline은 `ceb4d37 V0.3.0`이며 현재 최신 commit은
+`13c88fb Simplify workspace chat labels`이다. 통합 readiness 이후 작업공간
+전체 검색, source 문서명, 문서 선택 제거 및 UI 문구 정리가 순서대로 반영되어
+있다. 이 문서 갱신 직전 작업 트리는 clean이다. 최초 commit에 실수로 포함된
 `id_container` RSA private key는 commit amend, reflog 만료 및 unreachable object
 정리를 통해 작업공간과 전체 로컬 이력에서 제거했다. Remote는 아직 없다.
 
