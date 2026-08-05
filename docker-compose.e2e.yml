@@ -39,7 +39,7 @@ services:
       VLLM_MODEL: gemma4
       READINESS_TIMEOUT_SECONDS: 3
       BOOTSTRAP_ADMIN_USERNAME: e2e-admin
-      BOOTSTRAP_ADMIN_PASSWORD: e2e-admin-password
+      BOOTSTRAP_ADMIN_PASSWORD: E2e!Bootstrap2026
     tmpfs:
       - /app/data
     depends_on:

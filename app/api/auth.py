@@ -2,17 +2,34 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_authenticated_user, get_db
 from app.models.user import User
-from app.schemas.auth import AuthResponse, LoginCredentials, RegistrationCredentials, UserResponse
+from app.password_policy import PasswordPolicyError
+from app.schemas.auth import (
+    AuthResponse,
+    LoginCredentials,
+    PasswordChangeRequest,
+    RegistrationCredentials,
+    UserResponse,
+)
 from app.services import auth_service
-from app.services.auth_service import InvalidCredentialsError, UsernameAlreadyExistsError
+from app.services.auth_service import (
+    InvalidCredentialsError,
+    InvalidCurrentPasswordError,
+    PasswordReuseError,
+    UsernameAlreadyExistsError,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def _user_response(user: User) -> UserResponse:
-    return UserResponse(user_id=user.public_id, username=user.username, role=user.role)
+    return UserResponse(
+        user_id=user.public_id,
+        username=user.username,
+        role=user.role,
+        must_change_password=user.must_change_password,
+    )
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
@@ -67,7 +84,42 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)) 
     return response
 
 
+@router.post("/password", response_model=AuthResponse)
+def change_password(
+    credentials: PasswordChangeRequest,
+    request: Request,
+    response: Response,
+    user: User = Depends(get_authenticated_user),
+    db: Session = Depends(get_db),
+) -> AuthResponse:
+    session_token = request.cookies.get(settings.auth_cookie_name)
+    if session_token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+    try:
+        updated_user = auth_service.change_password(
+            db,
+            user,
+            credentials.current_password,
+            credentials.new_password,
+            session_token,
+        )
+    except InvalidCurrentPasswordError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        ) from exc
+    except PasswordReuseError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="New password must be different") from exc
+    except PasswordPolicyError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    response.headers["Cache-Control"] = "no-store"
+    return AuthResponse(user=_user_response(updated_user))
+
+
 @router.get("/me", response_model=AuthResponse)
-def me(response: Response, user: User = Depends(get_current_user)) -> AuthResponse:
+def me(response: Response, user: User = Depends(get_authenticated_user)) -> AuthResponse:
     response.headers["Cache-Control"] = "no-store"
     return AuthResponse(user=_user_response(user))

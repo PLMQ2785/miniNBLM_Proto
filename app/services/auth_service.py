@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.user import User
+from app.password_policy import validate_secure_password
 from app.repositories import user_repository
 
 
@@ -17,6 +18,14 @@ class UsernameAlreadyExistsError(Exception):
 
 
 class InvalidCredentialsError(Exception):
+    pass
+
+
+class InvalidCurrentPasswordError(Exception):
+    pass
+
+
+class PasswordReuseError(Exception):
     pass
 
 
@@ -81,22 +90,60 @@ def logout(db: Session, token: str | None) -> None:
         db.commit()
 
 
+def change_password(
+    db: Session,
+    user: User,
+    current_password: str,
+    new_password: str,
+    session_token: str,
+) -> User:
+    try:
+        current_password_valid = password_hash.verify(current_password, user.password_hash)
+    except Exception:
+        current_password_valid = False
+    if not current_password_valid:
+        raise InvalidCurrentPasswordError
+
+    validate_secure_password(new_password, user.username)
+    try:
+        password_reused = password_hash.verify(new_password, user.password_hash)
+    except Exception:
+        password_reused = False
+    if password_reused:
+        raise PasswordReuseError
+
+    user_repository.set_user_password_hash(db, user, password_hash.hash(new_password))
+    user_repository.set_password_change_required(db, user, False)
+    user_repository.delete_other_auth_sessions(db, user.id, _hash_session_token(session_token))
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 def ensure_bootstrap_admin(db: Session) -> User | None:
-    username = settings.bootstrap_admin_username.strip().casefold()
+    username = settings.bootstrap_admin_username
     password = settings.bootstrap_admin_password
-    if not username or not password:
+    if username is None or password is None:
         return None
 
     user = user_repository.get_user_by_username(db, username)
     if user is None:
-        user = user_repository.create_user(db, username, password_hash.hash(password))
-    else:
+        user = user_repository.create_user(
+            db,
+            username,
+            password_hash.hash(password),
+            must_change_password=True,
+        )
+    elif user.role != "admin":
         try:
             password_matches = password_hash.verify(password, user.password_hash)
         except Exception:
             password_matches = False
         if not password_matches:
-            user_repository.set_user_password_hash(db, user, password_hash.hash(password))
+            raise RuntimeError(
+                "Bootstrap administrator username belongs to an existing account with a different password"
+            )
+        user_repository.set_password_change_required(db, user, True)
 
     user_repository.set_user_role(db, user, "admin")
     user.is_active = True

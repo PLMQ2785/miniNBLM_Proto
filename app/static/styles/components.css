@@ -42,6 +42,18 @@
   line-height: 26px;
 }
 
+.auth-guidance,
+.password-requirements {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.auth-guidance {
+  margin-bottom: 6px;
+}
+
 .auth-form label {
   margin-top: 4px;
   color: var(--text-body);
@@ -71,6 +83,19 @@
 
 .auth-form button[type="submit"]:hover:not(:disabled) {
   background: var(--accent-strong);
+}
+
+.auth-secondary-button {
+  min-height: 38px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.auth-secondary-button:hover:not(:disabled) {
+  color: var(--text-strong);
 }
 
 .auth-form button:disabled,

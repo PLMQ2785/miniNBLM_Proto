@@ -53,10 +53,12 @@ Web UI에서 사용자명과 비밀번호로 계정을 만든 뒤 PDF를 추가�
 가장 최근 대화가 자동으로 복원됩니다. 작업공간 상단에서 새 대화를 시작하거나
 이전 대화로 전환·삭제할 수 있습니다.
 
-로컬 PoC 기본 관리자는 `admin/admin`입니다. 로그인 후 화면 상단의 `관리자`
-버튼에서 검색 프리셋을 변경하고 재인덱싱 진행 상태를 확인할 수 있습니다.
-이 계정은 API 시작 시 생성되며 `.env`의 `BOOTSTRAP_ADMIN_USERNAME`과
-`BOOTSTRAP_ADMIN_PASSWORD`로 변경해야 합니다.
+기본 관리자 계정은 없습니다. 최초 관리자 계정이 필요하면 첫 실행 전에 `.env`에
+`BOOTSTRAP_ADMIN_USERNAME`과 `BOOTSTRAP_ADMIN_PASSWORD`를 모두 설정합니다.
+임시 비밀번호는 12자 이상이며 영문 대·소문자, 숫자, 기호 중 3종 이상을 사용해야
+합니다. 최초 로그인 후에는 문서·채팅·관리자 기능에 접근하기 전에 Web UI에서
+새 비밀번호로 변경해야 합니다. 변경한 비밀번호는 이후 재시작 시 환경변수 값으로
+되돌아가지 않습니다.
 
 기존 일반 계정을 추가 관리자로 지정할 때는 CLI를 사용합니다.
 
@@ -64,8 +66,9 @@ Web UI에서 사용자명과 비밀번호로 계정을 만든 뒤 PDF를 추가�
 docker compose exec api python -m app.cli.set_admin <username>
 ```
 
-`admin/admin`은 로컬 검증용 자격 증명입니다. LAN 외부에 서비스를 노출하기
-전에는 반드시 긴 비밀번호로 변경하고 HTTPS를 적용합니다.
+CLI로 승격한 계정도 다음 로그인에서 안전한 비밀번호로 변경해야 합니다. LAN
+외부에 서비스를 노출하기 전에는 HTTPS를 적용하고 `AUTH_COOKIE_SECURE=true`로
+설정합니다.
 
 ## 로컬 API 개발
 
@@ -178,6 +181,7 @@ curl -b session.cookie \
 - PDF 추가·삭제, 텍스트 추출, page 단위 chunking 및 BGE-M3 embedding
 - 50MB 서버 제한, PDF 시그니처·구조·암호화 여부 업로드 검증
 - 공개 회원가입, 로그인·로그아웃과 사용자별 문서·대화 격리
+- 명시적 관리자 bootstrap과 최초 로그인 비밀번호 변경 강제
 - pgvector Dense, PostgreSQL FTS, pg_trgm 및 RRF Hybrid 검색
 - 로그인 사용자의 모든 indexed 문서를 대상으로 하는 작업공간 RAG 검색
 - 여러 대화 세션 저장, 최근 대화 자동 복원과 제한된 이전 문맥 기반 후속 질문

@@ -18,8 +18,9 @@ def main() -> None:
             raise SystemExit(f"User not found: {username}")
         role = "user" if args.revoke else "admin"
         user_repository.set_user_role(db, user, role)
+        user_repository.set_password_change_required(db, user, not args.revoke)
         db.commit()
-        print(f"{username}: role={role}")
+        print(f"{username}: role={role}, must_change_password={not args.revoke}")
     finally:
         db.close()
 

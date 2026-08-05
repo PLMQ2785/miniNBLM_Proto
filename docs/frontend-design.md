@@ -5,6 +5,7 @@
 - FE는 React 없이 HTML, CSS, Vanilla JavaScript ES module로 구현한다.
 - FastAPI가 UI 정적 파일과 API를 같은 origin에서 제공한다.
 - 공개 회원가입과 로그인은 서버 측 세션 및 `HttpOnly` 쿠키를 사용한다.
+- Bootstrap 관리자와 CLI 승격 관리자는 작업공간 진입 전에 비밀번호를 변경한다.
 - 런타임 컨테이너는 `api`, `db`, `embedding`, `llm` 4개를 유지한다.
 - `AppController`가 화면 상태와 유스케이스를 조정하고, View는 API를 직접
   호출하지 않는다.
@@ -66,6 +67,10 @@ focus를 이동하지 않는다.
 최근 대화 자동 복원, 새 대화, 전환, 삭제 UI를 구현했다. 삭제된 PDF의 과거
 source label은 유지하되 원본 열기 동작은 비활성화한다.
 
+기본 관리자 계정을 제거하고 명시적으로 생성한 bootstrap 관리자에게 전용
+비밀번호 변경 화면을 표시한다. 변경 완료 전에는 작업공간과 관리자 화면을
+렌더링하지 않으며, 사용자는 해당 화면에서 로그아웃할 수 있다.
+
 ### 3.1 MVP Scope
 
 1. Display existing documents and their indexing status.
@@ -83,6 +88,7 @@ source label은 유지하되 원본 열기 동작은 비활성화한다.
 13. Allow administrators to activate one of five retrieval presets and monitor reindexing.
 14. Restore the latest persisted conversation after sign-in or refresh.
 15. Start, switch, page through, and delete user-owned chat sessions.
+16. Require bootstrap administrators to replace their temporary password before entering the workspace.
 
 ### 3.2 Out of Scope
 

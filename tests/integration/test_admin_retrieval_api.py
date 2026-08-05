@@ -11,8 +11,20 @@ pytestmark = pytest.mark.integration
 
 
 def _login_admin(client: TestClient) -> None:
-    response = client.post("/auth/login", json={"username": "admin", "password": "admin"})
+    bootstrap_password = "Test!Bootstrap2026"
+    response = client.post(
+        "/auth/login",
+        json={"username": "admin", "password": bootstrap_password},
+    )
     assert response.status_code == 200
+    changed = client.post(
+        "/auth/password",
+        json={
+            "current_password": bootstrap_password,
+            "new_password": "Secure!Integration2026",
+        },
+    )
+    assert changed.status_code == 200
 
 
 def test_admin_state_and_role_boundary(client: TestClient) -> None:
@@ -69,4 +81,3 @@ def test_unknown_algorithm_is_rejected(client: TestClient) -> None:
     _login_admin(client)
 
     assert client.post("/admin/retrieval/algorithms/not-real/activate").status_code == 404
-

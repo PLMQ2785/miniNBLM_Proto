@@ -4,7 +4,7 @@
 
 - 기준일: 2026-08-05 (Asia/Seoul)
 - 프로젝트: 간호학 수업자료 PDF 기반 RAG 학습 튜터 PoC
-- 현재 단계: 1차 MVP, 기본 안정화 및 API Docker 이미지 경량화 완료
+- 현재 단계: 1차 MVP, 기본 안정화, API 이미지 경량화 및 관리자 bootstrap 보안 완료
 - 패키지 관리: `uv`
 - 런타임: Docker Compose의 `api`, `db`, `embedding`, `llm` 4개 서비스
 - Web UI: React 없이 FastAPI가 Vanilla HTML/CSS/JavaScript 정적 파일 제공
@@ -12,7 +12,7 @@
 
 최근 검증 결과:
 
-- 빠른 단위/API 통합 테스트: `53 passed`, 실제 모델 E2E `1 skipped`
+- 빠른 단위/API 통합 테스트: `63 passed`, 실제 모델 E2E `1 skipped`
 - 실제 BGE-M3/Gemma 4 E2E: `1 passed`
 - 자료 밖 질문 E2E에서 거부 응답의 source가 빈 배열인지 확인
 - 실제 `GET /health/ready`: DB, embedding, LLM 모두 `ok`, HTTP 200
@@ -30,6 +30,8 @@
 - 실제 제공 HTML에서 PDF input의 `multiple` 속성 반영 확인
 - 최신 정적 검사: 전체 Vanilla JS `node --check`, `git diff --check` 통과
 - E2E 및 일반 테스트용 임시 컨테이너는 테스트 종료 후 정리됨
+- 기본 관리자 계정 제거, 명시적 bootstrap과 최초 로그인 비밀번호 변경 강제,
+  다른 로그인 세션 폐기 검증 완료
 
 최근 작업:
 
@@ -92,7 +94,9 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 - 사용자별 문서, PDF 원본, 질문, 대화 및 삭제 접근 격리
 - 다른 사용자의 문서 ID 접근 시 HTTP 404
 - `admin` 역할과 관리자 CLI
-- 개발 기본 관리자 `admin/admin`
+- 기본 관리자 없음, 두 bootstrap 환경변수를 명시한 경우에만 최초 관리자 생성
+- bootstrap/CLI 승격 관리자의 최초 로그인 비밀번호 변경 강제
+- 비밀번호 변경 전 문서·채팅·관리 API 차단 및 다른 로그인 세션 폐기
 
 ### PDF 문서 처리
 
@@ -191,6 +195,7 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 | `POST` | `/auth/register` | 회원가입과 세션 발급 |
 | `POST` | `/auth/login` | 로그인 |
 | `POST` | `/auth/logout` | 세션 폐기 |
+| `POST` | `/auth/password` | 현재 비밀번호 검증 및 안전한 비밀번호 변경 |
 | `GET` | `/auth/me` | 현재 사용자 |
 | `POST` | `/documents` | PDF 업로드 |
 | `GET` | `/documents` | 현재 사용자 문서 목록 |
@@ -249,6 +254,12 @@ docker compose exec api python -m app.cli.set_admin <username>
 docker compose exec api python -m app.cli.set_admin --revoke <username>
 ```
 
+기본 관리자 계정은 없다. 최초 관리자가 필요하면 `.env`의
+`BOOTSTRAP_ADMIN_USERNAME`과 `BOOTSTRAP_ADMIN_PASSWORD`를 함께 설정한다.
+임시 비밀번호는 12자 이상, 영문 대·소문자·숫자·기호 중 3종 이상이어야 하며
+사용자명을 포함할 수 없다. 최초 로그인 또는 CLI 승격 후 Web UI에서 새
+비밀번호로 변경해야 작업공간과 관리자 API를 사용할 수 있다.
+
 ## 7. 테스트
 
 ### 빠른 단위/API 통합 테스트
@@ -264,7 +275,7 @@ docker compose exec api python -m app.cli.set_admin --revoke <username>
 - embedding과 LLM 호출은 test double로 대체
 - 테스트 종료 시 컨테이너 자동 정리
 - 운영 DB 오접속을 막는 `MININBLM_TEST_DATABASE=1` 안전장치 존재
-- 마지막 결과: `53 passed`, 실제 모델 E2E `1 skipped`
+- 마지막 결과: `63 passed`, 실제 모델 E2E `1 skipped`
 
 단위 테스트만 실행:
 
@@ -301,6 +312,7 @@ Alembic migration:
 3. `0003_retrieval_presets.py`
 4. `0004_search_algorithms.py`
 5. `0005_chat_session_history.py`
+6. `0006_admin_password_change.py`
 
 영속 데이터:
 
@@ -360,8 +372,6 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 
 ### 1순위: 운영 전 필수 보강
 
-- 최초 로그인 시 기본 관리자 `admin/admin` 비밀번호 변경 강제 또는 bootstrap
-  환경변수 기반 관리자 생성으로 교체
 - HTTPS reverse proxy와 `AUTH_COOKIE_SECURE=true` 운영 구성
 - 회원가입/로그인 rate limit, 계정 잠금, 비밀번호 재설정
 - PostgreSQL 및 업로드 원본의 백업/복원 절차와 복구 리허설

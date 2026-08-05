@@ -37,6 +37,33 @@
       </div>
     </section>
 
+    <section id="password-change-view" class="auth-view" aria-labelledby="password-change-title" hidden>
+      <div class="auth-panel">
+        <header class="auth-header">
+          <span class="brand-mark" aria-hidden="true">N</span>
+          <div>
+            <strong>Nursing PDF Tutor</strong>
+            <span>관리자 계정 보호</span>
+          </div>
+        </header>
+
+        <form id="password-change-form" class="auth-form">
+          <h1 id="password-change-title">비밀번호 변경</h1>
+          <p class="auth-guidance">계속하려면 임시 비밀번호를 새 비밀번호로 변경하세요.</p>
+          <label for="current-password">현재 비밀번호</label>
+          <input id="current-password" name="current-password" type="password" minlength="1" maxlength="128" autocomplete="current-password" required>
+          <label for="new-password">새 비밀번호</label>
+          <input id="new-password" name="new-password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+          <p class="password-requirements">12자 이상, 영문 대·소문자, 숫자, 기호 중 3종 이상</p>
+          <label for="confirm-password">새 비밀번호 확인</label>
+          <input id="confirm-password" name="confirm-password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+          <p id="password-change-error" class="auth-error" role="alert"></p>
+          <button id="password-change-submit" type="submit">비밀번호 변경</button>
+          <button id="password-change-logout" class="auth-secondary-button" type="button">로그아웃</button>
+        </form>
+      </div>
+    </section>
+
     <section id="admin-view" class="admin-view" hidden>
       <header class="admin-header">
         <div class="brand-block">

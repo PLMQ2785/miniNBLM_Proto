@@ -8,6 +8,7 @@ import { NotificationView } from "./views/notification-view.js";
 import { SourcePanel } from "./views/source-panel.js";
 import { AuthView } from "./views/auth-view.js";
 import { AdminView } from "./views/admin-view.js";
+import { PasswordChangeView } from "./views/password-change-view.js";
 
 const byId = (id) => document.getElementById(id);
 
@@ -16,6 +17,7 @@ const sourcePanelRoot = byId("source-panel");
 const backdrop = byId("drawer-backdrop");
 const appRoot = byId("app");
 const adminRoot = byId("admin-view");
+const passwordChangeRoot = byId("password-change-view");
 const apiClient = new ApiClient();
 
 const authView = new AuthView({
@@ -45,6 +47,17 @@ const adminView = new AdminView({
   maintenance: byId("maintenance-status"),
   jobStatus: byId("job-status"),
   retryButton: byId("retry-job-button"),
+});
+
+const passwordChangeView = new PasswordChangeView({
+  root: passwordChangeRoot,
+  form: byId("password-change-form"),
+  currentPassword: byId("current-password"),
+  newPassword: byId("new-password"),
+  confirmPassword: byId("confirm-password"),
+  error: byId("password-change-error"),
+  submit: byId("password-change-submit"),
+  logout: byId("password-change-logout"),
 });
 
 const documentPanel = new DocumentPanel({
@@ -162,6 +175,7 @@ function closeAdmin() {
 
 async function enterWorkspace(user) {
   authView.hide();
+  passwordChangeView.hide();
   adminView.hide();
   byId("current-username").textContent = user.username;
   byId("admin-username").textContent = user.username;
@@ -173,6 +187,17 @@ async function enterWorkspace(user) {
   }
 }
 
+async function routeAuthenticatedUser(user) {
+  if (user.must_change_password) {
+    authView.hide();
+    adminView.hide();
+    appRoot.hidden = true;
+    passwordChangeView.show();
+    return;
+  }
+  await enterWorkspace(user);
+}
+
 authView.onSubmit(async (mode, username, password) => {
   authView.setBusy(true);
   authView.showError("");
@@ -180,7 +205,7 @@ authView.onSubmit(async (mode, username, password) => {
     const result = mode === "register"
       ? await apiClient.register(username, password)
       : await apiClient.login(username, password);
-    await enterWorkspace(result.user);
+    await routeAuthenticatedUser(result.user);
   } catch (error) {
     const message = error.status === 409
       ? "이미 사용 중인 사용자명입니다."
@@ -198,6 +223,21 @@ async function logout() {
     window.location.reload();
   }
 }
+
+passwordChangeView.onSubmit(async (currentPassword, newPassword) => {
+  passwordChangeView.setBusy(true);
+  passwordChangeView.showError("");
+  try {
+    const result = await apiClient.changePassword(currentPassword, newPassword);
+    await enterWorkspace(result.user);
+  } catch (error) {
+    passwordChangeView.showError(error.message);
+  } finally {
+    passwordChangeView.setBusy(false);
+  }
+});
+
+passwordChangeView.onLogout(logout);
 
 adminView.onActivate(async (presetKey) => {
   if (!window.confirm(`${presetKey} preset을 적용할까요? 필요한 경우 전체 문서를 다시 인덱싱합니다.`)) return;
@@ -252,10 +292,11 @@ window.addEventListener("authrequired", () => window.location.reload());
 async function bootstrap() {
   try {
     const result = await apiClient.getCurrentUser();
-    await enterWorkspace(result.user);
+    await routeAuthenticatedUser(result.user);
   } catch (error) {
     appRoot.hidden = true;
     adminView.hide();
+    passwordChangeView.hide();
     authView.show();
     if (error.status !== 401) authView.showError(error.message);
   }

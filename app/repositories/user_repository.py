@@ -6,8 +6,19 @@ from sqlalchemy.orm import Session
 from app.models.user import AuthSession, User
 
 
-def create_user(db: Session, username: str, password_hash: str) -> User:
-    user = User(username=username, password_hash=password_hash, role="user")
+def create_user(
+    db: Session,
+    username: str,
+    password_hash: str,
+    *,
+    must_change_password: bool = False,
+) -> User:
+    user = User(
+        username=username,
+        password_hash=password_hash,
+        role="user",
+        must_change_password=must_change_password,
+    )
     db.add(user)
     db.flush()
     return user
@@ -25,6 +36,12 @@ def set_user_role(db: Session, user: User, role: str) -> User:
 
 def set_user_password_hash(db: Session, user: User, value: str) -> User:
     user.password_hash = value
+    db.flush()
+    return user
+
+
+def set_password_change_required(db: Session, user: User, required: bool) -> User:
+    user.must_change_password = required
     db.flush()
     return user
 
@@ -60,3 +77,12 @@ def get_user_by_session_token_hash(
 
 def delete_auth_session(db: Session, token_hash: str) -> None:
     db.execute(delete(AuthSession).where(AuthSession.token_hash == token_hash))
+
+
+def delete_other_auth_sessions(db: Session, user_id: int, current_token_hash: str) -> None:
+    db.execute(
+        delete(AuthSession).where(
+            AuthSession.user_id == user_id,
+            AuthSession.token_hash != current_token_hash,
+        )
+    )

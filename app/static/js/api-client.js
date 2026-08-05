@@ -40,6 +40,17 @@ export class ApiClient {
     return this.request("/auth/logout", { method: "POST" });
   }
 
+  async changePassword(currentPassword, newPassword) {
+    return this.request("/auth/password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_password: newPassword,
+      }),
+    });
+  }
+
   async getRetrievalAdminState() {
     return this.request("/admin/retrieval");
   }
@@ -140,6 +151,21 @@ export class ApiClient {
   }
 
   errorMessage(status, detail, path = "") {
+    if (path === "/auth/password") {
+      if (status === 409) return "현재 비밀번호와 다른 비밀번호를 사용해 주세요.";
+      if (status === 400 && detail === "Current password is incorrect") {
+        return "현재 비밀번호가 올바르지 않습니다.";
+      }
+      if (status === 400 && detail === "Password must not contain the username") {
+        return "새 비밀번호에 사용자명을 포함할 수 없습니다.";
+      }
+      if (status === 400 && detail === "Password is too common") {
+        return "추측하기 어려운 새 비밀번호를 사용해 주세요.";
+      }
+      if (status === 400) {
+        return "영문 대·소문자, 숫자, 기호 중 3종 이상을 사용해 주세요.";
+      }
+    }
     if (status === 400) return detail || "요청한 파일을 확인해 주세요.";
     if (status === 401) return "사용자명 또는 비밀번호를 확인해 주세요.";
     if (status === 403) return "이 작업을 수행할 권한이 없습니다.";

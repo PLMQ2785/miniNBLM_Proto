@@ -77,8 +77,12 @@ docker compose up -d db embedding api
 | 활성 retrieval preset | `balanced` | DB에서 관리하며 기본 `top_k=8`, 청크 `1000/150` |
 | `AUTH_SESSION_TTL_HOURS` | `168` | 로그인 세션 유지 시간 |
 | `AUTH_COOKIE_SECURE` | `false` | HTTPS 운영 환경에서는 `true`로 설정 |
-| `BOOTSTRAP_ADMIN_USERNAME` | `admin` | 시작 시 보장할 개발용 관리자 사용자명 |
-| `BOOTSTRAP_ADMIN_PASSWORD` | `admin` | 시작 시 보장할 개발용 관리자 비밀번호 |
+| `BOOTSTRAP_ADMIN_USERNAME` | 없음 | 최초 관리자 생성 시에만 설정할 사용자명 |
+| `BOOTSTRAP_ADMIN_PASSWORD` | 없음 | 최초 로그인에서 교체할 안전한 임시 비밀번호 |
+
+Bootstrap 관리자 변수는 둘 다 설정하거나 둘 다 비워야 합니다. 비밀번호는 12자
+이상이며 영문 대·소문자, 숫자, 기호 중 3종 이상이어야 하고 사용자명을 포함할 수
+없습니다. 계정 생성 후에는 두 변수를 제거해도 됩니다.
 
 `embedding`과 `llm`은 같은 GPU를 사용할 수 있습니다. `VLLM_GPU_MEMORY_UTILIZATION`은 전체 GPU 용량에 대한 목표치이며, 모델 weight, 실행 workspace, CUDA context와 KV cache가 함께 VRAM을 사용합니다.
 
@@ -92,6 +96,7 @@ docker compose up -d db embedding api
 | `POST` | `/auth/register` | 공개 회원가입과 로그인 세션 발급 |
 | `POST` | `/auth/login` | 로그인 세션 발급 |
 | `POST` | `/auth/logout` | 현재 로그인 세션 폐기 |
+| `POST` | `/auth/password` | 현재 비밀번호 검증 후 새 비밀번호 설정 |
 | `GET` | `/auth/me` | 현재 로그인 사용자 |
 | `POST` | `/documents` | multipart PDF 업로드 |
 | `GET` | `/documents` | 문서 목록 |
@@ -119,9 +124,13 @@ docker compose up -d db embedding api
 
 ### 관리자 지정과 검색 프리셋
 
-공개 회원가입 계정은 기본적으로 `user` 역할입니다. 로컬 PoC에서는 API 시작 시
-`admin/admin` 계정을 생성하거나 해당 계정의 역할과 비밀번호를 환경변수 값으로
-맞춥니다. 외부 노출 환경에서는 `.env`의 기본 비밀번호를 반드시 변경합니다.
+공개 회원가입 계정은 기본적으로 `user` 역할이며 기본 관리자 계정은 없습니다.
+`BOOTSTRAP_ADMIN_USERNAME`과 `BOOTSTRAP_ADMIN_PASSWORD`를 명시하면 존재하지
+않는 계정을 최초 관리자로 생성합니다. 기존 관리자 비밀번호는 API 재시작 시
+환경변수 값으로 덮어쓰지 않습니다. Bootstrap 관리자와 CLI로 승격한 관리자는
+최초 로그인 후 비밀번호를 변경할 때까지 인증 조회와 비밀번호 변경 외 API에
+HTTP 403으로 차단됩니다. 변경 시 현재 세션을 제외한 기존 로그인 세션도
+폐기됩니다.
 
 기존 계정을 추가 관리자로 지정하거나 권한을 회수할 때는 다음 CLI를 사용합니다.
 
@@ -318,6 +327,7 @@ KV cache is needed, which is larger than the available KV cache memory
 - 데스크톱과 모바일 Web UI 렌더링
 - 모바일 문서 drawer, 질문 전송, 출처 선택과 PDF frame 열기
 - Argon2id 비밀번호 해시, 회원가입·로그인·로그아웃과 세션 폐기
+- 기본 관리자 제거, 명시적 bootstrap과 최초 로그인 비밀번호 변경 강제
 - 서로 다른 두 사용자 간 문서 목록·원본 PDF·질의·삭제 접근 격리
 - 데스크톱·모바일 인증 UI와 모바일 가로 overflow 없음
 - 관리자 권한 격리, 프리셋 5개 조회·전환·진행 상태 UI
@@ -350,8 +360,9 @@ KV cache is needed, which is larger than the available KV cache memory
 `postgres_data`, `data/` 업로드 파일을 사용하지 않습니다. embedding과 LLM
 클라이언트는 테스트 대역으로 교체하므로 GPU 서비스도 필요하지 않습니다.
 
-현재 자동화 범위는 프리셋 유효성·변경 영향, 인증 입력, RRF 병합, 회원가입과
-세션, 사용자별 문서 격리, PDF 업로드·삭제 제약, 대화 저장·복원·소유권·페이지 조회, 관리자 권한과
+현재 자동화 범위는 프리셋 유효성·변경 영향, 인증 입력, 관리자 bootstrap·강제
+비밀번호 변경·다중 세션 폐기, RRF 병합, 회원가입과 세션, 사용자별 문서 격리,
+PDF 업로드·삭제 제약, 대화 저장·복원·소유권·페이지 조회, 관리자 권한과
 프리셋 전환, 네 검색 알고리즘의 실제 PostgreSQL 질의, 문서 및 재인덱싱 복구를
 포함합니다. 실제 PDF 파싱·embedding·LLM 생성과 브라우저 레이아웃은 별도의
 서비스 및 UI smoke 검증 범위입니다.
