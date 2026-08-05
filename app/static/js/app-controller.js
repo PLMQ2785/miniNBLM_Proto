@@ -13,7 +13,7 @@ export class AppController {
     this.sourcePanel = sourcePanel;
     this.notificationView = notificationView;
 
-    this.documentPanel.onUpload((file) => this.uploadDocument(file));
+    this.documentPanel.onUpload((files) => this.uploadDocuments(files));
     this.documentPanel.onDelete((documentId) => this.deleteDocument(documentId));
     this.documentPanel.onRefresh(() => this.loadDocuments({ announceSuccess: true }));
     this.chatPanel.onSubmit((question) => this.submitQuestion(question));
@@ -224,36 +224,71 @@ export class AppController {
     }
   }
 
-  async uploadDocument(file) {
-    if (!this.isPdf(file)) {
-      this.notificationView.showError("PDF 파일만 추가할 수 있습니다.");
-      this.documentPanel.clearFileInput();
-      return;
+  async uploadDocuments(files) {
+    if (this.state.isUploading) return;
+
+    const failures = [];
+    const uploadableFiles = [];
+    for (const file of Array.from(files)) {
+      if (!this.isPdf(file)) {
+        failures.push({ file, reason: "PDF 파일이 아닙니다." });
+      } else if (file.size > MAX_UPLOAD_BYTES) {
+        failures.push({ file, reason: "50MB를 초과합니다." });
+      } else {
+        uploadableFiles.push(file);
+      }
     }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      this.notificationView.showError("PDF 파일은 50MB 이하여야 합니다.");
-      this.documentPanel.clearFileInput();
+    this.documentPanel.clearFileInput();
+
+    if (uploadableFiles.length === 0) {
+      this.showUploadFailures(0, failures);
       return;
     }
 
+    let uploadedCount = 0;
+    const retryableFiles = [];
     this.state.isUploading = true;
-    this.render();
+    this.state.uploadProgress = { current: 1, total: uploadableFiles.length };
     try {
-      const result = await this.apiClient.uploadDocument(file);
-      const documentSummary = await this.apiClient.getDocument(result.document_id);
-      this.state.documents = upsertDocument(this.state.documents, documentSummary);
-      this.startPolling(documentSummary.document_id);
-      this.notificationView.showStatus("PDF를 업로드했습니다.");
-    } catch (error) {
-      this.notificationView.showError(error.message, {
-        actionLabel: "업로드 재시도",
-        onAction: () => this.uploadDocument(file),
-      });
+      for (const [index, file] of uploadableFiles.entries()) {
+        this.state.uploadProgress = { current: index + 1, total: uploadableFiles.length };
+        this.render();
+        try {
+          const result = await this.apiClient.uploadDocument(file);
+          const documentSummary = await this.apiClient.getDocument(result.document_id);
+          this.state.documents = upsertDocument(this.state.documents, documentSummary);
+          this.startPolling(documentSummary.document_id);
+          uploadedCount += 1;
+        } catch (error) {
+          failures.push({ file, reason: error.message });
+          retryableFiles.push(file);
+        }
+      }
     } finally {
       this.state.isUploading = false;
-      this.documentPanel.clearFileInput();
+      this.state.uploadProgress = null;
       this.render();
     }
+
+    if (failures.length > 0) {
+      this.showUploadFailures(uploadedCount, failures, retryableFiles);
+    } else {
+      this.notificationView.showStatus(
+        uploadedCount === 1 ? "PDF를 업로드했습니다." : `PDF ${uploadedCount}개를 업로드했습니다.`,
+      );
+    }
+  }
+
+  showUploadFailures(uploadedCount, failures, retryableFiles = []) {
+    const preview = failures.slice(0, 2).map(
+      ({ file, reason }) => `${file.name}: ${reason}`,
+    ).join(" / ");
+    const remainder = failures.length > 2 ? ` 외 ${failures.length - 2}개` : "";
+    const prefix = uploadedCount > 0 ? `${uploadedCount}개 업로드 완료. ` : "";
+    this.notificationView.showError(`${prefix}${failures.length}개 실패: ${preview}${remainder}`, {
+      actionLabel: retryableFiles.length > 0 ? "실패 항목 재시도" : null,
+      onAction: retryableFiles.length > 0 ? () => this.uploadDocuments(retryableFiles) : null,
+    });
   }
 
   async deleteDocument(documentId, { skipConfirmation = false } = {}) {
@@ -407,6 +442,7 @@ export class AppController {
       isLoading: this.state.isLoadingDocuments,
       loadError: this.state.documentLoadError,
       isUploading: this.state.isUploading,
+      uploadProgress: this.state.uploadProgress,
       deletingDocumentId: this.state.deletingDocumentId,
     });
     this.chatPanel.render(this.state.documents, conversation, {

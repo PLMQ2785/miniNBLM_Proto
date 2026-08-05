@@ -12,8 +12,8 @@ export class DocumentPanel {
     this.refreshHandler = null;
 
     this.fileInput.addEventListener("change", () => {
-      const [file] = this.fileInput.files;
-      if (file && this.uploadHandler) this.uploadHandler(file);
+      const files = Array.from(this.fileInput.files || []);
+      if (files.length > 0 && this.uploadHandler) this.uploadHandler(files);
     });
     this.uploadForm.addEventListener("submit", (event) => event.preventDefault());
     this.refreshButton.addEventListener("click", () => {
@@ -53,9 +53,12 @@ export class DocumentPanel {
     isLoading,
     loadError,
     isUploading,
+    uploadProgress,
     deletingDocumentId,
   }) {
-    this.uploadStatus.textContent = isUploading ? "업로드 중" : "";
+    this.uploadStatus.textContent = isUploading && uploadProgress?.total > 1
+      ? `업로드 중 ${uploadProgress.current}/${uploadProgress.total}`
+      : (isUploading ? "업로드 중" : "");
     this.fileInput.disabled = isUploading;
     this.refreshButton.disabled = isLoading;
     this.refreshButton.dataset.loading = String(isLoading);

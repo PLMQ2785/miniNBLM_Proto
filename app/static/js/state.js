@@ -13,6 +13,7 @@ export function createInitialState() {
     deletingSessionId: null,
     documentLoadError: null,
     isUploading: false,
+    uploadProgress: null,
     deletingDocumentId: null,
     isGenerating: false,
   };
