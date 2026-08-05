@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     vllm_base_url: str = "http://localhost:8010/v1"
     vllm_api_key: str = "EMPTY"
     vllm_model: str = "gemma4"
+    readiness_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
 
     auth_cookie_name: str = "mininblm_session"
     auth_session_ttl_hours: int = Field(default=168, ge=1, le=8760)

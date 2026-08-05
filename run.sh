@@ -46,6 +46,7 @@ wait_for_endpoint() {
   local service="$1"
   local url="$2"
   local label="$3"
+  local log_services="${4:-$service}"
   local deadline=$((SECONDS + STARTUP_TIMEOUT))
   local next_notice=$SECONDS
 
@@ -56,13 +57,15 @@ wait_for_endpoint() {
     if [[ "$state" == "exited" || "$state" == "dead" ]]; then
       echo
       echo "오류: $label 컨테이너가 '$state' 상태입니다." >&2
-      "${COMPOSE[@]}" logs --tail=80 "$service" >&2
+      "${COMPOSE[@]}" logs --tail=80 $log_services >&2
       return 1
     fi
     if (( SECONDS >= deadline )); then
       echo
       echo "오류: $label 준비 시간이 ${STARTUP_TIMEOUT}초를 초과했습니다." >&2
-      "${COMPOSE[@]}" logs --tail=80 "$service" >&2
+      "${COMPOSE[@]}" exec -T api curl -sS --max-time 5 "$url" >&2 || true
+      echo >&2
+      "${COMPOSE[@]}" logs --tail=80 $log_services >&2
       return 1
     fi
     if (( SECONDS >= next_notice )); then
@@ -148,9 +151,10 @@ ensure_environment
 echo "네 개 서비스를 시작합니다: db, embedding, llm, api"
 "${COMPOSE[@]}" up -d "${build_args[@]}"
 
-wait_for_endpoint api http://127.0.0.1:8080/health API
-
-wait_for_endpoint embedding http://127.0.0.1:8070/health Embedding
-wait_for_endpoint llm http://127.0.0.1:8010/health LLM
+wait_for_endpoint \
+  api \
+  http://127.0.0.1:8080/health/ready \
+  "전체 서비스" \
+  "api embedding llm db"
 
 print_access_urls

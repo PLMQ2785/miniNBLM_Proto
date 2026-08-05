@@ -1620,7 +1620,7 @@ retrieve top 30
 
 # 29. 현재 구현 및 검증 상태
 
-2026-08-04 기준으로 1차 MVP 기능을 구현했다. 초기 후속 범위였던 PostgreSQL
+2026-08-05 기준으로 1차 MVP 기능을 구현했다. 초기 후속 범위였던 PostgreSQL
 FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 네 검색
 알고리즘을 청킹 preset과 독립적으로 선택할 수 있다.
 
@@ -1634,6 +1634,7 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
 - 손상되거나 암호화된 PDF 거절 및 부분 데이터 정리
 - 격리된 PostgreSQL을 사용하는 단위·API 통합 테스트
 - 실제 BGE-M3와 Gemma 4를 사용하는 PDF RAG E2E smoke 테스트
+- DB, embedding, vLLM 통합 readiness와 Docker/run.sh 시작 판정 연동
 
 빠른 테스트는 `./scripts/test.sh -q`, 실제 모델 E2E는 네 서비스 실행 후
 `./scripts/e2e.sh -q`로 수행한다. E2E API와 DB는 운영 데이터와 분리된다.

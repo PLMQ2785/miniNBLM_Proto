@@ -30,6 +30,7 @@ services:
       VLLM_BASE_URL: http://127.0.0.1:8010/v1
       VLLM_API_KEY: EMPTY
       VLLM_MODEL: gemma4
+      READINESS_TIMEOUT_SECONDS: ${READINESS_TIMEOUT_SECONDS:-3}
       AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-168}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
       BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
@@ -39,6 +40,12 @@ services:
     network_mode: host
     volumes:
       - ./data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/ready >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
     depends_on:
       db:
         condition: service_healthy

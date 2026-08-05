@@ -34,9 +34,9 @@ hostAddressLoopback=true
 ```
 
 스크립트는 `.env`가 없으면 예제에서 생성하고, 모델 경로를 검증한 뒤 네
-컨테이너를 시작합니다. API가 준비되면 Alembic migration을 적용하고,
-embedding과 LLM health endpoint가 응답할 때까지 기다립니다. 기본 제한시간은
-900초이며 다음과 같이 변경할 수 있습니다.
+컨테이너를 시작합니다. API entrypoint가 Alembic migration을 적용하며,
+`run.sh`는 DB, embedding, LLM을 종합하는 `/health/ready`가 성공할 때까지
+기다립니다. 기본 제한시간은 900초이며 다음과 같이 변경할 수 있습니다.
 
 ```bash
 STARTUP_TIMEOUT=1200 ./run.sh
@@ -73,6 +73,7 @@ docker compose up -d db embedding api
 | `VLLM_GPU_MEMORY_UTILIZATION` | `0.65` | vLLM이 사용할 GPU 메모리 비율 |
 | `VLLM_MAX_NUM_SEQS` | `4` | 동시에 처리할 최대 sequence 수 |
 | `MAX_UPLOAD_BYTES` | `52428800` | 서버가 허용하는 PDF 파일 최대 바이트 수 |
+| `READINESS_TIMEOUT_SECONDS` | `3` | readiness 구성요소별 최대 점검 시간(초) |
 | 활성 retrieval preset | `balanced` | DB에서 관리하며 기본 `top_k=8`, 청크 `1000/150` |
 | `AUTH_SESSION_TTL_HOURS` | `168` | 로그인 세션 유지 시간 |
 | `AUTH_COOKIE_SECURE` | `false` | HTTPS 운영 환경에서는 `true`로 설정 |
@@ -87,6 +88,7 @@ docker compose up -d db embedding api
 |---|---|---|
 | `GET` | `/` | Web UI |
 | `GET` | `/health` | API process 상태 |
+| `GET` | `/health/ready` | DB, embedding, vLLM 통합 준비 상태 |
 | `POST` | `/auth/register` | 공개 회원가입과 로그인 세션 발급 |
 | `POST` | `/auth/login` | 로그인 세션 발급 |
 | `POST` | `/auth/logout` | 현재 로그인 세션 폐기 |
@@ -102,6 +104,12 @@ docker compose up -d db embedding api
 | `POST` | `/admin/retrieval/algorithms/{key}/activate` | 검색 알고리즘 즉시 변경 |
 | `GET` | `/admin/retrieval/jobs/{id}` | 재인덱싱 작업 상태 조회 |
 | `POST` | `/admin/retrieval/jobs/{id}/retry` | 실패한 재인덱싱 작업 재시도 |
+
+`/health`는 외부 의존성과 무관한 API liveness다. `/health/ready`는 DB
+`SELECT 1`, embedding `/health`, vLLM `/v1/models`를 병렬 확인한다. 모든
+구성요소가 정상일 때 HTTP 200과 `ready`, 하나라도 실패하면 HTTP 503과
+`not_ready`를 반환한다. 구성요소별 `status`, `latency_ms`, 안전하게 정규화한
+`detail`을 포함하며 내부 URL이나 DB 접속 문자열은 노출하지 않는다.
 
 `/documents`와 `/chat` 경로는 로그인이 필요합니다. 세션 토큰은 `HttpOnly`,
 `SameSite=Lax` 쿠키로 전달되며 DB에는 토큰 원문 대신 SHA-256 해시만
@@ -174,6 +182,7 @@ PyMuPDF가 열 수 없는 손상 파일 또는 암호화된 파일은 HTTP 400�
 
 ```bash
 curl -sS http://localhost:8080/health
+curl -sS http://localhost:8080/health/ready
 curl -sS http://localhost:8070/health
 curl -sS http://localhost:8010/v1/models
 curl -sS -c session.cookie \
@@ -251,7 +260,6 @@ KV cache is needed, which is larger than the available KV cache memory
 - 프리셋 재인덱싱은 DB 작업 상태를 이용해 API 재시작 시 처음부터 복구하지만 별도 worker/queue가 없어 API process 수명과 자원을 공유합니다.
 - 텍스트 기반 PDF만 처리하며 scanned PDF용 OCR은 없습니다.
 - 답변은 streaming하지 않습니다.
-- `/health`는 API process만 확인하며 DB, embedding, LLM 준비 상태를 종합하지 않습니다.
 - API Docker 이미지가 외부 embedding 서비스에서는 사용하지 않는 `torch`와 `sentence-transformers`까지 포함해 첫 빌드가 큽니다. 의존성 그룹 분리가 필요합니다.
 
 ## 9. 완료된 검증
@@ -275,6 +283,7 @@ KV cache is needed, which is larger than the available KV cache memory
 - Dense, FTS Keyword, pg_trgm Substring과 RRF Hybrid 검색 결과
 - 관리자 UI의 청킹 preset·검색 알고리즘 독립 전환과 모바일 overflow 없음
 - 서버의 업로드 크기, 확장자, MIME, PDF 시그니처·구조·암호화 검증
+- DB, embedding, vLLM 통합 readiness와 API Docker healthcheck
 
 ## 10. 자동화 테스트
 

@@ -82,6 +82,7 @@ uv run uvicorn app.main:app --reload --port 8080
 
 ```bash
 curl http://localhost:8080/health
+curl http://localhost:8080/health/ready
 curl http://localhost:8070/health
 curl http://localhost:8010/v1/models
 curl http://localhost:8080/documents
@@ -162,6 +163,7 @@ curl -b session.cookie \
 - 반응형 Web UI와 문서 처리 상태 polling
 - 관리자 청킹 프리셋 5개, 검색 알고리즘 4개와 변경 영향 판정
 - API 재시작 시 중단된 PDF 인덱싱과 전체 재인덱싱 자동 복구
+- DB, embedding, vLLM 통합 readiness와 Docker 시작 상태 연동
 
 이메일 확인, 비밀번호 재설정, 대화 이력 조회, 다중 문서 검색, OCR,
 스트리밍 답변과 영속 작업 큐는 후속 범위입니다.

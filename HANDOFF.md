@@ -8,13 +8,13 @@
 - 패키지 관리: `uv`
 - 런타임: Docker Compose의 `api`, `db`, `embedding`, `llm` 4개 서비스
 - Web UI: React 없이 FastAPI가 Vanilla HTML/CSS/JavaScript 정적 파일 제공
-- 현재 컨테이너 상태: 4개 서비스 모두 실행 중이며 `db`는 healthy
+- 현재 컨테이너 상태: 4개 서비스 모두 실행 중이며 `api`, `db`는 healthy
 
 최근 검증 결과:
 
-- 빠른 단위/API 통합 테스트: `37 passed`, 실제 모델 E2E `1 skipped`
+- 빠른 단위/API 통합 테스트: `44 passed`, 실제 모델 E2E `1 skipped`
 - 실제 BGE-M3/Gemma 4 E2E: `1 passed`
-- API 재빌드 후 `GET /health`: `{"status":"ok"}`
+- 실제 `GET /health/ready`: DB, embedding, LLM 모두 `ok`, HTTP 200
 - E2E 및 일반 테스트용 임시 컨테이너는 테스트 종료 후 정리됨
 
 ## 2. 시스템 구성
@@ -48,6 +48,7 @@ WSL mirrored networking에서 Docker bridge port가 Windows localhost로 전달�
 - 기본 max model length: `8192`
 - 기본 GPU memory utilization: `0.65`
 - 기본 max sequences: `4`
+- readiness 구성요소별 timeout: `3초`
 
 `Dockerfile.llm`은 Gemma 4 unified quantization을 vLLM 0.25.0에서 읽도록 로컬
 patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
@@ -143,6 +144,7 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 | Method | Path | 설명 |
 |---|---|---|
 | `GET` | `/health` | API 프로세스 liveness |
+| `GET` | `/health/ready` | DB, embedding, vLLM 통합 readiness |
 | `POST` | `/auth/register` | 회원가입과 세션 발급 |
 | `POST` | `/auth/login` | 로그인 |
 | `POST` | `/auth/logout` | 세션 폐기 |
@@ -159,8 +161,9 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 | `GET` | `/admin/retrieval/jobs/{id}` | 재인덱싱 작업 조회 |
 | `POST` | `/admin/retrieval/jobs/{id}/retry` | 실패 작업 재시도 |
 
-현재 `/health`는 API 프로세스만 확인한다. DB, embedding, LLM을 종합하는
-`/health/ready`는 아직 구현되지 않았다.
+`/health`는 외부 의존성과 무관한 liveness를 제공한다. `/health/ready`는 DB
+`SELECT 1`, embedding `/health`, vLLM `/v1/models`를 병렬 확인하고 구성요소별
+상태와 지연 시간을 반환한다. 하나라도 실패하면 HTTP 503을 반환한다.
 
 ## 6. 실행 방법
 
@@ -215,7 +218,7 @@ docker compose exec api python -m app.cli.set_admin --revoke <username>
 - embedding과 LLM 호출은 test double로 대체
 - 테스트 종료 시 컨테이너 자동 정리
 - 운영 DB 오접속을 막는 `MININBLM_TEST_DATABASE=1` 안전장치 존재
-- 마지막 결과: `37 passed`, 실제 모델 E2E `1 skipped`
+- 마지막 결과: `44 passed`, 실제 모델 E2E `1 skipped`
 
 단위 테스트만 실행:
 
@@ -293,7 +296,6 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 
 ## 10. 알려진 제한사항
 
-- `/health`는 liveness만 제공하며 통합 readiness가 없다.
 - 브라우저 대화는 새로고침 시 사라진다. DB에는 저장되지만 조회 API가 없다.
 - 질문 하나는 선택한 문서 하나만 검색한다.
 - 문서 처리와 재인덱싱이 API process의 background task를 사용한다.
@@ -310,35 +312,31 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 
 ## 11. 다음 작업 권장 순서
 
-1. `/health/ready` 구현
-   - DB `SELECT 1`, embedding `/health`, vLLM `/v1/models` 확인
-   - 구성요소별 상태와 실패 원인을 반환하고 하나라도 실패하면 HTTP 503
-   - `run.sh`와 Docker healthcheck가 readiness를 사용하도록 변경
-   - 외부 서비스 timeout과 통합 테스트 추가
-2. 프런트엔드 사용성 마무리
+1. 프런트엔드 사용성 마무리
    - 실패 작업 재시도 버튼
    - 문서 목록 수동 새로고침
    - 새 답변 및 오류 메시지로 keyboard focus 이동
-3. 대화 이력 복원
+2. 대화 이력 복원
    - chat session/message 조회 API
    - 문서 선택 및 새로고침 후 기존 대화 표시
    - 사용자 소유권 통합 테스트
-4. API Docker 의존성 분리
+3. API Docker 의존성 분리
    - API에서 `torch`, `sentence-transformers`, CUDA package 제거
    - embedding 전용 dependency group 또는 별도 lock/build 구성
-5. 운영 보안
+4. 운영 보안
    - 기본 관리자 비밀번호 변경 강제
    - HTTPS와 secure cookie
    - 회원가입/로그인 rate limit과 계정 잠금
    - PostgreSQL 백업/복원 및 구조화 로그
-6. 이후 확장
+5. 이후 확장
    - Redis + RQ worker, MinIO/S3, 다중 문서 검색, 용어 정규화, reranker,
      OCR/Vision, streaming, 문서 버전, 이메일 인증, 학습 피드백
 
 ## 12. Git 및 작업공간 주의사항
 
-현재 `git status --short` 기준으로 프로젝트 파일 대부분이 `??`인 미추적
-상태다. 아직 신뢰할 수 있는 baseline commit이 없는 것으로 취급해야 한다.
+Git baseline은 `ceb4d37 V0.3.0`으로 생성되어 있다. 최초 commit에 실수로 포함된
+`id_container` RSA private key는 commit amend, reflog 만료 및 unreachable object
+정리를 통해 작업공간과 전체 로컬 이력에서 제거했다. Remote는 아직 없다.
 
 현재 `.gitignore`는 다음 대용량/민감 경로를 제외한다.
 
@@ -355,8 +353,7 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 규칙에 의해 모두 제외되는 것을 `git check-ignore`로 검증했다. 기존 사용자
 데이터와 모델 파일은 코드 저장소에 포함하지 않는다.
 
-다만 baseline commit은 아직 없으므로 첫 commit 전 `git status --short`와 실제
-staging 목록을 반드시 다시 확인한다.
+새 작업을 commit하기 전 `git status --short`와 실제 staging 목록을 확인한다.
 
 또한 작업공간에 사용자가 만든 변경이 있을 수 있으므로 확인 없이 파일을
 되돌리거나 `git reset --hard`, `git checkout --`, `down -v` 같은 파괴적 명령을
