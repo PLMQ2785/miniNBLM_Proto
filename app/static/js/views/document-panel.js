@@ -8,7 +8,6 @@ export class DocumentPanel {
     this.uploadStatus = uploadStatus;
     this.refreshButton = refreshButton;
     this.uploadHandler = null;
-    this.selectHandler = null;
     this.deleteHandler = null;
     this.refreshHandler = null;
 
@@ -31,19 +30,11 @@ export class DocumentPanel {
         this.deleteHandler(Number(deleteButton.dataset.deleteDocumentId));
         return;
       }
-      const button = event.target.closest("[data-document-id]");
-      if (button && this.selectHandler) {
-        this.selectHandler(Number(button.dataset.documentId));
-      }
     });
   }
 
   onUpload(handler) {
     this.uploadHandler = handler;
-  }
-
-  onSelect(handler) {
-    this.selectHandler = handler;
   }
 
   onDelete(handler) {
@@ -58,7 +49,7 @@ export class DocumentPanel {
     this.fileInput.value = "";
   }
 
-  render(documents, selectedId, {
+  render(documents, {
     isLoading,
     loadError,
     isUploading,
@@ -86,14 +77,11 @@ export class DocumentPanel {
     for (const documentSummary of documents) {
       const row = document.createElement("div");
       row.className = "document-row";
-      row.dataset.selected = String(documentSummary.document_id === selectedId);
 
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "document-item";
-      button.dataset.documentId = documentSummary.document_id;
-      button.dataset.status = documentSummary.status;
-      button.setAttribute("aria-pressed", String(documentSummary.document_id === selectedId));
+      const item = document.createElement("div");
+      item.className = "document-item";
+      item.dataset.documentId = documentSummary.document_id;
+      item.dataset.status = documentSummary.status;
 
       const title = document.createElement("span");
       title.className = "document-title";
@@ -111,8 +99,8 @@ export class DocumentPanel {
       date.textContent = formatDate(documentSummary.created_at);
 
       meta.append(status, date);
-      button.append(title, meta);
-      if (documentSummary.error_message) button.title = documentSummary.error_message;
+      item.append(title, meta);
+      if (documentSummary.error_message) item.title = documentSummary.error_message;
 
       const deleteButton = document.createElement("button");
       const isActive = ["uploaded", "processing"].includes(documentSummary.status);
@@ -125,7 +113,7 @@ export class DocumentPanel {
       deleteButton.setAttribute("aria-label", `${documentSummary.title} 삭제`);
       if (isActive) deleteButton.title = "인덱싱 완료 후 삭제할 수 있습니다.";
 
-      row.append(button, deleteButton);
+      row.append(item, deleteButton);
       this.listRoot.append(row);
     }
   }

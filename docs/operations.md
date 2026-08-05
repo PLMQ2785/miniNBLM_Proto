@@ -262,7 +262,8 @@ KV cache is needed, which is larger than the available KV cache memory
 - 이메일 확인, 비밀번호 재설정, 계정 잠금과 가입 rate limit이 없습니다.
 - HTTP로 실행하는 로컬/LAN 기본 설정에서는 `AUTH_COOKIE_SECURE=false`입니다. 외부 운영 환경은 HTTPS와 `true` 설정이 필요합니다.
 - 브라우저에 보이는 대화는 새로고침하면 사라집니다. 백엔드는 메시지를 저장하지만 조회 API는 아직 없습니다.
-- 질문 하나는 선택된 문서 하나만 검색합니다.
+- 질문은 로그인 사용자의 모든 `indexed` 문서를 검색하며, 처리 중이거나 실패한
+  문서는 검색 대상에서 제외됩니다.
 - 문서 처리는 API process의 `BackgroundTasks`를 사용하며 재시작 시 처음부터 복구하지만 별도 worker/queue가 없어 API process 수명과 자원을 공유합니다.
 - 프리셋 재인덱싱은 DB 작업 상태를 이용해 API 재시작 시 처음부터 복구하지만 별도 worker/queue가 없어 API process 수명과 자원을 공유합니다.
 - 텍스트 기반 PDF만 처리하며 scanned PDF용 OCR은 없습니다.

@@ -1,4 +1,4 @@
-import { formatPage, formatStatus } from "../formatters.js";
+import { formatPage } from "../formatters.js";
 
 export class ChatPanel {
   constructor({ title, status, messageList, form, input, sendButton }) {
@@ -57,28 +57,41 @@ export class ChatPanel {
     this.input.focus();
   }
 
-  render(documentSummary, messages, isGenerating) {
-    const isReady = documentSummary?.status === "indexed";
-    this.title.textContent = documentSummary?.title || "문서를 선택하세요";
-    this.status.textContent = documentSummary ? formatStatus(documentSummary.status) : "";
+  render(documents, messages, { isGenerating, isLoading }) {
+    const indexedCount = documents.filter((document) => document.status === "indexed").length;
+    const processingCount = documents.filter(
+      (document) => document.status === "uploaded" || document.status === "processing",
+    ).length;
+    const failedCount = documents.filter((document) => document.status === "failed").length;
+    const isReady = indexedCount > 0;
+
+    this.title.textContent = "전체 문서 검색";
+    this.status.textContent = this.workspaceStatus({
+      indexedCount,
+      processingCount,
+      failedCount,
+      isLoading,
+    });
     this.input.disabled = !isReady || isGenerating;
     this.sendButton.disabled = !isReady || isGenerating;
+    this.input.placeholder = isReady
+      ? "업로드한 전체 자료에 대해 질문하세요"
+      : "검색 가능한 PDF를 추가하세요";
     this.sendButton.textContent = isGenerating ? "답변 생성 중" : "질문 보내기";
     this.messageList.replaceChildren();
 
-    if (!documentSummary) {
-      this.messageList.append(this.emptyState("질문할 문서를 선택하세요."));
-      return;
-    }
-    if (!isReady) {
-      const text = documentSummary.status === "failed"
-        ? documentSummary.error_message || "문서 처리에 실패했습니다."
-        : "문서를 인덱싱하고 있습니다.";
-      this.messageList.append(this.emptyState(text));
-      return;
-    }
     if (messages.length === 0) {
-      this.messageList.append(this.emptyState("아직 대화가 없습니다."));
+      let emptyMessage = "업로드한 전체 자료에 대해 질문하세요.";
+      if (isLoading && documents.length === 0) {
+        emptyMessage = "문서를 불러오는 중입니다.";
+      } else if (!isReady && processingCount > 0) {
+        emptyMessage = "문서를 인덱싱하고 있습니다.";
+      } else if (!isReady) {
+        emptyMessage = documents.length === 0
+          ? "PDF를 추가하면 전체 자료를 대상으로 질문할 수 있습니다."
+          : "검색 가능한 문서가 없습니다. 실패 상태를 확인하거나 PDF를 추가하세요.";
+      }
+      this.messageList.append(this.emptyState(emptyMessage));
     } else {
       messages.forEach((message, messageIndex) => {
         this.messageList.append(this.messageElement(message, messageIndex, isGenerating));
@@ -86,6 +99,15 @@ export class ChatPanel {
     }
     if (isGenerating) this.messageList.append(this.pendingElement());
     this.messageList.scrollTop = this.messageList.scrollHeight;
+  }
+
+  workspaceStatus({ indexedCount, processingCount, failedCount, isLoading }) {
+    const parts = [];
+    if (indexedCount > 0) parts.push(`검색 가능 ${indexedCount}개`);
+    if (processingCount > 0) parts.push(`처리 중 ${processingCount}개`);
+    if (failedCount > 0) parts.push(`실패 ${failedCount}개`);
+    if (parts.length === 0) return isLoading ? "목록 확인 중" : "등록된 문서 없음";
+    return parts.join(" · ");
   }
 
   messageElement(message, messageIndex, isGenerating) {

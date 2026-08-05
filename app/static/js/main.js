@@ -56,8 +56,8 @@ const documentPanel = new DocumentPanel({
 });
 
 const chatPanel = new ChatPanel({
-  title: byId("selected-document-title"),
-  status: byId("selected-document-status"),
+  title: byId("workspace-chat-title"),
+  status: byId("workspace-chat-status"),
   messageList: byId("message-list"),
   form: byId("chat-form"),
   input: byId("question-input"),
@@ -105,10 +105,6 @@ function closeDrawers() {
 
 byId("documents-toggle").addEventListener("click", openDocuments);
 byId("documents-close").addEventListener("click", closeDrawers);
-byId("document-list").addEventListener("click", (event) => {
-  if (event.target.closest("[data-document-id]")
-      && window.matchMedia("(max-width: 900px)").matches) closeDrawers();
-});
 byId("source-close").addEventListener("click", closeDrawers);
 byId("source-mobile-toggle").addEventListener("click", () => {
   documentPanelRoot.classList.remove("is-mobile-open");

@@ -260,7 +260,7 @@
 }
 
 .service-status,
-.selected-document-status,
+.workspace-chat-status,
 .source-page-label,
 .upload-status {
   color: var(--text-muted);
@@ -370,11 +370,6 @@
   background: var(--bg-subtle);
 }
 
-.document-row[data-selected="true"] {
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
-  background: var(--bg-selected);
-}
-
 .document-item {
   display: flex;
   width: 100%;
@@ -386,7 +381,6 @@
   border: 0;
   border-radius: 4px;
   background: transparent;
-  cursor: pointer;
   text-align: left;
 }
 

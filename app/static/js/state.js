@@ -1,8 +1,7 @@
 export function createInitialState() {
   return {
     documents: [],
-    selectedDocumentId: null,
-    conversations: new Map(),
+    conversation: [],
     selectedSource: null,
     isLoadingDocuments: true,
     documentLoadError: null,
@@ -18,13 +17,6 @@ export function upsertDocument(documents, incoming) {
   return next.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
 
-export function getSelectedDocument(state) {
-  return state.documents.find(
-    (document) => document.document_id === state.selectedDocumentId,
-  ) || null;
-}
-
 export function getConversation(state) {
-  if (state.selectedDocumentId === null) return [];
-  return state.conversations.get(state.selectedDocumentId) || [];
+  return state.conversation;
 }

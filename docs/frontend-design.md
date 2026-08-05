@@ -32,8 +32,8 @@ a medical consultation or clinical decision interface.
 - Each account has a private document and chat workspace.
 - Authentication uses username/password registration and a same-origin session cookie.
 - The backend searches every indexed document owned by the signed-in account.
-- The current frontend still requires a selected indexed document during the staged
-  workspace-search transition; this dependency will be removed in the UI step.
+- The frontend enables workspace chat when at least one indexed document exists;
+  document rows never define retrieval scope.
 - Chat history is retained in browser memory for the current page session only.
 - The backend continues to persist chat messages, but history retrieval is not
   part of this frontend iteration.
@@ -60,13 +60,18 @@ a medical consultation or clinical decision interface.
 키보드 focus가 이동하며, 자동 polling 오류는 현재 작업을 방해하지 않도록
 focus를 이동하지 않는다.
 
+질문 범위를 선택 문서에서 로그인 사용자의 전체 indexed 문서로 전환했다.
+문서 목록은 업로드·처리 상태·삭제만 담당하고, indexed 문서가 하나 이상이면
+작업공간 질문창을 활성화한다. 브라우저 메모리의 대화도 문서별 Map이 아닌
+작업공간 대화 하나로 관리한다.
+
 ### 3.1 MVP Scope
 
 1. Display existing documents and their indexing status.
 2. Upload one PDF at a time.
 3. Poll an uploaded document until it becomes `indexed` or `failed`.
-4. Select an indexed document as the chat context.
-5. Ask a question and display the generated answer.
+4. Display uploaded documents as a management and indexing-status list.
+5. Ask a question across every indexed document in the signed-in workspace.
 6. Display source document titles and page references returned with the answer.
 7. Open the original PDF at a referenced page.
 8. Present loading, empty, failure, and retry states.
@@ -79,7 +84,6 @@ focus를 이동하지 않는다.
 ### 3.2 Out of Scope
 
 - Email verification and password recovery
-- Multi-document retrieval in one question
 - Persisted chat history navigation
 - Document version management
 - Token streaming
@@ -96,9 +100,9 @@ focus를 이동하지 않는다.
 | FR-01 | Load document list | `GET /documents` is called when the page opens. |
 | FR-02 | Upload PDF | A PDF is sent as multipart form data to `POST /documents`. |
 | FR-03 | Validate upload | Non-PDF files are rejected before upload and by the API. |
-| FR-04 | Show processing state | `uploaded` and `processing` documents show a busy state and cannot be queried. |
-| FR-05 | Poll processing | The selected/new document is checked every 2 seconds until terminal status. |
-| FR-06 | Select document | Only an `indexed` document enables the question composer. |
+| FR-04 | Show processing state | `uploaded` and `processing` documents show a busy state and are excluded from retrieval. |
+| FR-05 | Poll processing | Each active document is checked every 2 seconds until terminal status. |
+| FR-06 | Enable workspace chat | At least one `indexed` document enables the question composer without document selection. |
 | FR-07 | Submit question | Empty or whitespace-only questions are rejected locally. |
 | FR-08 | Prevent duplicate request | The composer is disabled while one answer is being generated. |
 | FR-09 | Show answer | The assistant answer preserves line breaks and wraps long terms safely. |
@@ -106,7 +110,7 @@ focus를 이동하지 않는다.
 | FR-11 | Show failure | Upload, indexing, retrieval, and generation failures are distinguishable. |
 | FR-12 | Retry recoverable action | Document refresh and failed question submission can be retried. |
 | FR-13 | Safety notice | The interface states that it is a course-material learning aid, not a clinical tool. |
-| FR-14 | Delete document | Confirm deletion, remove related data, and update the active selection. |
+| FR-14 | Delete document | Confirm deletion, remove related data, and remove stale source actions from the current conversation. |
 | FR-15 | Register and sign in | A valid account receives an `HttpOnly` session cookie and enters its workspace. |
 | FR-16 | Isolate workspace | Documents, PDF sources, questions, and deletion are limited to the signed-in owner. |
 | FR-17 | Sign out | The server session is revoked and the authentication view replaces the workspace. |
@@ -116,7 +120,7 @@ focus를 이동하지 않는다.
 ### 5.1 Usability
 
 - The first screen is the usable application, not a landing page.
-- The selected document and its status are always visible while chatting.
+- Indexed, processing, and failed document counts remain visible while chatting.
 - A new user can upload a PDF and ask a question without navigating to another
   page.
 - Status changes do not shift the primary layout.
@@ -185,8 +189,7 @@ focus를 이동하지 않는다.
 ```text
 AppState
   documents: DocumentSummary[]
-  selectedDocumentId: number | null
-  conversations: Map<documentId, ChatMessage[]>
+  conversation: ChatMessage[]
   selectedSource: SourceReference | null
   isLoadingDocuments: boolean
   isUploading: boolean
@@ -201,7 +204,7 @@ Document status behavior:
 |---|---|
 | `uploaded` | Show queued state; start polling. |
 | `processing` | Show indexing state; keep polling. |
-| `indexed` | Enable selection and chat. |
+| `indexed` | Include in workspace retrieval and enable chat when at least one exists. |
 | `failed` | Show error details and refresh action. |
 | `deleted` | Hide from the active list. |
 
@@ -270,12 +273,11 @@ classDiagram
         +start()
         +loadDocuments()
         +uploadDocument(file)
-        +selectDocument(documentId)
         +deleteDocument(documentId, options)
         +submitQuestion(question)
         +retryQuestion(messageIndex)
         +selectSource(source)
-        -generateAnswer(documentId, question, messages)
+        -generateAnswer(question, messages)
         -render()
     }
 
@@ -284,7 +286,7 @@ classDiagram
         +listDocuments() Promise~DocumentSummary[]~
         +getDocument(documentId) Promise~DocumentSummary~
         +uploadDocument(file) Promise~UploadResult~
-        +sendQuestion(documentId, question) Promise~ChatResult~
+        +sendQuestion(question) Promise~ChatResult~
         +getPdfUrl(documentId, page) string
         -request(path, options) Promise~object~
     }
@@ -301,7 +303,7 @@ classDiagram
 
     class DocumentPanel {
         -HTMLElement root
-        +render(documents, selectedId, uiState)
+        +render(documents, uiState)
         +onUpload(handler)
         +onSelect(handler)
         +onDelete(handler)
@@ -311,7 +313,7 @@ classDiagram
 
     class ChatPanel {
         -HTMLElement root
-        +render(document, messages, isGenerating)
+        +render(documents, messages, uiState)
         +onSubmit(handler)
         +onRetry(handler)
         +onSourceSelect(handler)
@@ -412,7 +414,7 @@ sequenceDiagram
     User->>CP: Submit question
     CP->>AC: submitQuestion(question)
     AC->>CP: Render user message and pending state
-    AC->>API: sendQuestion(documentId, question)
+    AC->>API: sendQuestion(question)
     API->>BE: POST /chat
     BE-->>API: answer, sources
     API-->>AC: ChatResult
@@ -502,12 +504,12 @@ Recommended backend hardening before UI release:
 
 ### Phase 3: Document workflow
 
-- Implement list, upload, selection, and polling.
+- Implement management list, upload, deletion, and polling.
 - Handle processing and failed documents.
 
 ### Phase 4: Chat and sources
 
-- Implement per-document in-memory conversations.
+- Implement one workspace-level in-memory conversation.
 - Implement question submission, retry, and source actions.
 - Implement embedded PDF view and mobile new-tab fallback.
 
@@ -523,7 +525,7 @@ Recommended backend hardening before UI release:
 The frontend MVP is complete when all of the following are true:
 
 1. A user can open `/`, upload a PDF, and observe indexing progress.
-2. Chat remains disabled until the selected document is indexed.
+2. Chat remains disabled until at least one workspace document is indexed.
 3. A question produces an answer and at least one source when retrieval succeeds.
 4. Selecting a source opens the correct PDF and requested page.
 5. A failed upload, indexing job, or LLM call produces an actionable UI state.

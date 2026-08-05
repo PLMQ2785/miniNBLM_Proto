@@ -83,11 +83,11 @@ export class ApiClient {
     return this.request(`/documents/${documentId}`, { method: "DELETE" });
   }
 
-  async sendQuestion(documentId, question) {
+  async sendQuestion(question) {
     return this.request("/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ document_id: documentId, question }),
+      body: JSON.stringify({ question }),
     });
   }
 
