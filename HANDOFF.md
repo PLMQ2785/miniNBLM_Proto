@@ -12,7 +12,7 @@
 
 최근 검증 결과:
 
-- 빠른 단위/API 통합 테스트: `51 passed`, 실제 모델 E2E `1 skipped`
+- 빠른 단위/API 통합 테스트: `53 passed`, 실제 모델 E2E `1 skipped`
 - 실제 BGE-M3/Gemma 4 E2E: `1 passed`
 - 자료 밖 질문 E2E에서 거부 응답의 source가 빈 배열인지 확인
 - 실제 `GET /health/ready`: DB, embedding, LLM 모두 `ok`, HTTP 200
@@ -123,7 +123,8 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 - 로그인·새로고침 시 최근 대화 자동 복원
 - 후속 질문 생성에 최근 8개 메시지를 최대 8,000자까지 전달
 - 삭제된 PDF의 과거 source 제목은 보존하고 원본 접근은 비활성화
-- 자료에서 답을 확인할 수 없다는 응답은 source를 반환하지 않음
+- 자료에서 답을 확인할 수 없다는 응답은 source를 반환하지 않으며, 모델이
+  `[[NO_SOURCE]`처럼 마커 대괄호를 일부 누락해도 후처리함
 - Gemma 4/vLLM 답변 생성
 - source document ID/title/page/chunk 반환
 - PDF source page 열기
@@ -260,7 +261,7 @@ docker compose exec api python -m app.cli.set_admin --revoke <username>
 - embedding과 LLM 호출은 test double로 대체
 - 테스트 종료 시 컨테이너 자동 정리
 - 운영 DB 오접속을 막는 `MININBLM_TEST_DATABASE=1` 안전장치 존재
-- 마지막 결과: `51 passed`, 실제 모델 E2E `1 skipped`
+- 마지막 결과: `53 passed`, 실제 모델 E2E `1 skipped`
 
 단위 테스트만 실행:
 

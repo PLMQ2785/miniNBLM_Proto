@@ -50,6 +50,46 @@ def test_generate_answer_supports_legacy_no_source_prefix(
     assert generated.sources == []
 
 
+def test_generate_answer_accepts_malformed_no_source_marker(
+    monkeypatch: pytest.MonkeyPatch,
+    retrieved_chunk: RetrievedChunk,
+) -> None:
+    monkeypatch.setattr(
+        VLLMClient,
+        "chat_completion",
+        lambda self, messages: (
+            "[[NO_SOURCE] 업로드된 자료에서 OS의 메모리 관리정책에 대한 내용은 "
+            "확인되지 않습니다."
+        ),
+    )
+
+    generated = generate_answer("OS의 메모리 관리정책은?", [retrieved_chunk])
+
+    assert generated.answer.startswith("업로드된 자료에서")
+    assert "NO_SOURCE" not in generated.answer
+    assert generated.sources == []
+
+
+def test_generate_answer_keeps_safety_guidance_after_no_source_marker(
+    monkeypatch: pytest.MonkeyPatch,
+    retrieved_chunk: RetrievedChunk,
+) -> None:
+    monkeypatch.setattr(
+        VLLMClient,
+        "chat_completion",
+        lambda self, messages: (
+            "[[NO_SOURCE]] 업로드된 자료에서 확인되지 않습니다. "
+            "실제 환자라면 즉시 의료진에게 문의하세요."
+        ),
+    )
+
+    generated = generate_answer("실제 환자의 처치는?", [retrieved_chunk])
+
+    assert "NO_SOURCE" not in generated.answer
+    assert "의료진" in generated.answer
+    assert generated.sources == []
+
+
 def test_generate_answer_keeps_sources_for_grounded_response(
     monkeypatch: pytest.MonkeyPatch,
     retrieved_chunk: RetrievedChunk,
