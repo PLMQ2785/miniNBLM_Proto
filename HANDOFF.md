@@ -4,7 +4,7 @@
 
 - 기준일: 2026-08-05 (Asia/Seoul)
 - 프로젝트: 간호학 수업자료 PDF 기반 RAG 학습 튜터 PoC
-- 현재 단계: 1차 MVP 구현, 작업공간 전체 문서 검색 전환 및 기본 안정화 완료
+- 현재 단계: 1차 MVP, 작업공간 대화 이력, 다중 PDF 업로드 및 기본 안정화 완료
 - 패키지 관리: `uv`
 - 런타임: Docker Compose의 `api`, `db`, `embedding`, `llm` 4개 서비스
 - Web UI: React 없이 FastAPI가 Vanilla HTML/CSS/JavaScript 정적 파일 제공
@@ -14,6 +14,7 @@
 
 - 빠른 단위/API 통합 테스트: `51 passed`, 실제 모델 E2E `1 skipped`
 - 실제 BGE-M3/Gemma 4 E2E: `1 passed`
+- 자료 밖 질문 E2E에서 거부 응답의 source가 빈 배열인지 확인
 - 실제 `GET /health/ready`: DB, embedding, LLM 모두 `ok`, HTTP 200
 - Playwright FE 사용성 smoke: 문서 refresh 실패/복구, 질문 실패/재시도,
   답변·오류 focus, 390px 모바일 overflow 검증 통과
@@ -21,6 +22,9 @@
   source 문서명 표시, `전체 문서 검색` 제목과 질문 입력 placeholder 제거 확인
 - 대화 세션 Playwright 확인: 생성, 후속 질문 session 재사용, 새로고침 자동
   복원, 새 대화, 전환·삭제와 390px 반응형 배치 통과
+- 다중 PDF 업로드 controller smoke: 선택한 2개 파일의 순차 요청, 문서 목록 반영,
+  완료 알림 검증 통과
+- 실제 제공 HTML에서 PDF input의 `multiple` 속성 반영 확인
 - 최신 정적 검사: 전체 Vanilla JS `node --check`, `git diff --check` 통과
 - E2E 및 일반 테스트용 임시 컨테이너는 테스트 종료 후 정리됨
 
@@ -32,6 +36,9 @@
 | `39ef1e7` | RAG source에 문서 제목을 포함하고 UI/PDF panel에 표시 |
 | `2b1f005` | 채팅 요청과 UI에서 문서 선택 개념 제거 |
 | `13c88fb` | 검색 제목과 질문 입력 placeholder 제거 |
+| `be00453` | 사용자별 작업공간 대화 세션, 메시지 이력 및 후속 질문 문맥 저장 |
+| `6f5b97e` | 자료에서 답을 찾지 못한 거부 응답의 source 제거 |
+| `dd1a8c5` | 여러 PDF 동시 선택, 순차 업로드 및 부분 실패 처리 |
 
 ## 2. 시스템 구성
 
@@ -347,7 +354,7 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 - 업로드 파일 자체는 50MB로 제한하지만 reverse proxy 수준의 전체 request body
   제한은 별도로 구성하지 않았다.
 
-## 11. 다음 작업 권장 순서
+## 11. 남은 작업 권장 순서
 
 ### 1순위: API Docker 의존성 경량화
 
