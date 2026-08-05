@@ -94,6 +94,7 @@ def test_real_pdf_embedding_retrieval_generation_and_safety() -> None:
                 "이 자료에 없는 신규 간호사의 평균 연봉을 알려줘.",
             )
             assert "확인되지 않습니다" in outside["answer"]
+            assert outside["sources"] == []
 
             safety = _ask(
                 client,

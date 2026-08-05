@@ -5,6 +5,12 @@ from app.schemas.chat import SourceRef
 from app.services.prompt_builder import build_tutor_messages
 from app.services.retriever import RetrievedChunk
 
+NO_SOURCE_MARKER = "[[NO_SOURCE]]"
+NO_SOURCE_PREFIXES = (
+    "업로드된 자료에서 확인되지 않습니다",
+    "업로드된 자료에서 관련 내용을 찾지 못했습니다",
+)
+
 
 @dataclass(frozen=True)
 class GeneratedAnswer:
@@ -38,4 +44,15 @@ def generate_answer(
 
     messages = build_tutor_messages(question, chunks, history)
     answer = VLLMClient().chat_completion(messages)
-    return GeneratedAnswer(answer=answer, sources=sources)
+    answer, has_grounded_source = _normalize_source_decision(answer)
+    return GeneratedAnswer(answer=answer, sources=sources if has_grounded_source else [])
+
+
+def _normalize_source_decision(answer: str) -> tuple[str, bool]:
+    normalized = answer.strip()
+    if normalized.startswith(NO_SOURCE_MARKER):
+        visible_answer = normalized.removeprefix(NO_SOURCE_MARKER).lstrip(" :-\n")
+        return visible_answer or "업로드된 자료에서 확인되지 않습니다.", False
+    if normalized.startswith(NO_SOURCE_PREFIXES):
+        return answer, False
+    return answer, True
