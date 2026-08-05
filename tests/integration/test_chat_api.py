@@ -35,7 +35,13 @@ def test_chat_persists_messages_and_returns_sources(
         score=0.9,
         source_refs={"page": 4},
     )
-    monkeypatch.setattr(chat_api, "retrieve_chunks", lambda **kwargs: [retrieved])
+    retrieval_call = {}
+
+    def retrieve_for_workspace(**kwargs):
+        retrieval_call.update(kwargs)
+        return [retrieved]
+
+    monkeypatch.setattr(chat_api, "retrieve_chunks", retrieve_for_workspace)
     monkeypatch.setattr(
         chat_api,
         "generate_answer",
@@ -47,7 +53,7 @@ def test_chat_persists_messages_and_returns_sources(
 
     response = client.post(
         "/chat",
-        json={"document_id": document.id, "question": "낙상 후 무엇을 먼저 하나요?"},
+        json={"question": "낙상 후 무엇을 먼저 하나요?"},
     )
 
     assert response.status_code == 200
@@ -57,23 +63,28 @@ def test_chat_persists_messages_and_returns_sources(
     db.expire_all()
     assert db.scalar(select(func.count()).select_from(ChatSession)) == 1
     assert db.scalar(select(func.count()).select_from(ChatMessage)) == 2
+    session = db.scalar(select(ChatSession))
+    assert session.owner_id == user.id
+    assert session.document_id is None
+    assert retrieval_call["owner_id"] == user.id
+    assert "document_id" not in retrieval_call
 
 
-def test_chat_rejects_another_users_document(
+def test_chat_returns_a_grounded_empty_result_without_document_selection(
     client: TestClient,
-    user_factory,
-    document_factory,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    owner = user_factory("owner")
-    document = document_factory(owner)
     assert client.post(
         "/auth/register",
-        json={"username": "other", "password": "password123"},
+        json={"username": "empty-workspace", "password": "password123"},
     ).status_code == 201
+    monkeypatch.setattr(chat_api, "retrieve_chunks", lambda **kwargs: [])
 
     response = client.post(
         "/chat",
-        json={"document_id": document.id, "question": "질문"},
+        json={"question": "질문"},
     )
 
-    assert response.status_code == 404
+    assert response.status_code == 200
+    assert response.json()["sources"] == []
+    assert "자료" in response.json()["answer"]

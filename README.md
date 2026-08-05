@@ -141,7 +141,7 @@ curl -b session.cookie \
 
 curl -b session.cookie \
   -H "Content-Type: application/json" \
-  -d '{"document_id":1,"question":"이 문서의 핵심 내용을 설명해 주세요."}' \
+  -d '{"question":"업로드한 자료의 핵심 내용을 설명해 주세요."}' \
   http://localhost:8080/chat
 ```
 
@@ -158,6 +158,7 @@ curl -b session.cookie \
 - 50MB 서버 제한, PDF 시그니처·구조·암호화 여부 업로드 검증
 - 공개 회원가입, 로그인·로그아웃과 사용자별 문서·대화 격리
 - pgvector Dense, PostgreSQL FTS, pg_trgm 및 RRF Hybrid 검색
+- 로그인 사용자의 모든 indexed 문서를 대상으로 하는 작업공간 RAG 검색
 - Gemma 4 12B W4A16 모델을 사용한 답변 생성
 - 답변 출처와 원본 PDF 페이지 연결
 - 반응형 Web UI와 문서 처리 상태 polling
@@ -165,5 +166,5 @@ curl -b session.cookie \
 - API 재시작 시 중단된 PDF 인덱싱과 전체 재인덱싱 자동 복구
 - DB, embedding, vLLM 통합 readiness와 Docker 시작 상태 연동
 
-이메일 확인, 비밀번호 재설정, 대화 이력 조회, 다중 문서 검색, OCR,
+이메일 확인, 비밀번호 재설정, 대화 이력 조회, OCR,
 스트리밍 답변과 영속 작업 큐는 후속 범위입니다.

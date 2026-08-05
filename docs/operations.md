@@ -97,8 +97,8 @@ docker compose up -d db embedding api
 | `GET` | `/documents` | 문서 목록 |
 | `GET` | `/documents/{id}` | 문서와 인덱싱 상태 |
 | `GET` | `/documents/{id}/file` | 브라우저에서 여는 원본 PDF |
-| `DELETE` | `/documents/{id}` | 문서, 관련 대화와 원본 파일 삭제 |
-| `POST` | `/chat` | 단일 문서 기반 질문 |
+| `DELETE` | `/documents/{id}` | 문서, page/chunk와 원본 파일 삭제 |
+| `POST` | `/chat` | 현재 사용자의 전체 indexed 문서 기반 질문 |
 | `GET` | `/admin/retrieval` | 프리셋 목록, 활성 설정과 최근 작업 조회 |
 | `POST` | `/admin/retrieval/presets/{key}/activate` | 프리셋 변경 작업 시작 |
 | `POST` | `/admin/retrieval/algorithms/{key}/activate` | 검색 알고리즘 즉시 변경 |
@@ -113,8 +113,9 @@ docker compose up -d db embedding api
 
 `/documents`와 `/chat` 경로는 로그인이 필요합니다. 세션 토큰은 `HttpOnly`,
 `SameSite=Lax` 쿠키로 전달되며 DB에는 토큰 원문 대신 SHA-256 해시만
-저장됩니다. 사용자는 자신이 소유한 문서와 대화에만 접근할 수 있고, 다른
-사용자의 문서 ID를 요청하면 HTTP 404를 반환합니다.
+저장됩니다. 사용자는 자신이 소유한 문서와 대화에만 접근할 수 있고, 문서 조회·
+원본 열람·삭제에서 다른 사용자의 문서 ID를 요청하면 HTTP 404를 반환합니다.
+`/chat` 검색 쿼리는 `documents.owner_id`를 현재 사용자 ID로 제한합니다.
 
 ### 관리자 지정과 검색 프리셋
 
@@ -133,7 +134,9 @@ docker compose exec api python -m app.cli.set_admin --revoke <username>
 오버랩이 바뀌면 모든 문서를 다시 청킹·임베딩하며, 완료 후 새 프리셋과 index
 version을 활성화합니다. 작업 중에는 문서 업로드·삭제와 질문을 HTTP 503으로
 차단하지만 문서 목록과 상태 조회는 허용합니다. 사용자, 세션, 원본 PDF는
-보존되고 기존 대화는 이전 chunk 출처를 참조하므로 재인덱싱 시 삭제됩니다.
+보존됩니다. 문서에 직접 연결된 기존 대화는 재인덱싱 시 삭제되지만, 작업공간
+대화는 특정 문서에 귀속되지 않습니다. 대화 이력 조회를 구현할 때 삭제되거나
+재인덱싱된 chunk 출처를 정리하는 정책이 추가로 필요합니다.
 API가 작업 중 재시작되면 `pending` 또는 `running` 작업을 감지해 진행률을
 초기화하고 모든 문서를 처음부터 다시 처리합니다.
 
@@ -151,8 +154,8 @@ pgvector cosine 검색, `keyword`는 PostgreSQL FTS, `substring`은 pg_trgm,
 
 `uploaded` 또는 `processing` 상태의 문서는 background indexing과 충돌하지
 않도록 삭제 요청에 HTTP 409를 반환합니다. `indexed`와 `failed` 문서를
-삭제하면 관련 pages, chunks, chat sessions/messages와 원본 파일 디렉터리를
-함께 제거합니다.
+삭제하면 관련 pages, chunks, 해당 문서에 직접 연결된 기존 chat session과 원본
+파일 디렉터리를 함께 제거합니다. 작업공간 chat session은 유지됩니다.
 
 PDF 업로드는 `.pdf` 파일명과 PDF MIME type을 모두 요구합니다. 저장 중
 `MAX_UPLOAD_BYTES`를 넘으면 HTTP 413을 반환하고, `%PDF-` 시그니처가 없거나
@@ -164,8 +167,7 @@ PyMuPDF가 열 수 없는 손상 파일 또는 암호화된 파일은 HTTP 400�
 
 ```json
 {
-  "document_id": 1,
-  "question": "이 문서의 핵심 내용을 설명해 주세요."
+  "question": "업로드한 자료의 핵심 내용을 설명해 주세요."
 }
 ```
 

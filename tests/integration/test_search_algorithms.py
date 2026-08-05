@@ -54,7 +54,7 @@ def test_all_search_algorithms_return_the_matching_chunk(
 
         results = retrieve_chunks(
             db,
-            document_id=document.id,
+            owner_id=user.id,
             question="낙상 발생 대응 순서",
             top_k=2,
         )
@@ -64,32 +64,51 @@ def test_all_search_algorithms_return_the_matching_chunk(
         assert results[0].page_start == 3
 
 
-def test_search_is_scoped_to_the_requested_document(
+def test_all_search_algorithms_are_scoped_to_the_owners_indexed_documents(
     db: Session,
     user_factory,
     document_factory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user = user_factory("scope-user")
-    requested_document = document_factory(user, title="requested.pdf")
-    other_document = document_factory(user, title="other.pdf")
+    other_user = user_factory("other-user")
+    first_document = document_factory(user, title="first.pdf")
+    second_document = document_factory(user, title="second.pdf")
+    processing_document = document_factory(user, title="processing.pdf", status="processing")
+    foreign_document = document_factory(other_user, title="foreign.pdf")
     embedding = [1.0] + [0.0] * 1023
     db.add_all(
         [
             Chunk(
-                document_id=requested_document.id,
+                document_id=first_document.id,
                 page_start=1,
                 page_end=1,
                 chunk_index=0,
-                content="요청한 문서의 안전 수칙",
+                content="첫 번째 문서의 안전 수칙",
                 embedding=embedding,
             ),
             Chunk(
-                document_id=other_document.id,
+                document_id=second_document.id,
                 page_start=1,
                 page_end=1,
                 chunk_index=0,
-                content="다른 문서의 안전 수칙",
+                content="두 번째 문서의 안전 수칙",
+                embedding=embedding,
+            ),
+            Chunk(
+                document_id=processing_document.id,
+                page_start=1,
+                page_end=1,
+                chunk_index=0,
+                content="처리 중인 문서의 안전 수칙",
+                embedding=embedding,
+            ),
+            Chunk(
+                document_id=foreign_document.id,
+                page_start=1,
+                page_end=1,
+                chunk_index=0,
+                content="다른 사용자 문서의 안전 수칙",
                 embedding=embedding,
             ),
         ]
@@ -97,12 +116,19 @@ def test_search_is_scoped_to_the_requested_document(
     db.commit()
     monkeypatch.setattr(EmbeddingClient, "embed_query", lambda self, question: embedding)
 
-    results = retrieve_chunks(
-        db,
-        document_id=requested_document.id,
-        question="안전 수칙",
-        top_k=5,
-    )
+    configuration = retrieval_config_repository.get_configuration(db)
+    for algorithm_key in ("dense", "keyword", "substring", "hybrid"):
+        configuration.active_search_algorithm_key = algorithm_key
+        db.commit()
 
-    assert results
-    assert {result.document_id for result in results} == {requested_document.id}
+        results = retrieve_chunks(
+            db,
+            owner_id=user.id,
+            question="안전 수칙",
+            top_k=10,
+        )
+
+        assert {result.document_id for result in results} == {
+            first_document.id,
+            second_document.id,
+        }

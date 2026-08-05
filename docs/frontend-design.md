@@ -31,7 +31,9 @@ a medical consultation or clinical decision interface.
 
 - Each account has a private document and chat workspace.
 - Authentication uses username/password registration and a same-origin session cookie.
-- A question targets exactly one selected document.
+- The backend searches every indexed document owned by the signed-in account.
+- The current frontend still requires a selected indexed document during the staged
+  workspace-search transition; this dependency will be removed in the UI step.
 - Chat history is retained in browser memory for the current page session only.
 - The backend continues to persist chat messages, but history retrieval is not
   part of this frontend iteration.

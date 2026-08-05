@@ -25,7 +25,7 @@ class RetrievedChunk:
 
 def retrieve_chunks(
     db: Session,
-    document_id: int,
+    owner_id: int,
     question: str,
     top_k: int | None = None,
 ) -> list[RetrievedChunk]:
@@ -37,7 +37,7 @@ def retrieve_chunks(
     algorithm = SearchAlgorithmKey(configuration.active_search_algorithm_key)
     rows = _search(
         db=db,
-        document_id=document_id,
+        owner_id=owner_id,
         question=question,
         top_k=result_limit,
         algorithm=algorithm,
@@ -58,35 +58,35 @@ def retrieve_chunks(
 
 def _search(
     db: Session,
-    document_id: int,
+    owner_id: int,
     question: str,
     top_k: int,
     algorithm: SearchAlgorithmKey,
 ):
     if algorithm == SearchAlgorithmKey.DENSE:
-        return _dense_search(db, document_id, question, top_k)
+        return _dense_search(db, owner_id, question, top_k)
     if algorithm == SearchAlgorithmKey.KEYWORD:
-        return search_chunks_by_keyword(db, document_id, question, top_k)
+        return search_chunks_by_keyword(db, owner_id, question, top_k)
     if algorithm == SearchAlgorithmKey.SUBSTRING:
-        return search_chunks_by_substring(db, document_id, question, top_k)
+        return search_chunks_by_substring(db, owner_id, question, top_k)
     if algorithm == SearchAlgorithmKey.HYBRID:
         candidate_limit = top_k * 3
         return _reciprocal_rank_fusion(
             (
-                _dense_search(db, document_id, question, candidate_limit),
-                search_chunks_by_keyword(db, document_id, question, candidate_limit),
-                search_chunks_by_substring(db, document_id, question, candidate_limit),
+                _dense_search(db, owner_id, question, candidate_limit),
+                search_chunks_by_keyword(db, owner_id, question, candidate_limit),
+                search_chunks_by_substring(db, owner_id, question, candidate_limit),
             ),
             top_k,
         )
     raise RuntimeError(f"Unsupported search algorithm: {algorithm}")
 
 
-def _dense_search(db: Session, document_id: int, question: str, top_k: int):
+def _dense_search(db: Session, owner_id: int, question: str, top_k: int):
     query_embedding = EmbeddingClient().embed_query(question)
     return search_chunks_by_embedding(
         db=db,
-        document_id=document_id,
+        owner_id=owner_id,
         query_embedding=query_embedding,
         top_k=top_k,
     )

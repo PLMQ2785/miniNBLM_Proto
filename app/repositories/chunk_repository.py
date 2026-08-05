@@ -2,6 +2,7 @@ from sqlalchemy import delete, func
 from sqlalchemy.orm import Session
 
 from app.models.chunk import Chunk
+from app.models.document import Document
 from app.services.chunker import TextChunk
 
 
@@ -35,15 +36,18 @@ def delete_chunks(db: Session, document_id: int) -> None:
 
 def search_chunks_by_embedding(
     db: Session,
-    document_id: int,
+    owner_id: int,
     query_embedding: list[float],
     top_k: int,
 ) -> list[tuple[Chunk, float]]:
     distance = Chunk.embedding.cosine_distance(query_embedding).label("distance")
     rows = (
         db.query(Chunk, distance)
+        .join(Document, Document.id == Chunk.document_id)
         .filter(
-            Chunk.document_id == document_id,
+            Document.owner_id == owner_id,
+            Document.status == "indexed",
+            Document.deleted_at.is_(None),
             Chunk.deleted_at.is_(None),
             Chunk.embedding.is_not(None),
         )
@@ -56,7 +60,7 @@ def search_chunks_by_embedding(
 
 def search_chunks_by_keyword(
     db: Session,
-    document_id: int,
+    owner_id: int,
     question: str,
     top_k: int,
 ) -> list[tuple[Chunk, float]]:
@@ -65,8 +69,11 @@ def search_chunks_by_keyword(
     rank = func.ts_rank_cd(document_vector, query).label("rank")
     rows = (
         db.query(Chunk, rank)
+        .join(Document, Document.id == Chunk.document_id)
         .filter(
-            Chunk.document_id == document_id,
+            Document.owner_id == owner_id,
+            Document.status == "indexed",
+            Document.deleted_at.is_(None),
             Chunk.deleted_at.is_(None),
             document_vector.op("@@")(query),
         )
@@ -79,7 +86,7 @@ def search_chunks_by_keyword(
 
 def search_chunks_by_substring(
     db: Session,
-    document_id: int,
+    owner_id: int,
     question: str,
     top_k: int,
 ) -> list[tuple[Chunk, float]]:
@@ -89,8 +96,11 @@ def search_chunks_by_substring(
     ).label("similarity")
     rows = (
         db.query(Chunk, similarity)
+        .join(Document, Document.id == Chunk.document_id)
         .filter(
-            Chunk.document_id == document_id,
+            Document.owner_id == owner_id,
+            Document.status == "indexed",
+            Document.deleted_at.is_(None),
             Chunk.deleted_at.is_(None),
             similarity > 0,
         )

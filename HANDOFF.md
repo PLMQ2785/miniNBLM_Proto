@@ -94,7 +94,10 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 
 ### 검색 및 답변
 
-- 선택한 단일 문서에 대한 질문
+- 로그인 사용자의 모든 `indexed` 문서에 대한 작업공간 단위 질문
+- Dense/Keyword/Substring/Hybrid 쿼리에서 `documents.owner_id` 직접 JOIN 검증
+- `/chat`의 `document_id`는 기존 FE 호환용 선택 필드이며 검색 범위에는 사용하지 않음
+- 작업공간 chat session은 특정 문서에 귀속하지 않고 `document_id=NULL`로 저장
 - Gemma 4/vLLM 답변 생성
 - source document/page/chunk 반환
 - PDF source page 열기
@@ -160,7 +163,7 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 | `GET` | `/documents/{id}` | 문서 처리 상태 |
 | `GET` | `/documents/{id}/file` | 원본 PDF inline 응답 |
 | `DELETE` | `/documents/{id}` | 문서 및 관련 데이터 삭제 |
-| `POST` | `/chat` | 단일 문서 RAG 질문 |
+| `POST` | `/chat` | 현재 사용자의 전체 indexed 문서 RAG 질문 |
 | `GET` | `/admin/retrieval` | 관리자 검색 설정 상태 |
 | `POST` | `/admin/retrieval/presets/{key}/activate` | preset 변경/재인덱싱 |
 | `POST` | `/admin/retrieval/algorithms/{key}/activate` | 알고리즘 즉시 변경 |
@@ -303,7 +306,8 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 ## 10. 알려진 제한사항
 
 - 브라우저 대화는 새로고침 시 사라진다. DB에는 저장되지만 조회 API가 없다.
-- 질문 하나는 선택한 문서 하나만 검색한다.
+- FE는 단계적 전환 중이므로 아직 indexed 문서를 선택해야 질문창이 활성화되지만,
+  백엔드는 선택값과 무관하게 현재 사용자의 전체 indexed 문서를 검색한다.
 - 문서 처리와 재인덱싱이 API process의 background task를 사용한다.
 - 별도 worker/영속 queue가 없어 API process 수명과 자원을 공유한다.
 - 텍스트 기반 PDF만 지원하며 scanned PDF OCR은 없다.
@@ -318,19 +322,26 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 
 ## 11. 다음 작업 권장 순서
 
-1. 대화 이력 복원
+1. 작업공간 검색 출처 개선
+   - source 응답에 문서 제목 추가
+   - 답변 출처를 `문서명 · 페이지`로 표시
+2. 문서 선택 의존 UI 제거
+   - indexed 문서가 하나 이상이면 질문창 활성화
+   - 문서 목록은 업로드·상태·원문·삭제 용도로 한정
+   - FE의 호환용 `document_id` 전송 제거
+3. 대화 이력 복원
    - chat session/message 조회 API
-   - 문서 선택 및 새로고침 후 기존 대화 표시
+   - 로그인 및 새로고침 후 기존 작업공간 대화 표시
    - 사용자 소유권 통합 테스트
-2. API Docker 의존성 분리
+4. API Docker 의존성 분리
    - API에서 `torch`, `sentence-transformers`, CUDA package 제거
    - embedding 전용 dependency group 또는 별도 lock/build 구성
-3. 운영 보안
+5. 운영 보안
    - 기본 관리자 비밀번호 변경 강제
    - HTTPS와 secure cookie
    - 회원가입/로그인 rate limit과 계정 잠금
    - PostgreSQL 백업/복원 및 구조화 로그
-4. 이후 확장
+6. 이후 확장
    - Redis + RQ worker, MinIO/S3, 다중 문서 검색, 용어 정규화, reranker,
      OCR/Vision, streaming, 문서 버전, 이메일 인증, 학습 피드백
 
