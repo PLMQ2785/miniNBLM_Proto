@@ -258,7 +258,7 @@ docker compose exec api python -m app.cli.set_admin --revoke <username>
 
 기본 관리자 계정은 없다. 최초 관리자가 필요하면 `.env`의
 `BOOTSTRAP_ADMIN_USERNAME`과 `BOOTSTRAP_ADMIN_PASSWORD`를 함께 설정한다.
-임시 비밀번호는 12자 이상, 영문 대·소문자·숫자·기호 중 3종 이상이어야 하며
+임시 비밀번호는 8자 이상, 영문 대·소문자·숫자·기호 중 3종 이상이어야 하며
 사용자명을 포함할 수 없다. 최초 로그인 또는 CLI 승격 후 Web UI에서 새
 비밀번호로 변경해야 작업공간과 관리자 API를 사용할 수 있다.
 

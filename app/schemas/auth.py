@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.password_policy import MIN_SECURE_PASSWORD_LENGTH
+
 
 class LoginCredentials(BaseModel):
     username: str = Field(min_length=3, max_length=32, pattern=r"^[A-Za-z0-9_.-]+$")
@@ -14,12 +16,12 @@ class LoginCredentials(BaseModel):
 
 
 class RegistrationCredentials(LoginCredentials):
-    password: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=MIN_SECURE_PASSWORD_LENGTH, max_length=128)
 
 
 class PasswordChangeRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
-    new_password: str = Field(min_length=12, max_length=128)
+    new_password: str = Field(min_length=MIN_SECURE_PASSWORD_LENGTH, max_length=128)
 
 
 class UserResponse(BaseModel):

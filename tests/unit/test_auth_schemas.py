@@ -16,9 +16,18 @@ def test_registration_requires_eight_character_password() -> None:
         RegistrationCredentials(username="student", password="short")
 
 
-def test_password_change_requires_twelve_character_password() -> None:
+def test_password_change_requires_eight_character_password() -> None:
     with pytest.raises(ValidationError):
-        PasswordChangeRequest(current_password="old-password", new_password="TooShort1!")
+        PasswordChangeRequest(current_password="old-password", new_password="Ab1!xyz")
+
+
+def test_password_change_accepts_eight_character_password() -> None:
+    credentials = PasswordChangeRequest(
+        current_password="old-password",
+        new_password="Safe!123",
+    )
+
+    assert credentials.new_password == "Safe!123"
 
 
 @pytest.mark.parametrize("username", ["ab", "space user", "한글사용자"])

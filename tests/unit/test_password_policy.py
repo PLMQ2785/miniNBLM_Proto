@@ -5,7 +5,7 @@ from app.password_policy import PasswordPolicyError, validate_secure_password
 
 
 def test_secure_password_is_accepted() -> None:
-    validate_secure_password("Nursing!Secure2026", "admin")
+    validate_secure_password("Safe!123", "admin")
 
 
 @pytest.mark.parametrize(
@@ -41,12 +41,12 @@ def test_bootstrap_admin_requires_both_values() -> None:
         )
 
 
-def test_bootstrap_admin_rejects_weak_password() -> None:
-    with pytest.raises(ValueError, match="at least 12"):
+def test_bootstrap_admin_rejects_short_password() -> None:
+    with pytest.raises(ValueError, match="at least 8"):
         Settings(
             _env_file=None,
             bootstrap_admin_username="admin",
-            bootstrap_admin_password="admin",
+            bootstrap_admin_password="Ab1!xyz",
         )
 
 
