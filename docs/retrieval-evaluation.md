@@ -73,13 +73,18 @@ JSON 상세 결과와 Markdown 표는 `benchmark_results/retrieval/`에 생성�
 | 알고리즘 | Recall@5 범위 | MRR@5 범위 | p50 지연 범위 |
 |---|---:|---:|---:|
 | Dense | 0.875~1.000 | 0.713~0.833 | 35.84~41.31 ms |
-| Keyword | 0.125 | 0.125 | 1.91~2.25 ms |
+| Keyword | 1.000 | 0.854~0.938 | 5.99~11.42 ms |
 | Substring | 1.000 | 1.000 | 6.32~11.02 ms |
 | Hybrid | 1.000 | 0.875~0.938 | 48.42~61.91 ms |
 
-현재 fixture에서는 Substring이 가장 높은 순위 품질과 낮은 지연을 보였다.
-Keyword는 `plainto_tsquery`가 자연어 질문의 토큰을 AND 조건으로 결합해 대부분
-빈 결과를 반환했다. 이 결과는 Keyword query 구성 개선이 필요하다는 근거다.
+Keyword는 최초 측정에서 `plainto_tsquery`의 전체 토큰 AND 조건 때문에
+Recall@5가 `0.125`였다. 2026-08-06에 토큰별 `plainto_tsquery`를 OR로 결합하도록
+개선한 뒤 5개 preset 모두 Recall@5 `1.000`을 기록했다. 위 Keyword 지연과 MRR은
+개선 후 동일한 warmup 1회, 질문별 3회 조건으로 다시 측정한 값이다.
+
+현재 fixture에서는 Substring과 개선된 Keyword가 모두 Recall@5 `1.000`이다.
+Substring은 MRR `1.000`으로 순위 품질이 더 높고, Keyword는 형태가 정확히
+일치하는 핵심어가 있는 질의에서 해석하기 쉬운 FTS 점수를 제공한다.
 
 이 corpus는 합성된 12페이지 자료이므로 운영 기본 알고리즘을 결정하기에는 작다.
 실제 간호학 강의 PDF, 약어·영문 혼합 질문, 복수 정답 페이지와 자료 밖 질문을

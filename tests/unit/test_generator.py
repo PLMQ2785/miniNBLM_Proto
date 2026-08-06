@@ -50,15 +50,17 @@ def test_generate_answer_supports_legacy_no_source_prefix(
     assert generated.sources == []
 
 
+@pytest.mark.parametrize("marker", ["[[NO_SOURCE]", "[NO_SOURCE]", "[NO_SOURCE]]"])
 def test_generate_answer_accepts_malformed_no_source_marker(
     monkeypatch: pytest.MonkeyPatch,
     retrieved_chunk: RetrievedChunk,
+    marker: str,
 ) -> None:
     monkeypatch.setattr(
         VLLMClient,
         "chat_completion",
         lambda self, messages: (
-            "[[NO_SOURCE] 업로드된 자료에서 OS의 메모리 관리정책에 대한 내용은 "
+            f"{marker} 업로드된 자료에서 OS의 메모리 관리정책에 대한 내용은 "
             "확인되지 않습니다."
         ),
     )

@@ -65,6 +65,39 @@ def test_all_search_algorithms_return_the_matching_chunk(
         assert results[0].page_start == 3
 
 
+def test_keyword_search_matches_partial_terms_in_a_natural_language_question(
+    db: Session,
+    user_factory,
+    document_factory,
+) -> None:
+    user = user_factory("keyword-natural-language")
+    document = document_factory(user)
+    target = Chunk(
+        document_id=document.id,
+        page_start=5,
+        page_end=5,
+        chunk_index=0,
+        content="낙상 예방을 위해 침상 바퀴를 고정하고 호출벨을 가까이 둔다.",
+        embedding=[1.0] + [0.0] * 1023,
+    )
+    db.add(target)
+    db.commit()
+    target_id = target.id
+
+    configuration = retrieval_config_repository.get_configuration(db)
+    configuration.active_search_algorithm_key = "keyword"
+    db.commit()
+
+    results = retrieve_chunks(
+        db,
+        owner_id=user.id,
+        question="낙상 예방 환경 관리 방법은 무엇인가요?",
+        top_k=5,
+    )
+
+    assert [result.chunk_id for result in results] == [target_id]
+
+
 def test_all_search_algorithms_are_scoped_to_the_owners_indexed_documents(
     db: Session,
     user_factory,

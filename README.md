@@ -193,7 +193,7 @@ curl -b session.cookie \
 - 명시적 관리자 bootstrap과 최초 로그인 비밀번호 변경 강제
 - pgvector Dense, PostgreSQL FTS, pg_trgm 및 RRF Hybrid 검색
 - 로그인 사용자의 모든 indexed 문서를 대상으로 하는 작업공간 RAG 검색
-- 여러 대화 세션 저장, 최근 대화 자동 복원과 제한된 이전 문맥 기반 후속 질문
+- 여러 대화 세션 저장, 최근 대화 자동 복원과 직전 대화 기반 후속 검색 질의 재작성
 - Gemma 4 12B W4A16 모델을 사용한 답변 생성
 - `문서명 · 페이지` 답변 출처와 원본 PDF 페이지 연결
 - 반응형 Web UI와 문서 처리 상태 polling

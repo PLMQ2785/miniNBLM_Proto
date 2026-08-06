@@ -1,9 +1,15 @@
+import re
+
 from sqlalchemy import delete, func
 from sqlalchemy.orm import Session
 
 from app.models.chunk import Chunk
 from app.models.document import Document
 from app.services.chunker import TextChunk
+
+
+MAX_KEYWORD_QUERY_TERMS = 32
+KEYWORD_TERM_PATTERN = re.compile(r"[^\W_]+", re.UNICODE)
 
 
 def create_chunks(
@@ -65,7 +71,7 @@ def search_chunks_by_keyword(
     top_k: int,
 ) -> list[tuple[Chunk, float, str]]:
     document_vector = func.to_tsvector("simple", Chunk.content)
-    query = func.plainto_tsquery("simple", question)
+    query = _build_keyword_query(question)
     rank = func.ts_rank_cd(document_vector, query).label("rank")
     rows = (
         db.query(Chunk, rank, Document.title)
@@ -82,6 +88,27 @@ def search_chunks_by_keyword(
         .all()
     )
     return [(chunk, float(score), title) for chunk, score, title in rows]
+
+
+def _build_keyword_query(question: str):
+    terms: list[str] = []
+    seen: set[str] = set()
+    for term in KEYWORD_TERM_PATTERN.findall(question):
+        normalized = term.casefold()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        terms.append(term)
+        if len(terms) == MAX_KEYWORD_QUERY_TERMS:
+            break
+
+    if not terms:
+        return func.plainto_tsquery("simple", question)
+
+    query = func.plainto_tsquery("simple", terms[0])
+    for term in terms[1:]:
+        query = query.op("||")(func.plainto_tsquery("simple", term))
+    return query
 
 
 def search_chunks_by_substring(

@@ -6,7 +6,7 @@ from app.schemas.chat import SourceRef
 from app.services.prompt_builder import build_tutor_messages
 from app.services.retriever import RetrievedChunk
 
-NO_SOURCE_MARKER_PATTERN = re.compile(r"^\s*\[\[\s*NO_SOURCE\b\s*\]{0,2}", re.IGNORECASE)
+NO_SOURCE_MARKER_PATTERN = re.compile(r"^\s*\[{1,2}\s*NO_SOURCE\b\s*\]{0,2}", re.IGNORECASE)
 NO_SOURCE_PREFIXES = (
     "업로드된 자료에서 확인되지 않습니다",
     "업로드된 자료에서 관련 내용을 찾지 못했습니다",

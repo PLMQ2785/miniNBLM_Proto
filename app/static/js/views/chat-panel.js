@@ -223,7 +223,7 @@ export class ChatPanel {
     role.className = "message-role";
     role.textContent = message.role === "user"
       ? "나"
-      : message.status === "error" ? "오류" : "Tutor";
+      : message.status === "error" ? "오류" : "Answer";
 
     const content = document.createElement("p");
     content.className = "message-content";

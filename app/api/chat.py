@@ -16,6 +16,7 @@ from app.schemas.chat import (
 )
 from app.services.conversation_service import MAX_CONTEXT_MESSAGES, build_conversation_context
 from app.services.generator import generate_answer
+from app.services.query_rewriter import rewrite_retrieval_query
 from app.services.retriever import retrieve_chunks
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -149,7 +150,8 @@ def chat(
         )
         history = build_conversation_context(recent_messages)
 
-    chunks = retrieve_chunks(db=db, owner_id=user.id, question=request.question)
+    retrieval_query = rewrite_retrieval_query(request.question, history)
+    chunks = retrieve_chunks(db=db, owner_id=user.id, question=retrieval_query)
     generated = generate_answer(question=request.question, chunks=chunks, history=history)
 
     chat_repository.create_message(db, session.id, "user", request.question)

@@ -2,9 +2,9 @@
 
 ## 1. 현재 상태
 
-- 기준일: 2026-08-05 (Asia/Seoul)
+- 기준일: 2026-08-06 (Asia/Seoul)
 - 프로젝트: 간호학 수업자료 PDF 기반 RAG 학습 튜터 PoC
-- 현재 단계: 1차 MVP, 기본 안정화, 관리자 보안 및 retrieval 품질 benchmark 완료
+- 현재 단계: 1차 MVP, 기본 안정화, 관리자 보안 및 retrieval 품질 개선 완료
 - 패키지 관리: `uv`
 - 런타임: Docker Compose의 `api`, `db`, `embedding`, `llm` 4개 서비스
 - Web UI: React 없이 FastAPI가 Vanilla HTML/CSS/JavaScript 정적 파일 제공
@@ -12,7 +12,7 @@
 
 최근 검증 결과:
 
-- 빠른 단위/API 통합 테스트: `68 passed`, 실제 모델 E2E `1 skipped`
+- 빠른 단위/API 통합 테스트: `76 passed`, 실제 모델 E2E `1 skipped`
 - 실제 BGE-M3/Gemma 4 E2E: `1 passed`
 - 자료 밖 질문 E2E에서 거부 응답의 source가 빈 배열인지 확인
 - 실제 `GET /health/ready`: DB, embedding, LLM 모두 `ok`, HTTP 200
@@ -33,7 +33,8 @@
 - 기본 관리자 계정 제거, 명시적 bootstrap과 최초 로그인 비밀번호 변경 강제,
   다른 로그인 세션 폐기 검증 완료
 - 12페이지/8질문 fixture로 5 preset x 4 알고리즘 Recall@5·MRR·latency matrix 완료
-- 실측 Recall@5: Dense `0.875~1.0`, Keyword `0.125`, Substring/Hybrid `1.0`
+- Keyword OR-query 개선 후 실측 Recall@5: 전 preset `1.0` (기존 `0.125`)
+- 후속 질문 retrieval query rewriting 단위/API 통합 테스트 완료
 
 최근 작업:
 
@@ -131,6 +132,8 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 - 사용자별 여러 대화 세션, 최근 활동순 목록, 메시지 pagination과 삭제
 - 로그인·새로고침 시 최근 대화 자동 복원
 - 후속 질문 생성에 최근 8개 메시지를 최대 8,000자까지 전달
+- 후속 질문 검색에는 직전 사용자 질문 500자와 답변 1,000자까지만 사용해
+  독립형 retrieval query를 생성하며, 최종 답변과 저장에는 원문 질문을 유지
 - 삭제된 PDF의 과거 source 제목은 보존하고 원본 접근은 비활성화
 - 자료에서 답을 확인할 수 없다는 응답은 source를 반환하지 않으며, 모델이
   `[[NO_SOURCE]`처럼 마커 대괄호를 일부 누락해도 후처리함
@@ -144,7 +147,7 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 | Key | 구현 |
 |---|---|
 | `dense` | BGE-M3 + pgvector cosine/HNSW |
-| `keyword` | PostgreSQL FTS, `simple` config |
+| `keyword` | PostgreSQL FTS, `simple` config, 질문 토큰 OR query |
 | `substring` | pg_trgm similarity |
 | `hybrid` | Dense + FTS + pg_trgm 결과의 RRF |
 
@@ -314,7 +317,7 @@ uv run pytest tests/unit -q
 - 5 preset x Dense/Keyword/Substring/Hybrid 20개 조합
 - warmup 1회, 질문별 3회, Recall@5·Hit rate@5·MRR@5·p50/p95 측정 완료
 - 결과는 `benchmark_results/retrieval/`에 저장되며 Git에서 제외
-- Keyword의 자연어 질문 Recall 저하가 확인되어 query 구성 개선 필요
+- Keyword 질문 토큰 OR-query 적용 후 전 preset Recall@5 `1.0`, MRR `0.854~0.938`
 
 PyMuPDF SWIG 타입에서 발생하는 5개의 deprecation warning은 현재 알려진
 비차단 경고다.
@@ -377,8 +380,9 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 ## 10. 알려진 제한사항
 
 - 이전 대화 생성 문맥은 최근 8개 메시지, 최대 8,000자로 제한된다.
-- retrieval query는 현재 질문만 사용하므로 대명사 위주의 후속 질문에는 별도
-  query rewriting이 적용되지 않는다.
+- retrieval query rewriting은 장기 대화 전체가 아닌 직전 질문·답변 한 쌍만
+  사용하며, 재작성 LLM 호출이 실패하면 원문 질문으로 검색한다.
+- 후속 질문은 검색 질의 재작성 때문에 LLM 호출이 1회 추가된다.
 - 문서 처리와 재인덱싱이 API process의 background task를 사용한다.
 - 별도 worker/영속 queue가 없어 API process 수명과 자원을 공유한다.
 - 텍스트 기반 PDF만 지원하며 scanned PDF OCR은 없다.
@@ -403,7 +407,7 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 
 - Redis + RQ/Celery worker로 문서 처리와 재인덱싱 분리
 - MinIO/S3 object storage 전환
-- 실제 간호학 강의자료로 평가 fixture 확대 및 Keyword FTS query 구성 개선
+- 실제 간호학 강의자료로 평가 fixture 확대
 - 간호학 용어·약어 정규화 및 reranker 비교
 - OCR과 표/그림/도표 Vision caption
 - 답변 streaming, 문서 버전 관리, 이메일 인증, 학습 피드백

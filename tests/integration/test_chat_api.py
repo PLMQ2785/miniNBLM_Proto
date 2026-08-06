@@ -36,14 +36,20 @@ def test_chat_persists_messages_and_returns_sources(
         score=0.9,
         source_refs={"page": 4},
     )
-    retrieval_call = {}
+    retrieval_calls = []
     generation_calls = []
+    rewritten_query = "낙상 후 손상 여부를 확인한 다음 조치"
 
     def retrieve_for_workspace(**kwargs):
-        retrieval_call.update(kwargs)
+        retrieval_calls.append(kwargs)
         return [retrieved]
 
     monkeypatch.setattr(chat_api, "retrieve_chunks", retrieve_for_workspace)
+
+    def rewrite_for_retrieval(question, history):
+        return rewritten_query if history else question
+
+    monkeypatch.setattr(chat_api, "rewrite_retrieval_query", rewrite_for_retrieval)
 
     def generate_with_history(**kwargs):
         generation_calls.append(kwargs)
@@ -84,8 +90,9 @@ def test_chat_persists_messages_and_returns_sources(
     session = db.scalar(select(ChatSession))
     assert session.owner_id == user.id
     assert session.document_id is None
-    assert retrieval_call["owner_id"] == user.id
-    assert "document_id" not in retrieval_call
+    assert retrieval_calls[0]["owner_id"] == user.id
+    assert retrieval_calls[0]["question"] == "낙상 후 무엇을 먼저 하나요?"
+    assert "document_id" not in retrieval_calls[0]
     assert generation_calls[0]["history"] == []
 
     follow_up = client.post(
@@ -102,6 +109,8 @@ def test_chat_persists_messages_and_returns_sources(
         {"role": "user", "content": "낙상 후 무엇을 먼저 하나요?"},
         {"role": "assistant", "content": "손상 여부를 먼저 확인합니다."},
     ]
+    assert retrieval_calls[1]["question"] == rewritten_query
+    assert generation_calls[1]["question"] == "그 다음에는 무엇을 하나요?"
 
     session_list = client.get("/chat/sessions")
     assert session_list.status_code == 200
