@@ -3,14 +3,16 @@ from pathlib import Path
 from app.services.retriever import RetrievedChunk
 
 
-PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "tutor_system_prompt.txt"
+RAG_SYSTEM_PROMPT_PATH = (
+    Path(__file__).resolve().parents[1] / "prompts" / "rag_system_prompt.txt"
+)
 
 
-def load_system_prompt() -> str:
-    return PROMPT_PATH.read_text(encoding="utf-8")
+def load_rag_system_prompt() -> str:
+    return RAG_SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
 
 
-def build_context(chunks: list[RetrievedChunk]) -> str:
+def build_retrieval_context(chunks: list[RetrievedChunk]) -> str:
     sections: list[str] = []
     for index, chunk in enumerate(chunks, start=1):
         page = _format_page(chunk)
@@ -30,18 +32,25 @@ def build_context(chunks: list[RetrievedChunk]) -> str:
     return "\n\n".join(sections)
 
 
-def build_tutor_messages(
+def build_system_message() -> dict[str, str]:
+    return {"role": "system", "content": load_rag_system_prompt()}
+
+
+def build_user_message(question: str, chunks: list[RetrievedChunk]) -> dict[str, str]:
+    context = build_retrieval_context(chunks)
+    content = f"[Context]\n{context}\n\n[Question]\n{question}\n\n[Answer]"
+    return {"role": "user", "content": content}
+
+
+def build_rag_messages(
     question: str,
     chunks: list[RetrievedChunk],
     history: list[dict[str, str]] | None = None,
 ) -> list[dict[str, str]]:
-    context = build_context(chunks)
-    system_prompt = load_system_prompt()
-    user_prompt = f"[Context]\n{context}\n\n[Question]\n{question}\n\n[Answer]"
     return [
-        {"role": "system", "content": system_prompt},
+        build_system_message(),
         *(history or []),
-        {"role": "user", "content": user_prompt},
+        build_user_message(question, chunks),
     ]
 
 

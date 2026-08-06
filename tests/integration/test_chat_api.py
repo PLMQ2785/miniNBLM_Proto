@@ -8,6 +8,7 @@ from app.models.chat import ChatMessage, ChatSession
 from app.repositories import user_repository
 from app.schemas.chat import SourceRef
 from app.services.generator import GeneratedAnswer
+from app.clients.vllm_client import VLLMClient
 from app.services.retriever import RetrievedChunk
 
 
@@ -171,6 +172,56 @@ def test_chat_sessions_are_isolated_and_can_be_deleted(
     assert db.scalar(select(func.count()).select_from(ChatMessage)) == 0
 
 
+def test_legacy_chat_history_filters_retrieval_candidates_by_citation(
+    client: TestClient,
+    db: Session,
+    document_factory,
+) -> None:
+    assert client.post(
+        "/auth/register",
+        json={"username": "legacy-sources", "password": "password123"},
+    ).status_code == 201
+    user = user_repository.get_user_by_username(db, "legacy-sources")
+    candidate = document_factory(user, title="candidate.pdf")
+    cited = document_factory(user, title="cited.pdf")
+    session = ChatSession(owner_id=user.id, title="기존 대화")
+    db.add(session)
+    db.flush()
+    db.add(
+        ChatMessage(
+            session_id=session.id,
+            role="assistant",
+            content="실제로 참고한 내용입니다. [Source 2, Page 9]",
+            message_metadata={
+                "sources": [
+                    {
+                        "document_id": candidate.id,
+                        "document_title": candidate.title,
+                        "page": 3,
+                        "chunk_id": 101,
+                    },
+                    {
+                        "document_id": cited.id,
+                        "document_title": cited.title,
+                        "page": 9,
+                        "chunk_id": 102,
+                    },
+                ]
+            },
+        )
+    )
+    db.commit()
+
+    response = client.get(f"/chat/sessions/{session.id}")
+
+    assert response.status_code == 200
+    sources = response.json()["messages"][0]["sources"]
+    assert len(sources) == 1
+    assert sources[0]["document_id"] == cited.id
+    assert sources[0]["document_title"] == "cited.pdf"
+    assert sources[0]["page"] == 9
+
+
 def test_chat_returns_a_grounded_empty_result_without_document_selection(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -189,3 +240,133 @@ def test_chat_returns_a_grounded_empty_result_without_document_selection(
     assert response.status_code == 200
     assert response.json()["sources"] == []
     assert "자료" in response.json()["answer"]
+
+
+def test_chat_streams_answer_and_persists_only_after_completion(
+    client: TestClient,
+    db: Session,
+    document_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert client.post(
+        "/auth/register",
+        json={"username": "stream-user", "password": "password123"},
+    ).status_code == 201
+    user = user_repository.get_user_by_username(db, "stream-user")
+    document = document_factory(user)
+    retrieved = RetrievedChunk(
+        chunk_id=501,
+        document_id=document.id,
+        document_title=document.title,
+        content="낙상 후 손상 여부를 확인한다.",
+        page_start=7,
+        page_end=7,
+        score=0.9,
+        source_refs={"page": 7},
+    )
+    monkeypatch.setattr(chat_api, "retrieve_chunks", lambda **kwargs: [retrieved])
+    monkeypatch.setattr(
+        VLLMClient,
+        "stream_chat_completion",
+        lambda self, messages, **kwargs: iter(
+            ["손상 여부를 ", "확인합니다. [Source 1, Page 7]"]
+        ),
+    )
+
+    with client.stream("POST", "/chat/stream", json={"question": "낙상 후 조치는?"}) as response:
+        body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "event: session" in body
+    assert 'event: delta\ndata: {"text": "손상 여부를 "}' in body
+    assert "event: sources" in body
+    assert '"document_title": "' + document.title + '"' in body
+    assert "event: done" in body
+    db.expire_all()
+    messages = list(db.scalars(select(ChatMessage).order_by(ChatMessage.id)))
+    assert [message.role for message in messages] == ["user", "assistant"]
+    assert messages[1].content == "손상 여부를 확인합니다. [Source 1, Page 7]"
+
+
+def test_chat_stream_hides_fragmented_no_source_marker(
+    client: TestClient,
+    db: Session,
+    document_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert client.post(
+        "/auth/register",
+        json={"username": "no-source-stream", "password": "password123"},
+    ).status_code == 201
+    user = user_repository.get_user_by_username(db, "no-source-stream")
+    document = document_factory(user)
+    retrieved = RetrievedChunk(
+        chunk_id=551,
+        document_id=document.id,
+        document_title=document.title,
+        content="질문과 관련 없는 검색 결과",
+        page_start=3,
+        page_end=3,
+        score=0.4,
+        source_refs={"page": 3},
+    )
+    monkeypatch.setattr(chat_api, "retrieve_chunks", lambda **kwargs: [retrieved])
+    monkeypatch.setattr(
+        VLLMClient,
+        "stream_chat_completion",
+        lambda self, messages, **kwargs: iter(
+            ["[[NO_", "SOURCE]] 업로드된 자료에서 확인되지 않습니다."]
+        ),
+    )
+
+    with client.stream("POST", "/chat/stream", json={"question": "자료 밖 질문"}) as response:
+        body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert "NO_SOURCE" not in body
+    assert "업로드된 자료에서 확인되지 않습니다." in body
+    assert "event: sources\ndata: []" in body
+    assert "event: done" in body
+    db.expire_all()
+    assistant = db.scalar(select(ChatMessage).where(ChatMessage.role == "assistant"))
+    assert assistant is not None
+    assert "NO_SOURCE" not in assistant.content
+    assert assistant.message_metadata == {"sources": [], "source_selection": "cited"}
+
+
+def test_failed_new_chat_stream_removes_empty_session(
+    client: TestClient,
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert client.post(
+        "/auth/register",
+        json={"username": "failed-stream", "password": "password123"},
+    ).status_code == 201
+    retrieved = RetrievedChunk(
+        chunk_id=601,
+        document_id=1,
+        document_title="lesson.pdf",
+        content="검색 결과",
+        page_start=1,
+        page_end=1,
+        score=0.5,
+        source_refs={},
+    )
+    monkeypatch.setattr(chat_api, "retrieve_chunks", lambda **kwargs: [retrieved])
+
+    def fail_stream(*args, **kwargs):
+        raise RuntimeError("vLLM failed")
+
+    monkeypatch.setattr(VLLMClient, "stream_chat_completion", fail_stream)
+
+    with client.stream("POST", "/chat/stream", json={"question": "실패 질문"}) as response:
+        body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert "event: error" in body
+    assert "request_id" in body
+    db.expire_all()
+    assert db.scalar(select(func.count()).select_from(ChatSession)) == 0
+    assert db.scalar(select(func.count()).select_from(ChatMessage)) == 0

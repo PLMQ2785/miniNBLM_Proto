@@ -156,7 +156,8 @@ export class ChatPanel {
         this.messageList.append(this.messageElement(message, messageIndex, isGenerating));
       });
     }
-    if (isGenerating) this.messageList.append(this.pendingElement());
+    const hasStreamingMessage = messages.some((message) => message.status === "streaming");
+    if (isGenerating && !hasStreamingMessage) this.messageList.append(this.pendingElement());
     this.messageList.scrollTop = this.messageList.scrollHeight;
   }
 
@@ -218,6 +219,10 @@ export class ChatPanel {
     } else if (message.role === "assistant") {
       article.tabIndex = -1;
     }
+    if (message.status === "streaming") {
+      article.classList.add("message-streaming");
+      article.setAttribute("aria-busy", "true");
+    }
 
     const role = document.createElement("span");
     role.className = "message-role";
@@ -227,7 +232,9 @@ export class ChatPanel {
 
     const content = document.createElement("p");
     content.className = "message-content";
-    content.textContent = message.content;
+    content.textContent = message.content || (
+      message.status === "streaming" ? "자료를 확인하고 있습니다." : ""
+    );
     article.append(role, content);
 
     if (message.status === "error" && message.retryQuestion) {
@@ -259,6 +266,14 @@ export class ChatPanel {
       article.append(sourceList);
     }
     return article;
+  }
+
+  updateStreamingMessage(messageIndex, content) {
+    const message = this.messageList.querySelector(`[data-message-index="${messageIndex}"]`);
+    const contentElement = message?.querySelector(".message-content");
+    if (!contentElement) return;
+    contentElement.textContent = content || "자료를 확인하고 있습니다.";
+    this.messageList.scrollTop = this.messageList.scrollHeight;
   }
 
   focusMessage(messageIndex) {

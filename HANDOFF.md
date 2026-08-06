@@ -3,17 +3,20 @@
 ## 1. 현재 상태
 
 - 기준일: 2026-08-06 (Asia/Seoul)
-- 프로젝트: 간호학 수업자료 PDF 기반 RAG 학습 튜터 PoC
-- 현재 단계: 1차 MVP, 기본 안정화, 관리자 보안 및 retrieval 품질 개선 완료
+- 프로젝트: 사용자 PDF 기반 범용 RAG Assistant
+- 현재 단계: 1차 MVP, 기본 안정화, 관측성과 답변 스트리밍 완료
 - 패키지 관리: `uv`
 - 런타임: Docker Compose의 `api`, `db`, `embedding`, `llm` 4개 서비스
 - Web UI: React 없이 FastAPI가 Vanilla HTML/CSS/JavaScript 정적 파일 제공
 - 현재 컨테이너 상태: 4개 서비스 모두 실행 중이며 `api`, `db`는 healthy
+- 별도 PostgreSQL이 5432를 사용하므로 운영 DB 기본 포트를 5433으로 분리함
 
 최근 검증 결과:
 
-- 빠른 단위/API 통합 테스트: `76 passed`, 실제 모델 E2E `1 skipped`
+- 빠른 단위/API 통합 테스트: `91 passed`, 실제 모델 E2E `1 skipped`
 - 실제 BGE-M3/Gemma 4 E2E: `1 passed`
+- 실제 Gemma 4 SSE에서 다중 delta, 출처, 완료 event와 대화 저장 확인
+- JSON 구조화 로그, `X-Request-ID`, Prometheus HTTP·검색·LLM 지표 확인
 - 자료 밖 질문 E2E에서 거부 응답의 source가 빈 배열인지 확인
 - 실제 `GET /health/ready`: DB, embedding, LLM 모두 `ok`, HTTP 200
 - API 이미지: `6,555,721,208` bytes에서 `206,676,250` bytes로 약 96.8% 감소
@@ -53,7 +56,7 @@
 ```text
 Browser
   -> api:8080
-       -> db:5432             PostgreSQL 17 + pgvector
+       -> db:5433             PostgreSQL 17 + pgvector
        -> embedding:8070      BAAI/bge-m3
        -> llm:8010            vLLM + Gemma 4 12B W4A16
 ```
@@ -61,7 +64,7 @@ Browser
 | 서비스 | 주소 | 역할 | GPU |
 |---|---|---|---|
 | `api` | `0.0.0.0:8080` | FastAPI, Web UI, 문서 처리 조정 | 아니요 |
-| `db` | `127.0.0.1:5432` | PostgreSQL 17, pgvector | 아니요 |
+| `db` | `127.0.0.1:5433` | PostgreSQL 17, pgvector | 아니요 |
 | `embedding` | `127.0.0.1:8070` | BGE-M3 embedding HTTP API | 예 |
 | `llm` | `127.0.0.1:8010` | vLLM OpenAI-compatible API | 예 |
 
@@ -75,14 +78,16 @@ WSL mirrored networking에서 Docker bridge port가 Windows localhost로 전달�
 - Embedding dimension: `1024`
 - LLM: Gemma 4 12B instruction model, W4A16 compressed-tensors 양자화
 - 기본 모델 경로: `./google/google-gemma-4-12B-it-W4A16`
-- vLLM image: `mininblm-vllm:0.25.0-gemma4-unified-quant`
+- vLLM image tag: `mininblm-vllm:0.25.0-gemma4-unified-quant` (legacy tag)
+- 2026-08-06 재빌드에서 확인한 실제 vLLM: `0.26.0`
 - 기본 max model length: `8192`
 - 기본 GPU memory utilization: `0.65`
 - 기본 max sequences: `4`
 - readiness 구성요소별 timeout: `3초`
 
-`Dockerfile.llm`은 Gemma 4 unified quantization을 vLLM 0.25.0에서 읽도록 로컬
-patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
+`Dockerfile.llm`은 Gemma 4 unified quantization을 읽도록 로컬 patch를 적용한다.
+현재 base image가 `vllm/vllm-openai:latest`라 custom image tag와 실제 vLLM
+버전이 일치하지 않을 수 있다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 `VLLM_WSL2_ENABLE_PIN_MEMORY=1`과 `ipc: host`가 필요하다. vLLM 또는 모델
 구조를 변경하면 실제 completion E2E를 반드시 다시 실행한다.
 
@@ -138,9 +143,16 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 - 자료에서 답을 확인할 수 없다는 응답은 source를 반환하지 않으며, 모델이
   `[[NO_SOURCE]`처럼 마커 대괄호를 일부 누락해도 후처리함
 - Gemma 4/vLLM 답변 생성
+- SSE 답변 스트리밍, 완료 후 대화 이력 저장과 실패한 신규 세션 정리
+- 스트리밍 중 `NO_SOURCE` 판정 전 초기 출력 버퍼링과 marker 비노출
+- retrieval top-k 전체가 아니라 답변의 유효한 `Source N` 인용만 source로 반환
+- 동일 문서·페이지 인용 중복 제거, 미인용 후보와 잘못된 번호 제외
+- 기존 대화의 후보 source metadata도 조회 시 인용 번호로 동적 필터링
+- 간호 특화 시스템 프롬프트를 범용 문서 RAG 정책으로 교체하고 prompt builder를
+  `build_system_message`, `build_user_message`, `build_rag_messages` 역할별 함수로 분리
 - source document ID/title/page/chunk 반환
 - PDF source page 열기
-- 자료 밖 질문 제한 및 의료 상담성 질문 안전 지침을 포함한 system prompt
+- 자료 밖 질문 제한, 추측 금지와 정확한 Source/Page 인용을 포함한 범용 system prompt
 
 검색 알고리즘 4개:
 
@@ -190,6 +202,15 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 - 새 답변 및 직접 작업 오류로 keyboard focus 이동
 - 자동 polling 오류는 사용자 입력 focus를 유지
 - 모델 출력은 HTML로 해석하지 않고 text로 렌더링
+- 답변 delta를 수신하는 즉시 같은 message 영역에 표시하고 완료 후 source 연결
+
+### 관측성
+
+- 모든 API 응답의 `X-Request-ID` 생성·전파
+- stdout JSON 구조화 로그와 method, route, status, 전체 응답 지연 기록
+- Prometheus HTTP 요청 수·지연, retrieval 결과·지연, LLM 결과·지연·TTFT 지표
+- 스트림 success/error/cancelled 결과 지표
+- `/metrics` 공개 endpoint 제공, 운영 reverse proxy에서 모니터링망 제한 필요
 
 ## 5. 주요 API
 
@@ -197,6 +218,7 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 |---|---|---|
 | `GET` | `/health` | API 프로세스 liveness |
 | `GET` | `/health/ready` | DB, embedding, vLLM 통합 readiness |
+| `GET` | `/metrics` | Prometheus 형식 관측 지표 |
 | `POST` | `/auth/register` | 회원가입과 세션 발급 |
 | `POST` | `/auth/login` | 로그인 |
 | `POST` | `/auth/logout` | 세션 폐기 |
@@ -208,6 +230,7 @@ patch를 적용한다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
 | `GET` | `/documents/{id}/file` | 원본 PDF inline 응답 |
 | `DELETE` | `/documents/{id}` | 문서 및 관련 데이터 삭제 |
 | `POST` | `/chat` | 전체 indexed 문서 질문 및 세션 생성/후속 메시지 |
+| `POST` | `/chat/stream` | SSE 답변 delta, source와 완료 event |
 | `GET` | `/chat/sessions` | 현재 사용자의 최근 대화 목록 |
 | `GET` | `/chat/sessions/{id}` | 대화 메시지/source 페이지 조회 |
 | `DELETE` | `/chat/sessions/{id}` | 현재 사용자 소유 대화 삭제 |
@@ -280,7 +303,7 @@ docker compose exec api python -m app.cli.set_admin --revoke <username>
 - embedding과 LLM 호출은 test double로 대체
 - 테스트 종료 시 컨테이너 자동 정리
 - 운영 DB 오접속을 막는 `MININBLM_TEST_DATABASE=1` 안전장치 존재
-- 마지막 결과: `68 passed`, 실제 모델 E2E `1 skipped`
+- 마지막 결과: `91 passed`, 실제 모델 E2E `1 skipped`
 
 단위 테스트만 실행:
 
@@ -300,8 +323,10 @@ uv run pytest tests/unit -q
 - 전용 API: `127.0.0.1:18080`
 - 전용 PostgreSQL: `127.0.0.1:55433`, tmpfs
 - 실제 BGE-M3와 Gemma 4만 운영 endpoint를 공유
+- pytest는 E2E API 컨테이너 안에서 실행해 WSL host-network 전달과 분리
 - fixture: `sample_fall_prevention.pdf` 4페이지
-- 1024차원 embedding 저장, 정답/source page, 자료 밖 질문, 의료 안전 응답 검증
+- 1024차원 embedding 저장, SSE 다중 delta·완료, 정답/source page, 자료 밖 질문과
+  관측 metric 검증
 - 테스트 종료 시 전용 API, DB 및 업로드 데이터 자동 정리
 - 마지막 결과: `1 passed`
 
@@ -365,6 +390,7 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 | `evaluation/` | 버전 관리되는 질문/source fixture와 혼동 문서 |
 | `app/evaluation/` | fixture 검증, metric 계산과 benchmark runner |
 | `app/main.py` | FastAPI 조립 및 lifespan |
+| `app/observability.py` | request ID, JSON 로그와 Prometheus metric |
 | `app/api/` | HTTP API router |
 | `app/services/` | 문서 처리, 검색, 답변, 복구 orchestration |
 | `app/repositories/` | SQLAlchemy DB 접근 |
@@ -387,7 +413,8 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 - 별도 worker/영속 queue가 없어 API process 수명과 자원을 공유한다.
 - 텍스트 기반 PDF만 지원하며 scanned PDF OCR은 없다.
 - 표, 그림, 도표용 Vision caption이 없다.
-- 답변 streaming이 없다.
+- Prometheus 수집 서버, 대시보드와 경보 규칙은 아직 배포하지 않는다.
+- vLLM base image가 `latest`라 재빌드 시 버전이 변할 수 있다.
 - 이메일 확인, 비밀번호 재설정, 계정 잠금, rate limit이 없다.
 - 기본 HTTP/LAN 설정은 `AUTH_COOKIE_SECURE=false`다.
 - 업로드 파일 자체는 50MB로 제한하지만 reverse proxy 수준의 전체 request body
@@ -400,17 +427,18 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 - HTTPS reverse proxy와 `AUTH_COOKIE_SECURE=true` 운영 구성
 - 회원가입/로그인 rate limit, 계정 잠금, 비밀번호 재설정
 - PostgreSQL 및 업로드 원본의 백업/복원 절차와 복구 리허설
-- 구조화 로그, request ID, 기본 오류/지연 metric 추가
+- Prometheus 수집·대시보드·경보 규칙 구성
+- 검증된 vLLM base digest/version 고정과 custom image tag 정합성 확보
 - reverse proxy request body 제한을 애플리케이션의 50MB 제한과 일치시킴
 
 ### 2순위: 처리 안정성과 RAG 품질 확장
 
 - Redis + RQ/Celery worker로 문서 처리와 재인덱싱 분리
 - MinIO/S3 object storage 전환
-- 실제 간호학 강의자료로 평가 fixture 확대
-- 간호학 용어·약어 정규화 및 reranker 비교
+- 다양한 업무·교육 문서로 평가 fixture 확대
+- 도메인별 용어·약어 정규화 및 reranker 비교
 - OCR과 표/그림/도표 Vision caption
-- 답변 streaming, 문서 버전 관리, 이메일 인증, 학습 피드백
+- 문서 버전 관리, 이메일 인증, 학습 피드백
 
 ## 12. Git 및 작업공간 주의사항
 
@@ -419,7 +447,8 @@ source 문서명, 문서 선택 제거, UI 문구 정리와 대화 세션 이력
 반영되었다. 정확한 최신 commit은 `git log -1 --oneline`으로 확인한다. 최초
 commit에 실수로 포함된
 `id_container` RSA private key는 commit amend, reflog 만료 및 unreachable object
-정리를 통해 작업공간과 전체 로컬 이력에서 제거했다. Remote는 아직 없다.
+정리를 통해 작업공간과 전체 로컬 이력에서 제거했다. Remote `origin`은 GitHub
+저장소로 설정되어 있다.
 
 현재 `.gitignore`는 다음 대용량/민감 경로를 제외한다.
 

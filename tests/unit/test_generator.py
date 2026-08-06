@@ -26,7 +26,7 @@ def test_generate_answer_removes_sources_and_marker_for_ungrounded_response(
     monkeypatch.setattr(
         VLLMClient,
         "chat_completion",
-        lambda self, messages: "[[NO_SOURCE]] 업로드된 자료에서 확인되지 않습니다.",
+        lambda self, messages, **kwargs: "[[NO_SOURCE]] 업로드된 자료에서 확인되지 않습니다.",
     )
 
     generated = generate_answer("자료에 없는 질문", [retrieved_chunk])
@@ -42,7 +42,7 @@ def test_generate_answer_supports_legacy_no_source_prefix(
     monkeypatch.setattr(
         VLLMClient,
         "chat_completion",
-        lambda self, messages: "업로드된 자료에서 확인되지 않습니다. 질문을 바꿔주세요.",
+        lambda self, messages, **kwargs: "업로드된 자료에서 확인되지 않습니다. 질문을 바꿔주세요.",
     )
 
     generated = generate_answer("자료에 없는 질문", [retrieved_chunk])
@@ -59,7 +59,7 @@ def test_generate_answer_accepts_malformed_no_source_marker(
     monkeypatch.setattr(
         VLLMClient,
         "chat_completion",
-        lambda self, messages: (
+        lambda self, messages, **kwargs: (
             f"{marker} 업로드된 자료에서 OS의 메모리 관리정책에 대한 내용은 "
             "확인되지 않습니다."
         ),
@@ -72,23 +72,23 @@ def test_generate_answer_accepts_malformed_no_source_marker(
     assert generated.sources == []
 
 
-def test_generate_answer_keeps_safety_guidance_after_no_source_marker(
+def test_generate_answer_keeps_generic_detail_after_no_source_marker(
     monkeypatch: pytest.MonkeyPatch,
     retrieved_chunk: RetrievedChunk,
 ) -> None:
     monkeypatch.setattr(
         VLLMClient,
         "chat_completion",
-        lambda self, messages: (
+        lambda self, messages, **kwargs: (
             "[[NO_SOURCE]] 업로드된 자료에서 확인되지 않습니다. "
-            "실제 환자라면 즉시 의료진에게 문의하세요."
+            "관련 문서를 추가해 주세요."
         ),
     )
 
-    generated = generate_answer("실제 환자의 처치는?", [retrieved_chunk])
+    generated = generate_answer("자료에 없는 배포 절차는?", [retrieved_chunk])
 
     assert "NO_SOURCE" not in generated.answer
-    assert "의료진" in generated.answer
+    assert "관련 문서를 추가" in generated.answer
     assert generated.sources == []
 
 
@@ -99,11 +99,72 @@ def test_generate_answer_keeps_sources_for_grounded_response(
     monkeypatch.setattr(
         VLLMClient,
         "chat_completion",
-        lambda self, messages: "자료에서는 낙상 예방 교육을 시행합니다.",
+        lambda self, messages, **kwargs: (
+            "자료에서는 낙상 예방 교육을 시행합니다. [Source 1, Page 3]"
+        ),
     )
 
     generated = generate_answer("낙상 예방은?", [retrieved_chunk])
 
-    assert generated.answer == "자료에서는 낙상 예방 교육을 시행합니다."
+    assert generated.answer == "자료에서는 낙상 예방 교육을 시행합니다. [Source 1, Page 3]"
     assert len(generated.sources) == 1
     assert generated.sources[0].document_id == retrieved_chunk.document_id
+
+
+def test_generate_answer_returns_only_cited_unique_source_pages(
+    monkeypatch: pytest.MonkeyPatch,
+    retrieved_chunk: RetrievedChunk,
+) -> None:
+    chunks = [
+        retrieved_chunk,
+        RetrievedChunk(
+            chunk_id=11,
+            document_id=30,
+            document_title="git.pdf",
+            content="Git은 변경 이력을 추적한다.",
+            page_start=9,
+            page_end=9,
+            score=0.8,
+            source_refs={"page": 9},
+        ),
+        RetrievedChunk(
+            chunk_id=12,
+            document_id=30,
+            document_title="git.pdf",
+            content="Git은 이전 버전으로 복구할 수 있다.",
+            page_start=9,
+            page_end=9,
+            score=0.7,
+            source_refs={"page": 9},
+        ),
+    ]
+    monkeypatch.setattr(
+        VLLMClient,
+        "chat_completion",
+        lambda self, messages, **kwargs: (
+            "Git은 변경 이력을 추적합니다. "
+            "[Source 2, Page 9; Source 3, Page 9; Source 99, Page 1]"
+        ),
+    )
+
+    generated = generate_answer("Git의 특성은?", chunks)
+
+    assert len(generated.sources) == 1
+    assert generated.sources[0].document_id == 30
+    assert generated.sources[0].page == 9
+    assert generated.sources[0].chunk_id == 11
+
+
+def test_generate_answer_does_not_expose_uncited_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+    retrieved_chunk: RetrievedChunk,
+) -> None:
+    monkeypatch.setattr(
+        VLLMClient,
+        "chat_completion",
+        lambda self, messages, **kwargs: "자료에서는 낙상 예방 교육을 시행합니다.",
+    )
+
+    generated = generate_answer("낙상 예방은?", [retrieved_chunk])
+
+    assert generated.sources == []

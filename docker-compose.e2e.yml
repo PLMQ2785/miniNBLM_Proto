@@ -24,6 +24,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        UV_DEPENDENCY_GROUP: dev
     network_mode: host
     command:
       - sh
@@ -42,6 +44,9 @@ services:
       BOOTSTRAP_ADMIN_PASSWORD: E2e!Bootstrap2026
     tmpfs:
       - /app/data
+    volumes:
+      - ./tests:/app/tests:ro
+      - ./sample_fall_prevention.pdf:/app/sample_fall_prevention.pdf:ro
     depends_on:
       db-e2e:
         condition: service_healthy

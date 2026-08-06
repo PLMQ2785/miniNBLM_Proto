@@ -10,7 +10,7 @@ from app.password_policy import validate_secure_password
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    database_url: str = "postgresql+psycopg://rag_user:rag_password@localhost:5432/rag_db"
+    database_url: str = "postgresql+psycopg://rag_user:rag_password@localhost:5433/rag_db"
     upload_dir: str = "./data/uploads"
     max_upload_bytes: int = Field(default=50 * 1024 * 1024, ge=1)
 
@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     vllm_api_key: str = "EMPTY"
     vllm_model: str = "gemma4"
     readiness_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
+    log_level: str = "INFO"
 
     auth_cookie_name: str = "mininblm_session"
     auth_session_ttl_hours: int = Field(default=168, ge=1, le=8760)

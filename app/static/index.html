@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light">
-    <title>Nursing PDF Tutor</title>
+    <title>PDF RAG Assistant</title>
     <link rel="stylesheet" href="/static/styles/tokens.css">
     <link rel="stylesheet" href="/static/styles/layout.css">
     <link rel="stylesheet" href="/static/styles/components.css">
@@ -13,10 +13,10 @@
     <section id="auth-view" class="auth-view" aria-labelledby="auth-title" hidden>
       <div class="auth-panel">
         <header class="auth-header">
-          <span class="brand-mark" aria-hidden="true">N</span>
+          <span class="brand-mark" aria-hidden="true">R</span>
           <div>
-            <strong>Nursing PDF Tutor</strong>
-            <span>수업자료 작업공간</span>
+            <strong>PDF RAG Assistant</strong>
+            <span>문서 기반 작업공간</span>
           </div>
         </header>
 
@@ -40,9 +40,9 @@
     <section id="password-change-view" class="auth-view" aria-labelledby="password-change-title" hidden>
       <div class="auth-panel">
         <header class="auth-header">
-          <span class="brand-mark" aria-hidden="true">N</span>
+          <span class="brand-mark" aria-hidden="true">R</span>
           <div>
-            <strong>Nursing PDF Tutor</strong>
+            <strong>PDF RAG Assistant</strong>
             <span>관리자 계정 보호</span>
           </div>
         </header>
@@ -67,7 +67,7 @@
     <section id="admin-view" class="admin-view" hidden>
       <header class="admin-header">
         <div class="brand-block">
-          <span class="brand-mark" aria-hidden="true">N</span>
+          <span class="brand-mark" aria-hidden="true">R</span>
           <div>
             <strong>검색 설정 관리</strong>
             <span id="admin-username" class="service-status"></span>
@@ -136,11 +136,11 @@
         <div class="brand-block">
           <span class="brand-mark" aria-hidden="true">N</span>
           <div>
-            <strong>Nursing PDF Tutor</strong>
+            <strong>PDF RAG Assistant</strong>
             <span id="service-status" class="service-status">연결 확인 중</span>
           </div>
         </div>
-        <p class="safety-notice">수업자료 기반 학습 보조 도구이며 진단·처방을 제공하지 않습니다.</p>
+        <p class="safety-notice">업로드한 문서에 근거해 답변합니다.</p>
         <div class="account-block">
           <span id="current-username"></span>
           <button id="admin-button" type="button" hidden>관리</button>
@@ -152,7 +152,7 @@
         <aside id="document-panel" class="document-panel" aria-label="문서">
           <div class="panel-heading">
             <div>
-              <p class="panel-eyebrow">COURSE MATERIALS</p>
+              <p class="panel-eyebrow">DOCUMENTS</p>
               <h1>문서</h1>
             </div>
             <div class="panel-heading-actions">

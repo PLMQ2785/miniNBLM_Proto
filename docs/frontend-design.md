@@ -1,4 +1,4 @@
-# Nursing PDF RAG Tutor Frontend Design
+# PDF RAG Assistant Frontend Design
 
 ## 설계 결정 요약
 
@@ -21,12 +21,11 @@
 ## 1. Purpose
 
 This document defines the frontend requirements and high-level design for the
-Nursing PDF RAG Tutor MVP. The frontend is a single-page interface implemented
+PDF RAG Assistant MVP. The frontend is a single-page interface implemented
 with HTML, CSS, and browser-native JavaScript modules. It is served by the
 existing FastAPI application and does not introduce another runtime container.
 
-The UI is a learning interface for uploaded nursing course material. It is not
-a medical consultation or clinical decision interface.
+The UI is a private document workspace for grounded questions over uploaded PDFs.
 
 ## 2. Assumptions and Decisions
 
@@ -42,8 +41,8 @@ a medical consultation or clinical decision interface.
   is unnecessary.
 - The frontend does not parse arbitrary model output as HTML. Answers are
   rendered as text with preserved line breaks.
-- Korean is the primary interface language. Medical abbreviations and source
-  page labels may contain English.
+- Korean is the primary interface language. Document terms and source page
+  labels may contain English.
 
 ## 3. Scope
 
@@ -89,12 +88,12 @@ source label은 유지하되 원본 열기 동작은 비활성화한다.
 14. Restore the latest persisted conversation after sign-in or refresh.
 15. Start, switch, page through, and delete user-owned chat sessions.
 16. Require bootstrap administrators to replace their temporary password before entering the workspace.
+17. Render answer text incrementally while preserving the persisted session and source workflow.
 
 ### 3.2 Out of Scope
 
 - Email verification and password recovery
 - Document version management
-- Token streaming
 - OCR or image-based page analysis
 - User feedback and answer scoring
 - Markdown extensions or arbitrary HTML rendering
@@ -114,7 +113,8 @@ source label은 유지하되 원본 열기 동작은 비활성화한다.
 | FR-07 | Submit question | Empty or whitespace-only questions are rejected locally. |
 | FR-08 | Prevent duplicate request | The composer is disabled while one answer is being generated. |
 | FR-09 | Show answer | The assistant answer preserves line breaks and wraps long terms safely. |
-| FR-10 | Show sources | Each source shows its document title and page label and opens the corresponding PDF page. |
+| FR-09A | Stream answer | SSE `delta` events update one stable assistant message without re-rendering the conversation. |
+| FR-10 | Show sources | Only model-cited sources are shown; each displays its document title and page label and opens the corresponding PDF page. |
 | FR-11 | Show failure | Upload, indexing, retrieval, and generation failures are distinguishable. |
 | FR-12 | Retry recoverable action | Document refresh and failed question submission can be retried. |
 | FR-13 | Safety notice | The interface states that it is a course-material learning aid, not a clinical tool. |
@@ -171,7 +171,7 @@ source label은 유지하되 원본 열기 동작은 비활성화한다.
 
 ```text
 +-----------------------------------------------------------------------+
-| Nursing PDF Tutor                         Learning-use safety notice   |
+| PDF RAG Assistant                         Document-grounded notice    |
 | Signed-in user                                              Sign out   |
 +-------------------+--------------------------------+------------------+
 | Documents         | Chat                           | Source PDF       |
@@ -427,11 +427,17 @@ sequenceDiagram
     User->>CP: Submit question
     CP->>AC: submitQuestion(question)
     AC->>CP: Render user message and pending state
-    AC->>API: sendQuestion(question)
-    API->>BE: POST /chat
-    BE-->>API: answer, sources
-    API-->>AC: ChatResult
-    AC->>CP: Render assistant answer and source actions
+    AC->>API: streamQuestion(question)
+    API->>BE: POST /chat/stream
+    BE-->>API: session event
+    loop Generated text
+        BE-->>API: delta event
+        API-->>AC: onDelta(text)
+        AC->>CP: Update stable assistant message
+    end
+    BE-->>API: sources, done events
+    API-->>AC: Completed stream result
+    AC->>CP: Render source actions
 ```
 
 ### 10.3 Open a Source
@@ -465,7 +471,8 @@ Existing endpoints used as-is:
 | `POST` | `/documents` | PDF upload |
 | `GET` | `/documents/{id}` | Indexing status polling |
 | `DELETE` | `/documents/{id}` | Delete a terminal-state document and related data |
-| `POST` | `/chat` | Retrieval and answer generation |
+| `POST` | `/chat` | Non-streaming retrieval and answer generation compatibility |
+| `POST` | `/chat/stream` | SSE session, answer delta, source, completion and error events |
 | `GET` | `/chat/sessions` | Recent user-owned conversation list |
 | `GET` | `/chat/sessions/{id}` | Paginated messages and stored sources |
 | `DELETE` | `/chat/sessions/{id}` | Delete a user-owned conversation |
@@ -528,6 +535,7 @@ Recommended backend hardening before UI release:
 - Implement persisted workspace conversation sessions and bounded history context.
 - Restore, switch, page through, start, and delete conversations.
 - Implement question submission, retry, and source actions.
+- Stream answer deltas into one stable message and finalize sources on completion.
 - Implement embedded PDF view and mobile new-tab fallback.
 
 ### Phase 5: Verification

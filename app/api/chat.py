@@ -1,6 +1,11 @@
+import json
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.database import SessionLocal
 from app.dependencies import ensure_retrieval_writes_available, get_current_user, get_db
 from app.models.chat import ChatMessage, ChatSession
 from app.models.user import User
@@ -15,11 +20,13 @@ from app.schemas.chat import (
     SourceRef,
 )
 from app.services.conversation_service import MAX_CONTEXT_MESSAGES, build_conversation_context
-from app.services.generator import generate_answer
+from app.observability import CHAT_STREAMS, request_id_context
+from app.services.generator import StreamingAnswer, cited_source_indexes, generate_answer
 from app.services.query_rewriter import rewrite_retrieval_query
 from app.services.retriever import retrieve_chunks
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+logger = logging.getLogger(__name__)
 
 
 def _session_summary(session: ChatSession) -> ChatSessionSummary:
@@ -42,8 +49,17 @@ def _source_document_ids(messages: list[ChatMessage]) -> set[int]:
 
 
 def _message_response(message: ChatMessage, document_titles: dict[int, str]) -> ChatMessageResponse:
+    metadata = message.message_metadata or {}
+    raw_sources = metadata.get("sources", [])
+    if not isinstance(raw_sources, list):
+        raw_sources = []
+    if message.role == "assistant" and metadata.get("source_selection") != "cited":
+        raw_sources = [
+            raw_sources[index]
+            for index in cited_source_indexes(message.content, len(raw_sources))
+        ]
     sources: list[SourceRef] = []
-    for raw_source in (message.message_metadata or {}).get("sources", []):
+    for raw_source in raw_sources:
         if not isinstance(raw_source, dict) or not isinstance(raw_source.get("document_id"), int):
             continue
         document_id = raw_source["document_id"]
@@ -68,6 +84,103 @@ def _message_response(message: ChatMessage, document_titles: dict[int, str]) -> 
         sources=sources,
         created_at=message.created_at,
     )
+
+
+def _persist_exchange(
+    db: Session,
+    session: ChatSession,
+    question: str,
+    answer: str,
+    chunks,
+    sources: list[SourceRef],
+) -> None:
+    chat_repository.create_message(db, session.id, "user", question)
+    chat_repository.create_message(
+        db,
+        session.id,
+        "assistant",
+        answer,
+        retrieved_chunk_ids=[chunk.chunk_id for chunk in chunks],
+        metadata={
+            "sources": [source.model_dump() for source in sources],
+            "source_selection": "cited",
+        },
+    )
+    chat_repository.touch_session(session)
+
+
+def _sse(event: str, payload: dict | list) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _cleanup_empty_session(session_id: int, owner_id: int) -> None:
+    with SessionLocal() as db:
+        session = chat_repository.get_session(db, session_id, owner_id)
+        if session is not None and not session.messages:
+            chat_repository.delete_session(db, session)
+
+
+def _chat_event_stream(
+    *,
+    session_id: int,
+    owner_id: int,
+    session_created: bool,
+    question: str,
+    chunks,
+    history: list[dict[str, str]],
+):
+    try:
+        with SessionLocal() as db:
+            session = chat_repository.get_session(db, session_id, owner_id)
+            if session is None:
+                raise RuntimeError("Chat session disappeared before streaming started")
+            yield _sse("session", _session_summary(session).model_dump(mode="json"))
+
+        streamed = StreamingAnswer(question=question, chunks=chunks, history=history)
+        for delta in streamed:
+            yield _sse("delta", {"text": delta})
+        if streamed.generated is None:
+            raise RuntimeError("Streaming answer completed without a final result")
+
+        with SessionLocal() as db:
+            session = chat_repository.get_session(db, session_id, owner_id)
+            if session is None:
+                raise RuntimeError("Chat session disappeared before persistence")
+            _persist_exchange(
+                db,
+                session,
+                question,
+                streamed.generated.answer,
+                chunks,
+                streamed.generated.sources,
+            )
+            db.commit()
+            db.refresh(session)
+            final_session = _session_summary(session).model_dump(mode="json")
+
+        yield _sse(
+            "sources",
+            [source.model_dump(mode="json") for source in streamed.generated.sources],
+        )
+        yield _sse("done", {"session": final_session})
+        CHAT_STREAMS.labels(status="success").inc()
+    except GeneratorExit:
+        CHAT_STREAMS.labels(status="cancelled").inc()
+        if session_created:
+            _cleanup_empty_session(session_id, owner_id)
+        raise
+    except Exception:
+        CHAT_STREAMS.labels(status="error").inc()
+        logger.exception("Chat stream failed")
+        if session_created:
+            _cleanup_empty_session(session_id, owner_id)
+        yield _sse(
+            "error",
+            {
+                "detail": "답변 스트리밍 중 오류가 발생했습니다.",
+                "request_id": request_id_context.get(),
+            },
+        )
 
 
 @router.get("/sessions", response_model=ChatSessionListResponse)
@@ -154,16 +267,7 @@ def chat(
     chunks = retrieve_chunks(db=db, owner_id=user.id, question=retrieval_query)
     generated = generate_answer(question=request.question, chunks=chunks, history=history)
 
-    chat_repository.create_message(db, session.id, "user", request.question)
-    chat_repository.create_message(
-        db,
-        session.id,
-        "assistant",
-        generated.answer,
-        retrieved_chunk_ids=[chunk.chunk_id for chunk in chunks],
-        metadata={"sources": [source.model_dump() for source in generated.sources]},
-    )
-    chat_repository.touch_session(session)
+    _persist_exchange(db, session, request.question, generated.answer, chunks, generated.sources)
     db.commit()
     db.refresh(session)
 
@@ -171,4 +275,58 @@ def chat(
         session=_session_summary(session),
         answer=generated.answer,
         sources=generated.sources,
+    )
+
+
+@router.post("/stream", response_class=StreamingResponse)
+def chat_stream(
+    request: ChatRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(ensure_retrieval_writes_available),
+) -> StreamingResponse:
+    owner_id = user.id
+    session_created = request.session_id is None
+    if session_created:
+        history: list[dict[str, str]] = []
+        session = None
+    else:
+        session = chat_repository.get_session(db, request.session_id, owner_id)
+        if session is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
+        recent_messages = chat_repository.list_recent_messages(
+            db,
+            session.id,
+            limit=MAX_CONTEXT_MESSAGES,
+        )
+        history = build_conversation_context(recent_messages)
+
+    retrieval_query = rewrite_retrieval_query(request.question, history)
+    chunks = retrieve_chunks(db=db, owner_id=owner_id, question=retrieval_query)
+
+    if session is None:
+        session = chat_repository.create_session(
+            db,
+            owner_id=owner_id,
+            title=request.question.strip()[:80] or "새 대화",
+        )
+        db.commit()
+        db.refresh(session)
+
+    stream_session_id = session.id
+    db.close()
+    return StreamingResponse(
+        _chat_event_stream(
+            session_id=stream_session_id,
+            owner_id=owner_id,
+            session_created=session_created,
+            question=request.question,
+            chunks=chunks,
+            history=history,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )

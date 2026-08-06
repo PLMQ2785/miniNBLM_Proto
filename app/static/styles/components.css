@@ -567,6 +567,31 @@
   font-size: 13px;
 }
 
+.message-streaming {
+  min-width: min(320px, 72vw);
+}
+
+.message-streaming .message-content::after {
+  display: inline-block;
+  width: 6px;
+  height: 14px;
+  margin-left: 3px;
+  background: var(--accent);
+  content: "";
+  vertical-align: -2px;
+  animation: stream-cursor 0.9s steps(1) infinite;
+}
+
+@keyframes stream-cursor {
+  50% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-streaming .message-content::after {
+    animation: none;
+  }
+}
+
 .message-error {
   padding: 12px 14px;
   border-left-color: var(--danger);

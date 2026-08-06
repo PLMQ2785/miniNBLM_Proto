@@ -32,7 +32,11 @@ def rewrite_retrieval_query(question: str, history: list[dict[str, str]]) -> str
         },
     ]
     try:
-        rewritten = VLLMClient().chat_completion(messages, temperature=0.0)
+        rewritten = VLLMClient().chat_completion(
+            messages,
+            temperature=0.0,
+            operation="query_rewrite",
+        )
     except Exception:
         logger.warning("Retrieval query rewriting failed; using the original question", exc_info=True)
         return original_question

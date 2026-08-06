@@ -27,6 +27,19 @@ def test_liveness_does_not_depend_on_external_services(client: TestClient) -> No
     assert response.json() == {"status": "ok"}
 
 
+def test_request_id_is_returned_and_metrics_are_exposed(client: TestClient) -> None:
+    health = client.get("/health", headers={"X-Request-ID": "integration-request-1"})
+
+    assert health.headers["X-Request-ID"] == "integration-request-1"
+
+    metrics = client.get("/metrics")
+
+    assert metrics.status_code == 200
+    assert metrics.headers["content-type"].startswith("text/plain")
+    assert "mininblm_http_requests_total" in metrics.text
+    assert 'route="/health"' in metrics.text
+
+
 def test_readiness_returns_200_when_all_components_are_ready(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

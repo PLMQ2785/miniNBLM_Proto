@@ -1,6 +1,7 @@
-# Nursing PDF RAG Tutor PoC
+# PDF RAG Assistant
 
-간호학 수업자료 PDF를 업로드하고, 자료에 근거한 답변과 원문 페이지 출처를 제공하는 RAG 학습 튜터 PoC입니다. 의료 상담, 진단 또는 처방을 위한 시스템이 아닙니다.
+PDF 문서를 업로드하고, 문서에 근거한 답변과 실제로 인용한 원문 페이지 출처를
+제공하는 범용 RAG 서비스입니다.
 
 ## 구성
 
@@ -107,6 +108,7 @@ Dockerfile은 API에 `uv sync --frozen --only-group api`, embedding에
 ```bash
 curl http://localhost:8080/health
 curl http://localhost:8080/health/ready
+curl http://localhost:8080/metrics
 curl http://localhost:8070/health
 curl http://localhost:8010/v1/models
 curl http://localhost:8080/documents
@@ -147,9 +149,11 @@ uv run pytest tests/unit -q
 ```
 
 이 스크립트는 실제 `embedding:8070`, `llm:8010`을 사용하되 API는 `18080`,
-tmpfs 테스트 DB는 `55433`에 따로 기동합니다. 운영 DB와 업로드 문서는 사용하지
-않습니다. 샘플 PDF의 파싱·임베딩·검색·답변·출처와 자료 외 질문 및 의료
-상담성 질문의 안전 동작을 검증합니다.
+tmpfs 테스트 DB는 `55433`에 따로 기동합니다. pytest도 같은 host network의
+전용 API 컨테이너 안에서 실행하므로 WSL의 Docker port 전달 방식에 의존하지
+않습니다. 운영 DB와 업로드 문서는 사용하지 않습니다. 샘플 PDF의 파싱·임베딩·
+검색·스트리밍 답변·실제 인용 출처와 자료 외 질문의 근거 제한 동작을
+검증합니다.
 
 실제 BGE-M3를 사용해 5개 preset과 4개 검색 알고리즘의 Recall@5, MRR와
 retrieval 지연을 비교할 때는 다음 명령을 사용합니다. LLM은 필요하지 않으며
@@ -175,6 +179,11 @@ curl -b session.cookie \
   -H "Content-Type: application/json" \
   -d '{"question":"업로드한 자료의 핵심 내용을 설명해 주세요."}' \
   http://localhost:8080/chat
+
+curl -N -b session.cookie \
+  -H "Content-Type: application/json" \
+  -d '{"question":"업로드한 자료의 핵심 내용을 설명해 주세요."}' \
+  http://localhost:8080/chat/stream
 ```
 
 ## 문서
@@ -195,11 +204,12 @@ curl -b session.cookie \
 - 로그인 사용자의 모든 indexed 문서를 대상으로 하는 작업공간 RAG 검색
 - 여러 대화 세션 저장, 최근 대화 자동 복원과 직전 대화 기반 후속 검색 질의 재작성
 - Gemma 4 12B W4A16 모델을 사용한 답변 생성
-- `문서명 · 페이지` 답변 출처와 원본 PDF 페이지 연결
+- SSE 기반 답변 스트리밍과 완료된 대화의 이력 저장
+- 모델이 실제 인용한 `Source N`만 `문서명 · 페이지` 출처로 표시하고 원본 PDF 연결
 - 반응형 Web UI와 문서 처리 상태 polling
 - 관리자 청킹 프리셋 5개, 검색 알고리즘 4개와 변경 영향 판정
 - API 재시작 시 중단된 PDF 인덱싱과 전체 재인덱싱 자동 복구
 - DB, embedding, vLLM 통합 readiness와 Docker 시작 상태 연동
+- JSON 구조화 로그, request ID와 Prometheus HTTP·검색·LLM 지표
 
-이메일 확인, 비밀번호 재설정, OCR, 스트리밍 답변과 영속 작업 큐는 후속
-범위입니다.
+이메일 확인, 비밀번호 재설정, OCR과 영속 작업 큐는 후속 범위입니다.

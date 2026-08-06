@@ -5,17 +5,21 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import admin_retrieval, auth, chat, documents, health
+from app.api import admin_retrieval, auth, chat, documents, health, metrics
+from app.config import settings
+from app.observability import RequestObservabilityMiddleware, configure_logging
 from app.services.runtime_service import initialize_runtime
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    configure_logging(settings.log_level)
     initialize_runtime()
     yield
 
 
-app = FastAPI(title="Nursing PDF RAG Tutor API", lifespan=lifespan)
+app = FastAPI(title="PDF RAG Assistant API", lifespan=lifespan)
+app.add_middleware(RequestObservabilityMiddleware)
 
 
 @app.middleware("http")
@@ -30,6 +34,7 @@ app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(documents.router)
 app.include_router(health.router)
+app.include_router(metrics.router)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

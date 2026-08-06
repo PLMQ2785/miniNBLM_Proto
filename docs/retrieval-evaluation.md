@@ -10,7 +10,7 @@ Dense, Keyword, Substring, Hybrid 알고리즘을 실행한다. 운영 DB와 업
 평가 corpus는 다음 두 PDF의 12페이지로 구성한다.
 
 - `sample_fall_prevention.pdf`: 정답이 있는 4페이지 문서
-- `evaluation/retrieval_distractor_nursing_topics.pdf`: 8페이지 혼동 문서
+- `evaluation/retrieval_distractor_nursing_topics.pdf`: 8페이지 검색 혼동 문서
 
 버전 관리되는 `evaluation/retrieval_fall_prevention.json`에 8개 질문과 정답
 `문서명 + 페이지`를 기록한다. 혼동 문서는
@@ -87,5 +87,5 @@ Substring은 MRR `1.000`으로 순위 품질이 더 높고, Keyword는 형태가
 일치하는 핵심어가 있는 질의에서 해석하기 쉬운 FTS 점수를 제공한다.
 
 이 corpus는 합성된 12페이지 자료이므로 운영 기본 알고리즘을 결정하기에는 작다.
-실제 간호학 강의 PDF, 약어·영문 혼합 질문, 복수 정답 페이지와 자료 밖 질문을
+실제 사용 분야의 PDF, 약어·영문 혼합 질문, 복수 정답 페이지와 자료 밖 질문을
 fixture에 추가한 뒤 결과를 다시 비교해야 한다.

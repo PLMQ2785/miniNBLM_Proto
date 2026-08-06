@@ -8,7 +8,7 @@ from app.main import app
 pytestmark = pytest.mark.integration
 
 BOOTSTRAP_PASSWORD = "Test!Bootstrap2026"
-NEW_ADMIN_PASSWORD = "Nursing!Secure2026"
+NEW_ADMIN_PASSWORD = "General!Secure2026"
 
 
 def test_bootstrap_admin_must_change_password_and_old_secret_is_not_restored(

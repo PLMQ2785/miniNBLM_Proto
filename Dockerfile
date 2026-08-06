@@ -14,7 +14,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --only-group api
+ARG UV_DEPENDENCY_GROUP=api
+RUN uv sync --frozen --only-group "${UV_DEPENDENCY_GROUP}"
 
 COPY app ./app
 COPY alembic ./alembic

@@ -352,23 +352,54 @@ export class AppController {
   }
 
   async generateAnswer(question, messages) {
-    this.state.conversation = messages;
+    const originalSessionId = this.state.activeSessionId;
+    const streamingMessage = {
+      role: "assistant",
+      content: "",
+      sources: [],
+      status: "streaming",
+    };
+    this.state.conversation = [...messages, streamingMessage];
     this.state.isGenerating = true;
     this.render();
 
     let focusMessageIndex = null;
 
     try {
-      const result = await this.apiClient.sendQuestion(question, this.state.activeSessionId);
-      this.state.activeSessionId = result.session.session_id;
-      this.state.chatSessions = upsertChatSession(this.state.chatSessions, result.session);
-      const nextMessages = [
-        ...messages,
-        { role: "assistant", content: result.answer, sources: result.sources },
-      ];
-      this.state.conversation = nextMessages;
-      focusMessageIndex = nextMessages.length - 1;
+      const result = await this.apiClient.streamQuestion(
+        question,
+        originalSessionId,
+        (event, data) => {
+          if (event === "session" || event === "done") {
+            const session = event === "done" ? data.session : data;
+            if (session) {
+              this.state.activeSessionId = session.session_id;
+              this.state.chatSessions = upsertChatSession(this.state.chatSessions, session);
+              this.render();
+            }
+          } else if (event === "delta") {
+            streamingMessage.content += data.text || "";
+            this.chatPanel.updateStreamingMessage(
+              this.state.conversation.length - 1,
+              streamingMessage.content,
+            );
+          } else if (event === "sources") {
+            streamingMessage.sources = data;
+          }
+        },
+      );
+      streamingMessage.content = result.answer;
+      streamingMessage.sources = result.sources;
+      delete streamingMessage.status;
+      focusMessageIndex = this.state.conversation.length - 1;
     } catch (error) {
+      if (originalSessionId === null && this.state.activeSessionId !== null) {
+        const failedSessionId = this.state.activeSessionId;
+        this.state.chatSessions = this.state.chatSessions.filter(
+          (session) => session.session_id !== failedSessionId,
+        );
+        this.state.activeSessionId = null;
+      }
       const nextMessages = [
         ...messages,
         {

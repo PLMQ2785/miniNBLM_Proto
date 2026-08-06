@@ -17,9 +17,10 @@ def test_first_question_is_not_rewritten(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_follow_up_is_rewritten_from_the_latest_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
     call: dict = {}
 
-    def rewrite(self, messages, temperature=0.2):
+    def rewrite(self, messages, temperature=0.2, operation="completion"):
         call["messages"] = messages
         call["temperature"] = temperature
+        call["operation"] = operation
         return "검색 질의: 낙상 후 손상 여부 확인 다음 조치"
 
     monkeypatch.setattr(VLLMClient, "chat_completion", rewrite)
@@ -34,6 +35,7 @@ def test_follow_up_is_rewritten_from_the_latest_exchange(monkeypatch: pytest.Mon
 
     assert result == "낙상 후 손상 여부 확인 다음 조치"
     assert call["temperature"] == 0.0
+    assert call["operation"] == "query_rewrite"
     assert call["messages"][1:3] == history[-2:]
     assert "그 다음에는 무엇을 하나요?" in call["messages"][-1]["content"]
 
@@ -41,7 +43,7 @@ def test_follow_up_is_rewritten_from_the_latest_exchange(monkeypatch: pytest.Mon
 def test_rewrite_uses_bounded_previous_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
     call: dict = {}
 
-    def rewrite(self, messages, temperature=0.2):
+    def rewrite(self, messages, temperature=0.2, operation="completion"):
         call["messages"] = messages
         return "독립 질문"
 

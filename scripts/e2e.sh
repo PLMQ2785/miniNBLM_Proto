@@ -12,7 +12,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-for command in docker curl uv; do
+for command in docker curl; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "Required command not found: $command" >&2
     exit 1
@@ -36,10 +36,9 @@ curl -fsS --max-time 10 http://127.0.0.1:8010/v1/models >/dev/null || {
 cleanup
 "${COMPOSE[@]}" up -d --build --wait
 
-export RUN_REAL_E2E=1
-export E2E_BASE_URL=http://127.0.0.1:18080
-export E2E_DATABASE_DSN=postgresql://rag_e2e_user:rag_e2e_password@127.0.0.1:55433/rag_e2e_db
-export E2E_PDF_PATH="$PROJECT_DIR/sample_fall_prevention.pdf"
-export UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache}"
-
-uv run pytest tests/e2e -m e2e "$@"
+"${COMPOSE[@]}" exec -T \
+  -e RUN_REAL_E2E=1 \
+  -e E2E_BASE_URL=http://127.0.0.1:18080 \
+  -e E2E_DATABASE_DSN=postgresql://rag_e2e_user:rag_e2e_password@127.0.0.1:55433/rag_e2e_db \
+  -e E2E_PDF_PATH=/app/sample_fall_prevention.pdf \
+  api-e2e .venv/bin/pytest tests/e2e -m e2e "$@"

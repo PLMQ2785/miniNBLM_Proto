@@ -1,8 +1,10 @@
 from dataclasses import dataclass
+import time
 
 from sqlalchemy.orm import Session
 
 from app.clients.embedding_client import EmbeddingClient
+from app.observability import RETRIEVAL_DURATION, RETRIEVAL_REQUESTS
 from app.repositories import retrieval_config_repository
 from app.repositories.chunk_repository import (
     search_chunks_by_embedding,
@@ -36,13 +38,25 @@ def retrieve_chunks(
         raise RuntimeError("Active retrieval preset is missing")
     result_limit = top_k if top_k is not None else active_preset.top_k
     algorithm = SearchAlgorithmKey(configuration.active_search_algorithm_key)
-    rows = _search(
-        db=db,
-        owner_id=owner_id,
-        question=question,
-        top_k=result_limit,
-        algorithm=algorithm,
-    )
+    started_at = time.perf_counter()
+    try:
+        rows = _search(
+            db=db,
+            owner_id=owner_id,
+            question=question,
+            top_k=result_limit,
+            algorithm=algorithm,
+        )
+    except Exception:
+        RETRIEVAL_REQUESTS.labels(algorithm=algorithm.value, status="error").inc()
+        raise
+    else:
+        status = "success" if rows else "empty"
+        RETRIEVAL_REQUESTS.labels(algorithm=algorithm.value, status=status).inc()
+    finally:
+        RETRIEVAL_DURATION.labels(algorithm=algorithm.value).observe(
+            time.perf_counter() - started_at
+        )
     return [
         RetrievedChunk(
             chunk_id=chunk.id,

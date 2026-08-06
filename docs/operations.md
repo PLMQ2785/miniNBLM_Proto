@@ -5,7 +5,7 @@
 | 서비스 | 호스트 포트 | 역할 | GPU |
 |---|---:|---|---|
 | `api` | 8080 | FastAPI, Web UI, 문서 처리 조정 | 아니요 |
-| `db` | 5432 | PostgreSQL 17, pgvector | 아니요 |
+| `db` | 5433 | PostgreSQL 17, pgvector | 아니요 |
 | `embedding` | 8070 | BGE-M3 embedding HTTP API | 예 |
 | `llm` | 8010 | vLLM OpenAI-compatible API | 예 |
 
@@ -68,12 +68,14 @@ docker compose up -d db embedding api
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
+| `MININBLM_DB_PORT` | `5433` | host network에서 PostgreSQL이 bind할 loopback 포트 |
 | `VLLM_MODEL_PATH` | `./google/google-gemma-4-12B-it-W4A16` | 호스트의 양자화 모델 경로 |
 | `VLLM_MAX_MODEL_LEN` | `8192` | 최대 sequence length |
 | `VLLM_GPU_MEMORY_UTILIZATION` | `0.65` | vLLM이 사용할 GPU 메모리 비율 |
 | `VLLM_MAX_NUM_SEQS` | `4` | 동시에 처리할 최대 sequence 수 |
 | `MAX_UPLOAD_BYTES` | `52428800` | 서버가 허용하는 PDF 파일 최대 바이트 수 |
 | `READINESS_TIMEOUT_SECONDS` | `3` | readiness 구성요소별 최대 점검 시간(초) |
+| `LOG_LEVEL` | `INFO` | API JSON 구조화 로그 수준 |
 | 활성 retrieval preset | `balanced` | DB에서 관리하며 기본 `top_k=8`, 청크 `1000/150` |
 | `AUTH_SESSION_TTL_HOURS` | `168` | 로그인 세션 유지 시간 |
 | `AUTH_COOKIE_SECURE` | `false` | HTTPS 운영 환경에서는 `true`로 설정 |
@@ -86,6 +88,10 @@ Bootstrap 관리자 변수는 둘 다 설정하거나 둘 다 비워야 합니�
 
 `embedding`과 `llm`은 같은 GPU를 사용할 수 있습니다. `VLLM_GPU_MEMORY_UTILIZATION`은 전체 GPU 용량에 대한 목표치이며, 모델 weight, 실행 workspace, CUDA context와 KV cache가 함께 VRAM을 사용합니다.
 
+호스트의 `5433`도 다른 PostgreSQL이 사용 중이면 `.env`에서
+`MININBLM_DB_PORT`를 사용 가능한 포트로 변경합니다. API의 DB 연결 주소와 DB
+healthcheck에도 같은 값이 자동 적용됩니다.
+
 ## 4. API 계약
 
 | Method | Path | 설명 |
@@ -93,6 +99,7 @@ Bootstrap 관리자 변수는 둘 다 설정하거나 둘 다 비워야 합니�
 | `GET` | `/` | Web UI |
 | `GET` | `/health` | API process 상태 |
 | `GET` | `/health/ready` | DB, embedding, vLLM 통합 준비 상태 |
+| `GET` | `/metrics` | Prometheus 형식 API·검색·LLM 지표 |
 | `POST` | `/auth/register` | 공개 회원가입과 로그인 세션 발급 |
 | `POST` | `/auth/login` | 로그인 세션 발급 |
 | `POST` | `/auth/logout` | 현재 로그인 세션 폐기 |
@@ -104,6 +111,7 @@ Bootstrap 관리자 변수는 둘 다 설정하거나 둘 다 비워야 합니�
 | `GET` | `/documents/{id}/file` | 브라우저에서 여는 원본 PDF |
 | `DELETE` | `/documents/{id}` | 문서, page/chunk와 원본 파일 삭제 |
 | `POST` | `/chat` | 현재 사용자의 전체 indexed 문서 기반 질문 |
+| `POST` | `/chat/stream` | 동일한 질문을 SSE 답변 스트림으로 처리 |
 | `GET` | `/admin/retrieval` | 프리셋 목록, 활성 설정과 최근 작업 조회 |
 | `POST` | `/admin/retrieval/presets/{key}/activate` | 프리셋 변경 작업 시작 |
 | `POST` | `/admin/retrieval/algorithms/{key}/activate` | 검색 알고리즘 즉시 변경 |
@@ -192,7 +200,7 @@ PyMuPDF가 열 수 없는 손상 파일 또는 암호화된 파일은 HTTP 400�
   "sources": [
     {
       "document_id": 1,
-      "document_title": "기본간호학.pdf",
+      "document_title": "프로젝트_가이드.pdf",
       "page": 1,
       "chunk_id": 1,
       "available": true
@@ -223,14 +231,38 @@ PyMuPDF가 열 수 없는 손상 파일 또는 암호화된 파일은 HTTP 400�
 삭제된 PDF를 참조하는 과거 source는 문서명을 보존하지만 `available=false`로
 반환되어 원본 열기를 차단한다.
 LLM이 `[[NO_SOURCE]]`로 자료 부재를 표시하면 API는 마커를 사용자 답변에서
-제거하고 빈 `sources` 배열을 반환한다. 의료 상담성 질문의 안전 안내는 마커
-뒤에 유지한다. `[[NO_SOURCE]`처럼 닫는 대괄호를 일부 누락해도 동일하게 처리한다.
+제거하고 빈 `sources` 배열을 반환한다. `[[NO_SOURCE]`처럼 닫는 대괄호를 일부
+누락해도 동일하게 처리한다.
+
+검색된 top-k chunk는 LLM에 제공하는 후보일 뿐 사용자에게 그대로 노출하지
+않는다. 근거 답변은 끝에 `[Source 1, Page 3; Source 2, Page 5]` 형식으로 실제
+참고한 Context 번호를 표시한다. API는 유효한 `Source N`만 해당 chunk의 문서와
+페이지로 변환하며, 같은 문서·페이지의 중복 chunk는 하나로 합친다. 범위를 벗어난
+번호와 답변에서 인용되지 않은 검색 후보는 `sources`에 포함하지 않는다.
+이 규칙 도입 전에 저장된 대화도 조회 시 답변의 `Source N`과 기존 후보 순서를
+대조해 필터링하므로 DB를 다시 인덱싱하지 않아도 된다.
+
+`POST /chat/stream`은 요청 형식과 세션 규칙이 `/chat`과 같고 다음 SSE event를
+순서대로 보낸다.
+
+| Event | Data | 설명 |
+|---|---|---|
+| `session` | 세션 요약 | 새 세션 또는 요청한 세션 식별 |
+| `delta` | `{"text":"..."}` | 화면에 즉시 추가할 답변 조각 |
+| `sources` | source 배열 | 근거가 있는 답변의 출처, 자료 부재 시 빈 배열 |
+| `done` | 세션 요약 포함 객체 | 답변과 대화 이력 저장 완료 |
+| `error` | 안전한 오류와 request ID | 스트림 처리 실패, `done`은 전송하지 않음 |
+
+완료된 스트림만 사용자 질문과 답변을 DB에 저장한다. 새 세션에서 생성 또는
+전송이 실패하면 빈 세션도 정리한다. 초기 출력은 `NO_SOURCE` 판정이 끝날 때까지
+짧게 버퍼링하므로 자료 부재 마커가 브라우저에 노출되지 않는다.
 
 ## 5. 상태 확인
 
 ```bash
 curl -sS http://localhost:8080/health
 curl -sS http://localhost:8080/health/ready
+curl -sS http://localhost:8080/metrics
 curl -sS http://localhost:8070/health
 curl -sS http://localhost:8010/v1/models
 curl -sS -c session.cookie \
@@ -240,6 +272,23 @@ curl -sS -c session.cookie \
 curl -sS -b session.cookie http://localhost:8080/documents
 curl -sS -b session.cookie -D - -o /dev/null http://localhost:8080/documents/1/file
 ```
+
+모든 API 응답은 `X-Request-ID`를 반환한다. 클라이언트가 영문·숫자와 `._-`로
+구성된 128자 이하 값을 보내면 그대로 사용하고, 아니면 서버가 새 값을 만든다.
+로그는 stdout에 JSON 한 줄씩 기록되며 request ID, method, route, status와
+전체 응답 시간(`duration_ms`)을 포함한다. 스트리밍 요청의 시간은 마지막 SSE
+event 전송까지 측정한다.
+
+`/metrics`에는 다음 애플리케이션 지표가 포함된다.
+
+- `mininblm_http_requests_total`, `mininblm_http_request_duration_seconds`
+- `mininblm_retrieval_requests_total`, `mininblm_retrieval_duration_seconds`
+- `mininblm_llm_requests_total`, `mininblm_llm_duration_seconds`
+- `mininblm_llm_time_to_first_token_seconds`, `mininblm_chat_streams_total`
+
+운영에서는 `/metrics`를 모니터링망에서만 접근하도록 reverse proxy에서 제한한다.
+`/chat/stream` 앞에 Nginx 등을 둘 경우 응답 버퍼링을 끄고 idle timeout을 LLM
+최대 생성 시간보다 길게 설정한다. API도 `X-Accel-Buffering: no`를 반환한다.
 
 정상적인 PDF 응답에는 다음 header가 포함됩니다.
 
@@ -312,7 +361,7 @@ KV cache is needed, which is larger than the available KV cache memory
 - 문서 처리는 API process의 `BackgroundTasks`를 사용하며 재시작 시 처음부터 복구하지만 별도 worker/queue가 없어 API process 수명과 자원을 공유합니다.
 - 프리셋 재인덱싱은 DB 작업 상태를 이용해 API 재시작 시 처음부터 복구하지만 별도 worker/queue가 없어 API process 수명과 자원을 공유합니다.
 - 텍스트 기반 PDF만 처리하며 scanned PDF용 OCR은 없습니다.
-- 답변은 streaming하지 않습니다.
+- Prometheus 수집 서버와 대시보드·경보 규칙은 배포 구성에 포함되지 않습니다.
 
 ## 9. 완료된 검증
 
@@ -341,6 +390,8 @@ KV cache is needed, which is larger than the available KV cache memory
 - 관리자 UI의 청킹 preset·검색 알고리즘 독립 전환과 모바일 overflow 없음
 - 서버의 업로드 크기, 확장자, MIME, PDF 시그니처·구조·암호화 검증
 - DB, embedding, vLLM 통합 readiness와 API Docker healthcheck
+- SSE 답변 delta·source·완료 event와 완료 시 대화 저장
+- JSON 구조화 로그, request ID 전파와 Prometheus HTTP·검색·LLM 지표
 
 ## 10. 자동화 테스트
 
@@ -358,13 +409,14 @@ KV cache is needed, which is larger than the available KV cache memory
 4. 단위 테스트와 API·DB 통합 테스트를 실행합니다.
 5. 성공 또는 실패 여부와 관계없이 테스트 컨테이너를 종료합니다.
 
-테스트 DB의 이름과 계정은 운영 설정과 다르며 운영 DB port `5432`,
+테스트 DB의 이름과 계정은 운영 설정과 다르며 운영 DB port `5433`,
 `postgres_data`, `data/` 업로드 파일을 사용하지 않습니다. embedding과 LLM
 클라이언트는 테스트 대역으로 교체하므로 GPU 서비스도 필요하지 않습니다.
 
 현재 자동화 범위는 프리셋 유효성·변경 영향, 인증 입력, 관리자 bootstrap·강제
 비밀번호 변경·다중 세션 폐기, RRF 병합, 회원가입과 세션, 사용자별 문서 격리,
-PDF 업로드·삭제 제약, 대화 저장·복원·소유권·페이지 조회, 관리자 권한과
+PDF 업로드·삭제 제약, 대화 저장·복원·소유권·페이지 조회, SSE 스트리밍,
+request ID·metric, 관리자 권한과
 프리셋 전환, 네 검색 알고리즘의 실제 PostgreSQL 질의, 문서 및 재인덱싱 복구를
 포함합니다. 실제 PDF 파싱·embedding·LLM 생성과 브라우저 레이아웃은 별도의
 서비스 및 UI smoke 검증 범위입니다.
@@ -384,9 +436,10 @@ uv run pytest tests/unit -q
 ./scripts/e2e.sh -q
 ```
 
-E2E Compose project는 운영 `embedding`과 `llm` endpoint만 공유합니다. API,
-PostgreSQL, 관리자 계정, 업로드 경로는 다음과 같이 격리되고 테스트 종료 시
-자동 삭제됩니다.
+E2E Compose project는 운영 `embedding`과 `llm` endpoint만 공유합니다. pytest는
+전용 API 컨테이너 내부에서 실행되어 WSL과 Docker 사이의 host-network port
+전달에 의존하지 않습니다. API, PostgreSQL, 관리자 계정, 업로드 경로는 다음과
+같이 격리되고 테스트 종료 시 자동 삭제됩니다.
 
 | 자원 | E2E 값 |
 |---|---|
@@ -395,10 +448,10 @@ PostgreSQL, 관리자 계정, 업로드 경로는 다음과 같이 격리되고 
 | DB 이름 | `rag_e2e_db` |
 | PDF fixture | `sample_fall_prevention.pdf` |
 
-검증 범위는 실제 PDF 4페이지 파싱, BGE-M3 1024차원 임베딩 저장, 고유 정답과
-page 1 출처 검색, 자료에 없는 질문 제한, 실제 환자 산소 투여량 질문에 대한
-안전 안내, 테스트 문서 삭제입니다. 생성 모델 결과는 문장 전체가 아니라 필수
-용어, 출처 page, 금지된 구체 처치 지시 여부로 판정합니다.
+검증 범위는 실제 PDF 4페이지 파싱, BGE-M3 1024차원 임베딩 저장, 실제 SSE
+delta와 완료 event, 고유 정답과 page 1 출처 검색, 자료에 없는 질문 제한,
+스트리밍·검색·LLM metric과 테스트 문서 삭제입니다. 생성 모델 결과는 문장
+전체가 아니라 필수 용어와 출처 page로 판정합니다.
 
 ### Retrieval 품질 benchmark
 

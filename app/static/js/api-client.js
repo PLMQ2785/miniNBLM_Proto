@@ -119,6 +119,97 @@ export class ApiClient {
     });
   }
 
+  async streamQuestion(question, sessionId = null, onEvent = null) {
+    const payload = { question };
+    if (sessionId !== null) payload.session_id = sessionId;
+
+    let response;
+    try {
+      response = await fetch(`${this.baseUrl}/chat/stream`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "text/event-stream",
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      throw new ApiError("서버에 연결할 수 없습니다.", { detail: error.message });
+    }
+
+    if (!response.ok) {
+      const contentType = response.headers.get("content-type") || "";
+      const errorPayload = contentType.includes("application/json")
+        ? await response.json()
+        : await response.text();
+      const detail = typeof errorPayload === "object" ? errorPayload.detail : errorPayload;
+      if (response.status === 401) window.dispatchEvent(new CustomEvent("authrequired"));
+      throw new ApiError(this.errorMessage(response.status, detail, "/chat/stream"), {
+        status: response.status,
+        detail,
+      });
+    }
+    if (!response.body) {
+      throw new ApiError("스트리밍 응답을 읽을 수 없습니다.");
+    }
+
+    const result = { answer: "", sources: [], session: null };
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let completed = false;
+
+    const processBlock = (block) => {
+      if (!block.trim()) return;
+      let event = "message";
+      const dataLines = [];
+      for (const line of block.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+      }
+      if (dataLines.length === 0) return;
+      const data = JSON.parse(dataLines.join("\n"));
+      if (event === "error") {
+        throw new ApiError(data.detail || "답변 스트리밍에 실패했습니다.", { detail: data });
+      }
+      if (event === "session") result.session = data;
+      else if (event === "delta") result.answer += data.text || "";
+      else if (event === "sources") result.sources = data;
+      else if (event === "done") {
+        result.session = data.session || result.session;
+        completed = true;
+      }
+      onEvent?.(event, data, result);
+    };
+
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        buffer = buffer.replaceAll("\r\n", "\n");
+        let boundary = buffer.indexOf("\n\n");
+        while (boundary !== -1) {
+          processBlock(buffer.slice(0, boundary));
+          buffer = buffer.slice(boundary + 2);
+          boundary = buffer.indexOf("\n\n");
+        }
+        if (done) break;
+      }
+      if (buffer.trim()) processBlock(buffer);
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError("답변 스트리밍 연결이 중단되었습니다.", { detail: error.message });
+    } finally {
+      reader.releaseLock();
+    }
+
+    if (!completed) {
+      throw new ApiError("답변 스트리밍이 완료되기 전에 연결이 종료되었습니다.");
+    }
+    return result;
+  }
+
   getPdfUrl(documentId, page = null) {
     const base = `${this.baseUrl}/documents/${documentId}/file`;
     return page ? `${base}#page=${page}&view=FitH` : base;

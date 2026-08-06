@@ -1,4 +1,8 @@
-# Nursing PDF RAG Tutor PoC 요구사항 정리
+# 범용 PDF RAG Assistant PoC 요구사항 정리
+
+> 이 문서는 초기 간호학 특화 PoC 설계 이력을 포함한다. 현재 구현은 29장의
+> 상태를 기준으로 하는 범용 문서 RAG 서비스이며, 초기 간호·의료 전용 prompt
+> 요구사항은 더 이상 적용하지 않는다.
 
 ## 0. 프로젝트 개요
 
@@ -1651,6 +1655,13 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
 - 격리된 tmpfs DB와 실제 BGE-M3를 사용하는 benchmark 자동 실행 스크립트
 - Keyword FTS 질문 토큰 OR-query와 전 preset Recall@5 `1.0` 검증
 - 직전 질문·답변 한 쌍을 사용하는 후속 질문 retrieval query rewriting
+- SSE 기반 답변 스트리밍, 완료된 대화만 저장하고 실패한 빈 세션 정리
+- 스트리밍 중 `NO_SOURCE` 마커 비노출과 자료 부재 시 빈 source 유지
+- JSON 구조화 로그, `X-Request-ID`와 Prometheus HTTP·retrieval·LLM 지표
+- 실제 Gemma 4 SSE delta·출처·완료와 관측 지표 E2E 검증
+- 답변의 `Source N` 인용만 실제 문서·페이지 source로 반환하고 검색 후보 전체 노출 방지
+- 간호 특화 prompt를 범용 문서 RAG prompt로 교체하고 system/user/history 역할별
+  메시지 구성을 분리
 
 빠른 테스트는 `./scripts/test.sh -q`, 실제 모델 E2E는 네 서비스 실행 후
 `./scripts/e2e.sh -q`로 수행한다. E2E API와 DB는 운영 데이터와 분리된다.
