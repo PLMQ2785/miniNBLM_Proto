@@ -31,6 +31,38 @@ RETRIEVAL_DURATION = Histogram(
     "Retrieval operation duration by algorithm.",
     ("algorithm",),
 )
+RERANK_REQUESTS = Counter(
+    "mininblm_rerank_requests_total",
+    "Semantic reranking operations by result status.",
+    ("status",),
+)
+RERANK_DURATION = Histogram(
+    "mininblm_rerank_duration_seconds",
+    "Semantic reranking operation duration.",
+)
+EVIDENCE_COVERAGE_REQUESTS = Counter(
+    "mininblm_evidence_coverage_requests_total",
+    "Evidence coverage checks by result status.",
+    ("status",),
+)
+EVIDENCE_COVERAGE_DURATION = Histogram(
+    "mininblm_evidence_coverage_duration_seconds",
+    "Evidence coverage check duration.",
+)
+RETRIEVAL_RETRIES = Counter(
+    "mininblm_retrieval_retries_total",
+    "Targeted retrieval retries by result status.",
+    ("status",),
+)
+CITATION_VALIDATION_REQUESTS = Counter(
+    "mininblm_citation_validation_requests_total",
+    "Citation validation operations by result status.",
+    ("status",),
+)
+CITATION_VALIDATION_DURATION = Histogram(
+    "mininblm_citation_validation_duration_seconds",
+    "Citation validation operation duration.",
+)
 LLM_REQUESTS = Counter(
     "mininblm_llm_requests_total",
     "LLM operations by purpose, mode, and result status.",
@@ -68,6 +100,9 @@ class JsonLogFormatter(logging.Formatter):
                 payload[field] = value
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
+        retrieval_trace = getattr(record, "retrieval_trace", None)
+        if retrieval_trace is not None:
+            payload["retrieval_trace"] = retrieval_trace
         return json.dumps(payload, ensure_ascii=False)
 
 

@@ -89,3 +89,63 @@ Substring은 MRR `1.000`으로 순위 품질이 더 높고, Keyword는 형태가
 이 corpus는 합성된 12페이지 자료이므로 운영 기본 알고리즘을 결정하기에는 작다.
 실제 사용 분야의 PDF, 약어·영문 혼합 질문, 복수 정답 페이지와 자료 밖 질문을
 fixture에 추가한 뒤 결과를 다시 비교해야 한다.
+
+## 복합 질의 회귀 평가
+
+`evaluation/retrieval_multihop_oss.json`은 Git 작업 흐름과 오픈소스 라이선스의
+복합 질의를 재현한다. 운영 업로드 경로나 사용자 데이터에 의존하지 않도록 다음
+소형 PDF를 버전 관리한다.
+
+- `evaluation/retrieval_multihop_git.pdf`: ignore/stash, reset/revert, DVCS 협업
+- `evaluation/retrieval_multihop_licenses.pdf`: AGPL, MPL 호환성, 하이브리드 고지
+
+schema version 2의 각 case에는 다음 항목이 추가된다.
+
+- `retrieval_queries`: 질의 분해 결과를 재현하는 최대 4개 검색 질의
+- `evidence_facets`: 답변에 필요한 근거 단위와 정답 source
+- `required_answer_claims`: 후속 답변 품질 평가에서 확인할 필수 주장
+
+결정적인 `retrieval_queries`를 fixture에 기록하므로 LLM의 질의 계획 출력 변동과
+분리해 다중 질의 검색, RRF, 인접 청크 확장을 회귀 검증할 수 있다.
+
+```bash
+./scripts/benchmark-retrieval.sh \
+  --fixture evaluation/retrieval_multihop_oss.json \
+  --preset balanced \
+  --algorithm hybrid \
+  --warmup 0 \
+  --iterations 1 \
+  --evaluation-k 3 \
+  --minimum-recall 1.0
+```
+
+Dense와 Hybrid는 각 하위 질의의 1위 후보를 보존한 뒤 초기 검색의 `top_k × 3`
+후보를 재정렬한다. 점수는 BGE-M3 의미 유사도 80%와 기존 후보 순위 20%를
+결합하며, 의미 유사도는 원 질문 70%와 하위 질의 최대 유사도 30%로 구성한다.
+하위 질의별 최상위 의미 후보도 최종 결과에 하나씩 보존한다. Keyword와
+Substring은 선택한 알고리즘의 순수 순위를 유지하며, 재정렬 실패 시 기존 순위로
+폴백한다.
+
+실제 채팅 경로는 이 검색 결과에 대해 근거 충족도를 검사한다. 부족한 전제와
+표적 검색어가 반환되면 표적 chunk 검색과 page FTS·trigram 계층 fallback을
+최대 2회 수행한다. 계층 검색은 세부 질의별 page anchor를 보존하고 선택한
+페이지와 겹치는 chunk를 BGE-M3로 재정렬한다. 모든 재검색 결과는 기존 Context와
+중복 제거해 병합하며 빈 결과가 기존 Context를 지우지 않는다. 최종 충족도 판정은
+작은 모델의 과잉 거부 가능성 때문에 답변을 직접 차단하지 않고 검색 제어 및
+관측에 사용한다. 이 LLM 판정은 결정적인 retrieval benchmark 점수에는 포함하지
+않으며 실제 모델 E2E로 별도 확인한다.
+
+답변 생성 후에는 실질 문장별 Source/Page를 검색 Context와 대조한다. 인용이
+누락되거나 번호·페이지가 맞지 않을 때만 보정 LLM을 최대 한 번 호출한다. 이
+단계는 retrieval Recall/MRR과 분리된 생성 품질 계층이며, 실제 모델 E2E에서는
+필수 주장 존재 여부와 함께 인용된 Source/Page의 유효성도 확인해야 한다.
+
+2026-08-07 기준 `balanced + hybrid`, warmup 0, 질문별 1회 조건에서 장문·간접
+표현을 포함한 7개 case의 Recall@3, Hit rate@3, MRR@3은 모두 `1.000`이었다.
+p50은 `219.52 ms`, p95는 `265.54 ms`였으며, 소형 corpus의 단일 실행 결과이므로
+운영 SLO로 사용하지 않는다.
+평가 PDF는 다음 명령으로 다시 생성할 수 있다.
+
+```bash
+uv run python scripts/generate_multihop_retrieval_fixture_pdfs.py
+```

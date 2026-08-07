@@ -383,6 +383,12 @@ export class AppController {
               this.state.conversation.length - 1,
               streamingMessage.content,
             );
+          } else if (event === "revision") {
+            streamingMessage.content = data.text || "";
+            this.chatPanel.updateStreamingMessage(
+              this.state.conversation.length - 1,
+              streamingMessage.content,
+            );
           } else if (event === "sources") {
             streamingMessage.sources = data;
           }

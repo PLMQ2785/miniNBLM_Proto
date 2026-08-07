@@ -112,3 +112,30 @@ def test_empty_retrieval_streams_local_fallback_without_llm(
     assert "자료" in visible
     assert streamed.generated is not None
     assert streamed.generated.sources == []
+
+
+def test_stream_exposes_final_citation_revision(
+    monkeypatch: pytest.MonkeyPatch,
+    retrieved_chunk: RetrievedChunk,
+) -> None:
+    monkeypatch.setattr(
+        VLLMClient,
+        "stream_chat_completion",
+        lambda self, messages, **kwargs: iter(["자료에서는 낙상 예방 교육을 시행합니다."]),
+    )
+    monkeypatch.setattr(
+        VLLMClient,
+        "chat_completion",
+        lambda self, messages, **kwargs: (
+            "자료에서는 낙상 예방 교육을 시행합니다. [Source 1, Page 3]"
+        ),
+    )
+    streamed = StreamingAnswer("낙상 예방은?", [retrieved_chunk])
+
+    assert "".join(streamed) == "자료에서는 낙상 예방 교육을 시행합니다."
+    assert streamed.revision == (
+        "자료에서는 낙상 예방 교육을 시행합니다. [Source 1, Page 3]"
+    )
+    assert streamed.generated is not None
+    assert streamed.generated.answer == streamed.revision
+    assert len(streamed.generated.sources) == 1

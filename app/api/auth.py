@@ -2,11 +2,17 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.dependencies import get_authenticated_user, get_db
+from app.dependencies import (
+    ensure_retrieval_writes_available,
+    get_authenticated_user,
+    get_current_user,
+    get_db,
+)
 from app.models.user import User
 from app.password_policy import PasswordPolicyError
 from app.schemas.auth import (
     AuthResponse,
+    AccountDeleteRequest,
     LoginCredentials,
     PasswordChangeRequest,
     RegistrationCredentials,
@@ -14,6 +20,8 @@ from app.schemas.auth import (
 )
 from app.services import auth_service
 from app.services.auth_service import (
+    AccountConfirmationError,
+    AccountDeletionConflictError,
     InvalidCredentialsError,
     InvalidCurrentPasswordError,
     PasswordReuseError,
@@ -37,6 +45,17 @@ def _set_session_cookie(response: Response, token: str) -> None:
         key=settings.auth_cookie_name,
         value=token,
         max_age=settings.auth_session_ttl_hours * 60 * 60,
+        httponly=True,
+        secure=settings.auth_cookie_secure,
+        samesite="lax",
+        path="/",
+    )
+    response.headers["Cache-Control"] = "no-store"
+
+
+def _clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=settings.auth_cookie_name,
         httponly=True,
         secure=settings.auth_cookie_secure,
         samesite="lax",
@@ -72,14 +91,7 @@ def login(credentials: LoginCredentials, response: Response, db: Session = Depen
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(request: Request, response: Response, db: Session = Depends(get_db)) -> Response:
     auth_service.logout(db, request.cookies.get(settings.auth_cookie_name))
-    response.delete_cookie(
-        key=settings.auth_cookie_name,
-        httponly=True,
-        secure=settings.auth_cookie_secure,
-        samesite="lax",
-        path="/",
-    )
-    response.headers["Cache-Control"] = "no-store"
+    _clear_session_cookie(response)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
 
@@ -117,6 +129,42 @@ def change_password(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     response.headers["Cache-Control"] = "no-store"
     return AuthResponse(user=_user_response(updated_user))
+
+
+@router.delete("/account", status_code=status.HTTP_204_NO_CONTENT)
+def delete_account(
+    credentials: AccountDeleteRequest,
+    response: Response,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _: None = Depends(ensure_retrieval_writes_available),
+) -> Response:
+    try:
+        auth_service.delete_account(
+            db,
+            user,
+            credentials.current_password,
+            credentials.username_confirmation,
+        )
+    except InvalidCurrentPasswordError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        ) from exc
+    except AccountConfirmationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username confirmation does not match",
+        ) from exc
+    except AccountDeletionConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Account cannot be deleted while documents are processing",
+        ) from exc
+
+    _clear_session_cookie(response)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response
 
 
 @router.get("/me", response_model=AuthResponse)

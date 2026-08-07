@@ -1630,7 +1630,7 @@ retrieve top 30
 
 # 29. 현재 구현 및 검증 상태
 
-2026-08-06 기준으로 1차 MVP 기능을 구현했다. 초기 후속 범위였던 PostgreSQL
+2026-08-07 기준으로 1차 MVP 기능을 구현했다. 초기 후속 범위였던 PostgreSQL
 FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 네 검색
 알고리즘을 청킹 preset과 독립적으로 선택할 수 있다.
 
@@ -1662,6 +1662,14 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
 - 답변의 `Source N` 인용만 실제 문서·페이지 source로 반환하고 검색 후보 전체 노출 방지
 - 간호 특화 prompt를 범용 문서 RAG prompt로 교체하고 system/user/history 역할별
   메시지 구성을 분리
+- 일반 사용자 비밀번호 변경 UI와 다른 로그인 세션 폐기
+- 비밀번호·사용자명 재확인 후 계정 소유 문서·대화·PDF 원본 회원탈퇴
+- PostgreSQL dump와 uploads, manifest, SHA-256을 묶는 백업·복원 스크립트
+- 복합 질문 최대 4개 질의 분해, RRF, 인접 chunk와 BGE-M3 semantic reranker
+- 근거 충족도 기반 표적 검색과 page FTS·trigram 계층 fallback 최대 2회
+- 빈 재검색 시 기존 Context 보존과 답변별 retrieval trace 관리자 조회
+- 문장별 Source/Page 검증, 조건부 인용 보정과 SSE `revision`
+- 7개 복합 Git/라이선스 fixture의 balanced+hybrid Recall@3·MRR@3 `1.0`
 
 빠른 테스트는 `./scripts/test.sh -q`, 실제 모델 E2E는 네 서비스 실행 후
 `./scripts/e2e.sh -q`로 수행한다. E2E API와 DB는 운영 데이터와 분리된다.

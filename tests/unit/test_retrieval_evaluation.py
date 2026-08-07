@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import fitz
 import pytest
 from pydantic import ValidationError
 
@@ -30,6 +31,56 @@ def test_versioned_fixture_loads_and_references_known_document() -> None:
         for case in fixture.cases
         for source in case.relevant_sources
     } == {1, 2, 3, 4}
+
+
+def test_multihop_fixture_defines_evidence_facets_and_existing_pdf_pages() -> None:
+    fixture_path = Path("evaluation/retrieval_multihop_oss.json")
+    fixture = load_evaluation_fixture(fixture_path)
+
+    assert fixture.schema_version == 2
+    assert len(fixture.documents) == 2
+    assert len(fixture.cases) == 7
+    assert all(1 <= len(case.retrieval_queries) <= 4 for case in fixture.cases)
+    assert all(case.evidence_facets for case in fixture.cases)
+    assert all(case.required_answer_claims for case in fixture.cases)
+    assert len(fixture.cases[0].evidence_facets) == 3
+    assert len(fixture.cases[1].evidence_facets) == 3
+    assert {
+        "ignored-secret-stash-indirect",
+        "pushed-revert-dvcs-indirect",
+    }.issubset({case.case_id for case in fixture.cases})
+
+    page_counts = {}
+    for document in fixture.documents:
+        path = (fixture_path.parent / document.path).resolve()
+        assert path.is_file()
+        with fitz.open(path) as pdf:
+            page_counts[document.title] = pdf.page_count
+            assert all(page.get_text().strip() for page in pdf)
+
+    assert all(
+        source.page <= page_counts[source.document]
+        for case in fixture.cases
+        for source in case.relevant_sources
+    )
+
+
+def test_schema_v2_requires_queries_facets_and_answer_claims() -> None:
+    with pytest.raises(ValidationError, match="require retrieval queries, evidence facets"):
+        RetrievalEvaluationFixture.model_validate(
+            {
+                "schema_version": 2,
+                "name": "incomplete-v2",
+                "documents": [{"path": "lesson.pdf", "title": "lesson.pdf"}],
+                "cases": [
+                    {
+                        "case_id": "missing-contract",
+                        "question": "question",
+                        "relevant_sources": [{"document": "lesson.pdf", "page": 1}],
+                    }
+                ],
+            }
+        )
 
 
 def test_fixture_rejects_unknown_relevant_document() -> None:

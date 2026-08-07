@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -11,6 +12,7 @@ from app.config import settings
 from app.models.user import User
 from app.password_policy import validate_secure_password
 from app.repositories import user_repository
+from app.storage.local_storage import LocalStorage
 
 
 class UsernameAlreadyExistsError(Exception):
@@ -29,6 +31,14 @@ class PasswordReuseError(Exception):
     pass
 
 
+class AccountConfirmationError(Exception):
+    pass
+
+
+class AccountDeletionConflictError(Exception):
+    pass
+
+
 @dataclass(frozen=True)
 class AuthenticatedSession:
     user: User
@@ -37,6 +47,8 @@ class AuthenticatedSession:
 
 password_hash = PasswordHash.recommended()
 dummy_password_hash = password_hash.hash("not-a-real-user-password")
+logger = logging.getLogger(__name__)
+ACTIVE_DOCUMENT_STATUSES = {"uploaded", "processing"}
 
 
 def _hash_session_token(token: str) -> str:
@@ -118,6 +130,40 @@ def change_password(
     db.commit()
     db.refresh(user)
     return user
+
+
+def delete_account(
+    db: Session,
+    user: User,
+    current_password: str,
+    username_confirmation: str,
+) -> None:
+    try:
+        current_password_valid = password_hash.verify(current_password, user.password_hash)
+    except Exception:
+        current_password_valid = False
+    if not current_password_valid:
+        raise InvalidCurrentPasswordError
+    if username_confirmation.strip().casefold() != user.username:
+        raise AccountConfirmationError
+
+    documents = user_repository.list_owned_documents_for_update(db, user.id)
+    if any(status in ACTIVE_DOCUMENT_STATUSES for _, status in documents):
+        raise AccountDeletionConflictError
+
+    document_ids = [document_id for document_id, _ in documents]
+    user_repository.delete_user_and_owned_data(db, user, document_ids)
+    db.commit()
+
+    storage = LocalStorage()
+    for document_id in document_ids:
+        try:
+            storage.delete_document(document_id)
+        except OSError:
+            logger.exception(
+                "Failed to remove files after account deletion for document_id=%s",
+                document_id,
+            )
 
 
 def ensure_bootstrap_admin(db: Session) -> User | None:

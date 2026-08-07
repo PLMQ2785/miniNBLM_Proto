@@ -9,10 +9,25 @@ from app.repositories import user_repository
 from app.schemas.chat import SourceRef
 from app.services.generator import GeneratedAnswer
 from app.clients.vllm_client import VLLMClient
+from app.services.query_rewriter import RetrievalQueryPlan
 from app.services.retriever import RetrievedChunk
 
 
 pytestmark = pytest.mark.integration
+
+
+@pytest.fixture(autouse=True)
+def stub_query_planner(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        chat_api,
+        "plan_retrieval_queries",
+        lambda question, history: RetrievalQueryPlan(question.strip(), (question.strip(),)),
+    )
+    monkeypatch.setattr(
+        chat_api,
+        "complete_evidence_coverage",
+        lambda **kwargs: kwargs["chunks"],
+    )
 
 
 def test_chat_persists_messages_and_returns_sources(
@@ -47,10 +62,11 @@ def test_chat_persists_messages_and_returns_sources(
 
     monkeypatch.setattr(chat_api, "retrieve_chunks", retrieve_for_workspace)
 
-    def rewrite_for_retrieval(question, history):
-        return rewritten_query if history else question
+    def plan_for_retrieval(question, history):
+        query = rewritten_query if history else question
+        return RetrievalQueryPlan(query, (query,))
 
-    monkeypatch.setattr(chat_api, "rewrite_retrieval_query", rewrite_for_retrieval)
+    monkeypatch.setattr(chat_api, "plan_retrieval_queries", plan_for_retrieval)
 
     def generate_with_history(**kwargs):
         generation_calls.append(kwargs)
@@ -88,11 +104,18 @@ def test_chat_persists_messages_and_returns_sources(
     db.expire_all()
     assert db.scalar(select(func.count()).select_from(ChatSession)) == 1
     assert db.scalar(select(func.count()).select_from(ChatMessage)) == 2
+    assistant_message = db.scalar(select(ChatMessage).where(ChatMessage.role == "assistant"))
+    assert assistant_message is not None
+    trace = assistant_message.message_metadata["retrieval_trace"]
+    assert trace["query_plan"]["queries"] == ["낙상 후 무엇을 먼저 하나요?"]
+    assert trace["outcome"]["status"] == "grounded"
+    assert trace["outcome"]["final_chunk_ids"] == [101]
     session = db.scalar(select(ChatSession))
     assert session.owner_id == user.id
     assert session.document_id is None
     assert retrieval_calls[0]["owner_id"] == user.id
     assert retrieval_calls[0]["question"] == "낙상 후 무엇을 먼저 하나요?"
+    assert retrieval_calls[0]["queries"] == ("낙상 후 무엇을 먼저 하나요?",)
     assert "document_id" not in retrieval_calls[0]
     assert generation_calls[0]["history"] == []
 
@@ -111,6 +134,7 @@ def test_chat_persists_messages_and_returns_sources(
         {"role": "assistant", "content": "손상 여부를 먼저 확인합니다."},
     ]
     assert retrieval_calls[1]["question"] == rewritten_query
+    assert retrieval_calls[1]["queries"] == (rewritten_query,)
     assert generation_calls[1]["question"] == "그 다음에는 무엇을 하나요?"
 
     session_list = client.get("/chat/sessions")
@@ -332,7 +356,58 @@ def test_chat_stream_hides_fragmented_no_source_marker(
     assistant = db.scalar(select(ChatMessage).where(ChatMessage.role == "assistant"))
     assert assistant is not None
     assert "NO_SOURCE" not in assistant.content
-    assert assistant.message_metadata == {"sources": [], "source_selection": "cited"}
+    assert assistant.message_metadata["sources"] == []
+    assert assistant.message_metadata["source_selection"] == "cited"
+    assert assistant.message_metadata["retrieval_trace"]["outcome"]["status"] == "no_source"
+
+
+def test_chat_stream_revises_and_persists_citation_repair(
+    client: TestClient,
+    db: Session,
+    document_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert client.post(
+        "/auth/register",
+        json={"username": "citation-revision", "password": "password123"},
+    ).status_code == 201
+    user = user_repository.get_user_by_username(db, "citation-revision")
+    document = document_factory(user)
+    retrieved = RetrievedChunk(
+        chunk_id=571,
+        document_id=document.id,
+        document_title=document.title,
+        content="낙상 후 손상 여부를 확인한다.",
+        page_start=7,
+        page_end=7,
+        score=0.9,
+        source_refs={"page": 7},
+    )
+    monkeypatch.setattr(chat_api, "retrieve_chunks", lambda **kwargs: [retrieved])
+    monkeypatch.setattr(
+        VLLMClient,
+        "stream_chat_completion",
+        lambda self, messages, **kwargs: iter(["낙상 후 손상 여부를 확인합니다."]),
+    )
+    monkeypatch.setattr(
+        VLLMClient,
+        "chat_completion",
+        lambda self, messages, **kwargs: (
+            "낙상 후 손상 여부를 확인합니다. [Source 1, Page 7]"
+        ),
+    )
+
+    with client.stream("POST", "/chat/stream", json={"question": "낙상 후 조치는?"}) as response:
+        body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert "event: revision" in body
+    assert "[Source 1, Page 7]" in body
+    db.expire_all()
+    assistant = db.scalar(select(ChatMessage).where(ChatMessage.role == "assistant"))
+    assert assistant is not None
+    assert assistant.content.endswith("[Source 1, Page 7]")
+    assert assistant.message_metadata["sources"][0]["page"] == 7
 
 
 def test_failed_new_chat_stream_removes_empty_session(

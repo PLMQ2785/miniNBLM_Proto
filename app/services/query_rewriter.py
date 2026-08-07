@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+import json
 import logging
 import re
 from pathlib import Path
@@ -11,24 +13,33 @@ PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "retrieval_query
 MAX_PREVIOUS_QUESTION_CHARS = 500
 MAX_PREVIOUS_ANSWER_CHARS = 1000
 MAX_RETRIEVAL_QUERY_CHARS = 500
+MAX_RETRIEVAL_QUERIES = 4
 QUERY_LABEL_PATTERN = re.compile(
     r"^(?:검색\s*질의|독립형\s*(?:검색\s*)?질의|standalone\s+(?:retrieval\s+)?query)\s*:\s*",
     re.IGNORECASE,
 )
 
 
+@dataclass(frozen=True)
+class RetrievalQueryPlan:
+    standalone_query: str
+    queries: tuple[str, ...]
+
+
 def rewrite_retrieval_query(question: str, history: list[dict[str, str]]) -> str:
+    return plan_retrieval_queries(question, history).standalone_query
+
+
+def plan_retrieval_queries(question: str, history: list[dict[str, str]]) -> RetrievalQueryPlan:
     original_question = question.strip()
     previous_exchange = _latest_exchange(history)
-    if not previous_exchange:
-        return original_question
 
     messages = [
         {"role": "system", "content": PROMPT_PATH.read_text(encoding="utf-8")},
         *previous_exchange,
         {
             "role": "user",
-            "content": f"[현재 질문]\n{original_question}\n\n[독립형 검색 질의]",
+            "content": f"[현재 질문]\n{original_question}\n\n[검색 계획]",
         },
     ]
     try:
@@ -38,9 +49,9 @@ def rewrite_retrieval_query(question: str, history: list[dict[str, str]]) -> str
             operation="query_rewrite",
         )
     except Exception:
-        logger.warning("Retrieval query rewriting failed; using the original question", exc_info=True)
-        return original_question
-    return _normalize_rewritten_query(rewritten, original_question)
+        logger.warning("Retrieval query planning failed; using the original question", exc_info=True)
+        return _fallback_plan(original_question)
+    return _normalize_query_plan(rewritten, original_question)
 
 
 def _latest_exchange(history: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -77,3 +88,108 @@ def _normalize_rewritten_query(rewritten: str, fallback: str) -> str:
     if not candidate:
         return fallback
     return candidate[:MAX_RETRIEVAL_QUERY_CHARS].rstrip()
+
+
+def _normalize_query_plan(response: str, fallback: str) -> RetrievalQueryPlan:
+    try:
+        payload = _parse_query_plan(response)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        logger.warning("Invalid retrieval query plan; using a single normalized query")
+        normalized = (
+            _normalize_rewritten_query(response, fallback)
+            if "{" not in response and "[" not in response
+            else fallback
+        )
+        return _fallback_plan(normalized)
+
+    standalone_query = _normalize_query_value(payload.get("standalone_query")) or fallback
+    raw_queries = payload.get("queries")
+    if not isinstance(raw_queries, list):
+        raw_queries = []
+
+    queries = _deduplicate_queries(
+        [standalone_query, *(_normalize_query_value(query) for query in raw_queries)]
+    )
+    return RetrievalQueryPlan(
+        standalone_query=standalone_query,
+        queries=tuple(queries[:MAX_RETRIEVAL_QUERIES]),
+    )
+
+
+def _parse_query_plan(response: str) -> dict:
+    try:
+        return _parse_json_object(response)
+    except ValueError:
+        return _parse_tagged_plan(response)
+
+
+def _parse_json_object(response: str) -> dict:
+    candidate = response.strip()
+    if candidate.startswith("```"):
+        candidate = re.sub(r"^```(?:json)?\s*", "", candidate, flags=re.IGNORECASE)
+        candidate = re.sub(r"\s*```$", "", candidate)
+    decoder = json.JSONDecoder()
+    payloads: list[dict] = []
+    for start, character in enumerate(candidate):
+        if character != "{":
+            continue
+        try:
+            payload, _ = decoder.raw_decode(candidate[start:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            payloads.append(payload)
+    if not payloads:
+        raise ValueError("JSON object not found")
+    return max(payloads, key=_query_plan_payload_score)
+
+
+def _parse_tagged_plan(response: str) -> dict:
+    standalone_query = ""
+    queries: list[str] = []
+    for line in response.splitlines():
+        key, separator, value = line.strip().partition(":")
+        if not separator or not value.strip():
+            continue
+        if key.strip().upper() == "STANDALONE":
+            standalone_query = value.strip()
+        elif key.strip().upper() == "QUERY":
+            queries.append(value.strip())
+    if not standalone_query and not queries:
+        raise ValueError("Tagged query plan not found")
+    return {"standalone_query": standalone_query, "queries": queries}
+
+
+def _query_plan_payload_score(payload: dict) -> tuple[int, int]:
+    queries = payload.get("queries")
+    valid_query_count = (
+        sum(isinstance(query, str) and bool(query.strip()) for query in queries)
+        if isinstance(queries, list)
+        else 0
+    )
+    has_standalone_query = int(bool(_normalize_query_value(payload.get("standalone_query"))))
+    return valid_query_count, has_standalone_query
+
+
+def _normalize_query_value(value) -> str:
+    if not isinstance(value, str):
+        return ""
+    return " ".join(value.strip().split())[:MAX_RETRIEVAL_QUERY_CHARS].rstrip()
+
+
+def _deduplicate_queries(queries) -> list[str]:
+    unique_queries: list[str] = []
+    seen: set[str] = set()
+    for query in queries:
+        if not query:
+            continue
+        key = query.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_queries.append(query)
+    return unique_queries
+
+
+def _fallback_plan(question: str) -> RetrievalQueryPlan:
+    return RetrievalQueryPlan(standalone_query=question, queries=(question,))

@@ -42,6 +42,35 @@
   line-height: 26px;
 }
 
+.account-section h2 {
+  margin: 0 0 8px;
+  color: var(--text-strong);
+  font-size: 17px;
+  line-height: 24px;
+}
+
+.account-header {
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.account-danger-section {
+  border-top: 1px solid var(--border);
+}
+
+.auth-form .danger-button {
+  border-color: var(--danger);
+  background: var(--danger);
+}
+
+.auth-form .danger-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 84%, #000000);
+}
+
+#account-password-message[data-state="success"] {
+  color: var(--accent-strong);
+}
+
 .auth-guidance,
 .password-requirements {
   margin: 0;

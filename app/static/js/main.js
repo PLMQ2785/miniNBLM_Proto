@@ -9,6 +9,7 @@ import { SourcePanel } from "./views/source-panel.js";
 import { AuthView } from "./views/auth-view.js";
 import { AdminView } from "./views/admin-view.js";
 import { PasswordChangeView } from "./views/password-change-view.js";
+import { AccountView } from "./views/account-view.js";
 
 const byId = (id) => document.getElementById(id);
 
@@ -18,6 +19,7 @@ const backdrop = byId("drawer-backdrop");
 const appRoot = byId("app");
 const adminRoot = byId("admin-view");
 const passwordChangeRoot = byId("password-change-view");
+const accountRoot = byId("account-view");
 const apiClient = new ApiClient();
 
 const authView = new AuthView({
@@ -58,6 +60,23 @@ const passwordChangeView = new PasswordChangeView({
   error: byId("password-change-error"),
   submit: byId("password-change-submit"),
   logout: byId("password-change-logout"),
+});
+
+const accountView = new AccountView({
+  root: accountRoot,
+  username: byId("account-username"),
+  close: byId("account-close"),
+  passwordForm: byId("account-password-form"),
+  currentPassword: byId("account-current-password"),
+  newPassword: byId("account-new-password"),
+  confirmPassword: byId("account-confirm-password"),
+  passwordMessage: byId("account-password-message"),
+  passwordSubmit: byId("account-password-submit"),
+  deleteForm: byId("account-delete-form"),
+  deletePassword: byId("account-delete-password"),
+  deleteConfirmation: byId("account-delete-confirmation"),
+  deleteError: byId("account-delete-error"),
+  deleteSubmit: byId("account-delete-submit"),
 });
 
 const documentPanel = new DocumentPanel({
@@ -136,6 +155,8 @@ window.addEventListener("beforeunload", () => controller.pollingService.stopAll(
 let controllerStarted = false;
 let adminRefreshTimer = null;
 let workspaceNeedsRefresh = false;
+let currentUser = null;
+let accountReturnView = "workspace";
 
 function stopAdminRefresh() {
   if (adminRefreshTimer !== null) window.clearTimeout(adminRefreshTimer);
@@ -174,8 +195,10 @@ function closeAdmin() {
 }
 
 async function enterWorkspace(user) {
+  currentUser = user;
   authView.hide();
   passwordChangeView.hide();
+  accountView.hide();
   adminView.hide();
   byId("current-username").textContent = user.username;
   byId("admin-username").textContent = user.username;
@@ -188,6 +211,7 @@ async function enterWorkspace(user) {
 }
 
 async function routeAuthenticatedUser(user) {
+  currentUser = user;
   if (user.must_change_password) {
     authView.hide();
     adminView.hide();
@@ -239,6 +263,54 @@ passwordChangeView.onSubmit(async (currentPassword, newPassword) => {
 
 passwordChangeView.onLogout(logout);
 
+function openAccount(returnView = "workspace") {
+  if (!currentUser) return;
+  accountReturnView = returnView;
+  stopAdminRefresh();
+  appRoot.hidden = true;
+  adminView.hide();
+  accountView.show(currentUser);
+}
+
+function closeAccount() {
+  accountView.hide();
+  if (accountReturnView === "admin") {
+    adminView.show();
+    refreshAdminState();
+  } else {
+    appRoot.hidden = false;
+  }
+}
+
+accountView.onPasswordChange(async (currentPassword, newPassword) => {
+  accountView.setPasswordBusy(true);
+  accountView.showPasswordMessage("");
+  try {
+    const result = await apiClient.changePassword(currentPassword, newPassword);
+    currentUser = result.user;
+    accountView.resetPasswordForm();
+    accountView.showPasswordMessage("비밀번호를 변경했습니다.");
+  } catch (error) {
+    accountView.showPasswordMessage(error.message, true);
+  } finally {
+    accountView.setPasswordBusy(false);
+  }
+});
+
+accountView.onDelete(async (currentPassword, usernameConfirmation) => {
+  accountView.setDeleteBusy(true);
+  accountView.showDeleteError("");
+  try {
+    await apiClient.deleteAccount(currentPassword, usernameConfirmation);
+    window.location.reload();
+  } catch (error) {
+    accountView.showDeleteError(error.message);
+    accountView.setDeleteBusy(false);
+  }
+});
+
+accountView.onClose(closeAccount);
+
 adminView.onActivate(async (presetKey) => {
   if (!window.confirm(`${presetKey} preset을 적용할까요? 필요한 경우 전체 문서를 다시 인덱싱합니다.`)) return;
   adminView.setBusy(true);
@@ -284,6 +356,8 @@ adminView.onActivateAlgorithm(async (algorithmKey) => {
 
 byId("admin-button").addEventListener("click", openAdmin);
 byId("admin-close").addEventListener("click", closeAdmin);
+byId("account-button").addEventListener("click", () => openAccount("workspace"));
+byId("admin-account-button").addEventListener("click", () => openAccount("admin"));
 byId("logout-button").addEventListener("click", logout);
 byId("admin-logout-button").addEventListener("click", logout);
 
@@ -297,6 +371,7 @@ async function bootstrap() {
     appRoot.hidden = true;
     adminView.hide();
     passwordChangeView.hide();
+    accountView.hide();
     authView.show();
     if (error.status !== 401) authView.showError(error.message);
   }

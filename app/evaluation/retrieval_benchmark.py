@@ -150,6 +150,7 @@ def _case_result(
             owner_id=owner_id,
             question=case.question,
             top_k=retrieval_top_k,
+            queries=case.retrieval_queries or None,
         )
 
     latency_samples = []
@@ -161,6 +162,7 @@ def _case_result(
             owner_id=owner_id,
             question=case.question,
             top_k=retrieval_top_k,
+            queries=case.retrieval_queries or None,
         )
         latency_samples.append((time.perf_counter() - started) * 1000)
         if first_results is None:
@@ -176,6 +178,7 @@ def _case_result(
     result = {
         "case_id": case.case_id,
         "question": case.question,
+        "retrieval_queries": case.retrieval_queries or [case.question],
         "relevant_sources": [source.model_dump() for source in case.relevant_sources],
         "retrieved": [
             {

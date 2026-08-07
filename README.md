@@ -52,7 +52,9 @@ Web UI에서 사용자명과 비밀번호로 계정을 만든 뒤 PDF를 추가�
 사용자별로 분리되며, 답변 아래의 페이지 버튼을 누르면 원본 PDF의 해당
 페이지가 열립니다. 대화는 계정별 세션으로 저장되고, 로그인하거나 새로고침하면
 가장 최근 대화가 자동으로 복원됩니다. 작업공간 상단에서 새 대화를 시작하거나
-이전 대화로 전환·삭제할 수 있습니다.
+이전 대화로 전환·삭제할 수 있습니다. `계정` 화면에서는 일반 사용자도 현재
+비밀번호를 변경하거나, 비밀번호와 사용자명을 다시 확인한 뒤 계정과 소유
+데이터를 모두 삭제할 수 있습니다.
 
 기본 관리자 계정은 없습니다. 최초 관리자 계정이 필요하면 첫 실행 전에 `.env`에
 `BOOTSTRAP_ADMIN_USERNAME`과 `BOOTSTRAP_ADMIN_PASSWORD`를 모두 설정합니다.
@@ -123,6 +125,21 @@ curl http://localhost:8080/documents
 ```
 
 `down.sh`는 네 컨테이너를 모두 종료하지만 PostgreSQL volume, Hugging Face cache와 `data/`의 업로드 PDF는 삭제하지 않습니다.
+
+DB와 업로드 PDF를 하나의 검증 가능한 bundle로 백업합니다.
+
+```bash
+./backup.sh
+./restore.sh --verify-only backups/mininblm-backup-<timestamp>.tar.gz
+```
+
+실제 복원은 현재 DB와 업로드 PDF를 교체하므로 검증을 마친 bundle에만 명시적으로
+`--yes`를 사용합니다. 복원 중 오류가 발생하면 작업 직전 snapshot으로
+rollback하고 API를 다시 시작합니다.
+
+```bash
+./restore.sh --yes backups/mininblm-backup-<timestamp>.tar.gz
+```
 
 ## 자동화 테스트
 
@@ -199,6 +216,7 @@ curl -N -b session.cookie \
 - PDF 추가·삭제, 텍스트 추출, page 단위 chunking 및 BGE-M3 embedding
 - 50MB 서버 제한, PDF 시그니처·구조·암호화 여부 업로드 검증
 - 공개 회원가입, 로그인·로그아웃과 사용자별 문서·대화 격리
+- 일반 사용자 비밀번호 변경·다른 세션 폐기와 사용자 소유 데이터 회원탈퇴
 - 명시적 관리자 bootstrap과 최초 로그인 비밀번호 변경 강제
 - pgvector Dense, PostgreSQL FTS, pg_trgm 및 RRF Hybrid 검색
 - 로그인 사용자의 모든 indexed 문서를 대상으로 하는 작업공간 RAG 검색
@@ -211,5 +229,6 @@ curl -N -b session.cookie \
 - API 재시작 시 중단된 PDF 인덱싱과 전체 재인덱싱 자동 복구
 - DB, embedding, vLLM 통합 readiness와 Docker 시작 상태 연동
 - JSON 구조화 로그, request ID와 Prometheus HTTP·검색·LLM 지표
+- PostgreSQL과 업로드 PDF의 checksum 포함 백업·복원 bundle
 
 이메일 확인, 비밀번호 재설정, OCR과 영속 작업 큐는 후속 범위입니다.

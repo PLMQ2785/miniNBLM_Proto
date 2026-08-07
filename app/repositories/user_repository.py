@@ -3,6 +3,10 @@ from datetime import datetime
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.models.chat import ChatMessage, ChatSession
+from app.models.chunk import Chunk
+from app.models.document import Document
+from app.models.page import DocumentPage
 from app.models.user import AuthSession, User
 
 
@@ -86,3 +90,32 @@ def delete_other_auth_sessions(db: Session, user_id: int, current_token_hash: st
             AuthSession.token_hash != current_token_hash,
         )
     )
+
+
+def list_owned_documents_for_update(db: Session, user_id: int) -> list[tuple[int, str]]:
+    return list(
+        db.execute(
+            select(Document.id, Document.status)
+            .where(Document.owner_id == user_id)
+            .order_by(Document.id)
+            .with_for_update()
+        ).tuples()
+    )
+
+
+def delete_user_and_owned_data(db: Session, user: User, document_ids: list[int]) -> None:
+    session_ids = list(
+        db.scalars(select(ChatSession.id).where(ChatSession.owner_id == user.id))
+    )
+    if session_ids:
+        db.execute(delete(ChatMessage).where(ChatMessage.session_id.in_(session_ids)))
+        db.execute(delete(ChatSession).where(ChatSession.id.in_(session_ids)))
+
+    if document_ids:
+        db.execute(delete(Chunk).where(Chunk.document_id.in_(document_ids)))
+        db.execute(delete(DocumentPage).where(DocumentPage.document_id.in_(document_ids)))
+        db.execute(delete(Document).where(Document.id.in_(document_ids)))
+
+    db.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
+    db.delete(user)
+    db.flush()

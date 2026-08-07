@@ -64,6 +64,45 @@
       </div>
     </section>
 
+    <section id="account-view" class="auth-view" aria-labelledby="account-title" hidden>
+      <div class="auth-panel account-panel">
+        <header class="auth-header account-header">
+          <div class="brand-block">
+            <span class="brand-mark" aria-hidden="true">R</span>
+            <div>
+              <strong>계정 설정</strong>
+              <span id="account-username"></span>
+            </div>
+          </div>
+          <button id="account-close" class="auth-secondary-button" type="button">돌아가기</button>
+        </header>
+
+        <form id="account-password-form" class="auth-form account-section">
+          <h1 id="account-title">비밀번호 변경</h1>
+          <label for="account-current-password">현재 비밀번호</label>
+          <input id="account-current-password" type="password" minlength="1" maxlength="128" autocomplete="current-password" required>
+          <label for="account-new-password">새 비밀번호</label>
+          <input id="account-new-password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required>
+          <p class="password-requirements">8자 이상, 영문 대·소문자, 숫자, 기호 중 3종 이상</p>
+          <label for="account-confirm-password">새 비밀번호 확인</label>
+          <input id="account-confirm-password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required>
+          <p id="account-password-message" class="auth-error" role="status"></p>
+          <button id="account-password-submit" type="submit">비밀번호 변경</button>
+        </form>
+
+        <form id="account-delete-form" class="auth-form account-section account-danger-section">
+          <h2>회원탈퇴</h2>
+          <p class="auth-guidance">업로드 문서와 인덱스, 대화 이력이 모두 삭제됩니다.</p>
+          <label for="account-delete-password">현재 비밀번호</label>
+          <input id="account-delete-password" type="password" minlength="1" maxlength="128" autocomplete="current-password" required>
+          <label for="account-delete-confirmation">확인을 위해 사용자명 입력</label>
+          <input id="account-delete-confirmation" type="text" minlength="3" maxlength="32" autocomplete="off" required>
+          <p id="account-delete-error" class="auth-error" role="alert"></p>
+          <button id="account-delete-submit" class="danger-button" type="submit">회원탈퇴</button>
+        </form>
+      </div>
+    </section>
+
     <section id="admin-view" class="admin-view" hidden>
       <header class="admin-header">
         <div class="brand-block">
@@ -75,6 +114,7 @@
         </div>
         <div class="admin-header-actions">
           <button id="admin-close" type="button">작업공간</button>
+          <button id="admin-account-button" type="button">계정</button>
           <button id="admin-logout-button" type="button">로그아웃</button>
         </div>
       </header>
@@ -134,7 +174,7 @@
           문서
         </button>
         <div class="brand-block">
-          <span class="brand-mark" aria-hidden="true">N</span>
+          <span class="brand-mark" aria-hidden="true">R</span>
           <div>
             <strong>PDF RAG Assistant</strong>
             <span id="service-status" class="service-status">연결 확인 중</span>
@@ -144,6 +184,7 @@
         <div class="account-block">
           <span id="current-username"></span>
           <button id="admin-button" type="button" hidden>관리</button>
+          <button id="account-button" type="button">계정</button>
           <button id="logout-button" type="button">로그아웃</button>
         </div>
       </header>

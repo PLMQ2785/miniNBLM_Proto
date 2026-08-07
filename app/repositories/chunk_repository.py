@@ -1,6 +1,6 @@
 import re
 
-from sqlalchemy import delete, func
+from sqlalchemy import and_, delete, func, or_, tuple_
 from sqlalchemy.orm import Session
 
 from app.models.chunk import Chunk
@@ -40,6 +40,28 @@ def delete_chunks(db: Session, document_id: int) -> None:
     db.execute(delete(Chunk).where(Chunk.document_id == document_id))
 
 
+def get_chunks_by_document_indexes(
+    db: Session,
+    owner_id: int,
+    locations: set[tuple[int, int]],
+) -> list[tuple[Chunk, str]]:
+    if not locations:
+        return []
+    return (
+        db.query(Chunk, Document.title)
+        .join(Document, Document.id == Chunk.document_id)
+        .filter(
+            Document.owner_id == owner_id,
+            Document.status == "indexed",
+            Document.deleted_at.is_(None),
+            Chunk.deleted_at.is_(None),
+            tuple_(Chunk.document_id, Chunk.chunk_index).in_(locations),
+        )
+        .order_by(Chunk.document_id, Chunk.chunk_index, Chunk.id)
+        .all()
+    )
+
+
 def search_chunks_by_embedding(
     db: Session,
     owner_id: int,
@@ -71,7 +93,7 @@ def search_chunks_by_keyword(
     top_k: int,
 ) -> list[tuple[Chunk, float, str]]:
     document_vector = func.to_tsvector("simple", Chunk.content)
-    query = _build_keyword_query(question)
+    query = build_keyword_query(question)
     rank = func.ts_rank_cd(document_vector, query).label("rank")
     rows = (
         db.query(Chunk, rank, Document.title)
@@ -90,7 +112,7 @@ def search_chunks_by_keyword(
     return [(chunk, float(score), title) for chunk, score, title in rows]
 
 
-def _build_keyword_query(question: str):
+def build_keyword_query(question: str):
     terms: list[str] = []
     seen: set[str] = set()
     for term in KEYWORD_TERM_PATTERN.findall(question):
@@ -109,6 +131,36 @@ def _build_keyword_query(question: str):
     for term in terms[1:]:
         query = query.op("||")(func.plainto_tsquery("simple", term))
     return query
+
+
+def get_chunks_by_document_pages(
+    db: Session,
+    owner_id: int,
+    locations: set[tuple[int, int]],
+) -> list[tuple[Chunk, str]]:
+    if not locations:
+        return []
+    page_conditions = [
+        and_(
+            Chunk.document_id == document_id,
+            Chunk.page_start <= page_number,
+            Chunk.page_end >= page_number,
+        )
+        for document_id, page_number in locations
+    ]
+    return (
+        db.query(Chunk, Document.title)
+        .join(Document, Document.id == Chunk.document_id)
+        .filter(
+            Document.owner_id == owner_id,
+            Document.status == "indexed",
+            Document.deleted_at.is_(None),
+            Chunk.deleted_at.is_(None),
+            or_(*page_conditions),
+        )
+        .order_by(Chunk.document_id, Chunk.chunk_index, Chunk.id)
+        .all()
+    )
 
 
 def search_chunks_by_substring(

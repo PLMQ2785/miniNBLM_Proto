@@ -104,6 +104,7 @@ healthcheck에도 같은 값이 자동 적용됩니다.
 | `POST` | `/auth/login` | 로그인 세션 발급 |
 | `POST` | `/auth/logout` | 현재 로그인 세션 폐기 |
 | `POST` | `/auth/password` | 현재 비밀번호 검증 후 새 비밀번호 설정 |
+| `DELETE` | `/auth/account` | 비밀번호·사용자명 재확인 후 계정과 소유 데이터 삭제 |
 | `GET` | `/auth/me` | 현재 로그인 사용자 |
 | `POST` | `/documents` | multipart PDF 업로드 |
 | `GET` | `/documents` | 문서 목록 |
@@ -113,6 +114,7 @@ healthcheck에도 같은 값이 자동 적용됩니다.
 | `POST` | `/chat` | 현재 사용자의 전체 indexed 문서 기반 질문 |
 | `POST` | `/chat/stream` | 동일한 질문을 SSE 답변 스트림으로 처리 |
 | `GET` | `/admin/retrieval` | 프리셋 목록, 활성 설정과 최근 작업 조회 |
+| `GET` | `/admin/retrieval/traces` | 최근 답변의 단계별 retrieval trace 조회 |
 | `POST` | `/admin/retrieval/presets/{key}/activate` | 프리셋 변경 작업 시작 |
 | `POST` | `/admin/retrieval/algorithms/{key}/activate` | 검색 알고리즘 즉시 변경 |
 | `GET` | `/admin/retrieval/jobs/{id}` | 재인덱싱 작업 상태 조회 |
@@ -139,6 +141,19 @@ healthcheck에도 같은 값이 자동 적용됩니다.
 최초 로그인 후 비밀번호를 변경할 때까지 인증 조회와 비밀번호 변경 외 API에
 HTTP 403으로 차단됩니다. 변경 시 현재 세션을 제외한 기존 로그인 세션도
 폐기됩니다.
+
+일반 사용자는 작업공간의 `계정` 화면에서 비밀번호를 변경할 수 있습니다. 변경하면
+현재 브라우저 세션만 유지되고 다른 로그인 세션은 모두 폐기됩니다. 회원탈퇴는
+현재 비밀번호와 사용자명 재입력을 요구하며 다음 데이터를 hard delete합니다.
+
+- 인증 세션
+- 업로드 문서, page, chunk와 embedding
+- 작업공간 대화와 메시지
+- `data/uploads/documents/{id}`의 원본 PDF
+
+과거 재인덱싱 작업은 감사 이력으로 보존하되 삭제된 요청자 ID를 `NULL`로
+전환합니다. `uploaded` 또는 `processing` 문서가 있거나 전역 재인덱싱이 진행
+중이면 동시 작업 충돌을 피하기 위해 회원탈퇴를 거절합니다.
 
 기존 계정을 추가 관리자로 지정하거나 권한을 회수할 때는 다음 CLI를 사용합니다.
 
@@ -242,6 +257,16 @@ LLM이 `[[NO_SOURCE]]`로 자료 부재를 표시하면 API는 마커를 사용�
 이 규칙 도입 전에 저장된 대화도 조회 시 답변의 `Source N`과 기존 후보 순서를
 대조해 필터링하므로 DB를 다시 인덱싱하지 않아도 된다.
 
+질문은 독립형 질의와 최대 3개의 세부 검색 질의로 분해할 수 있다. 다중 질의
+결과는 RRF로 합치고 인접 chunk와 의미 재정렬 후보를 보강한다. 그 뒤 LLM이
+원질문에 필요한 근거의 충족도를 판정한다. 근거가 부족하면 누락 전제에 맞춘
+표적 chunk 검색과 page FTS·trigram 계층 fallback을 최대 2회 예산 안에서
+수행한다. 페이지 fallback은 세부 질의별 상위 페이지를 보존한 뒤 해당 페이지와
+겹치는 기존 chunk만 BGE-M3로 재정렬한다. 재검색이 비어도 기존 Context는
+유지하며, 최종 판정이 여전히 부족하거나 형식이 불안정하면 병합 근거를 답변
+모델에 전달한다. 최종 답변 여부는 범용 RAG system prompt의 엄격한
+`NO_SOURCE` 규칙이 결정한다.
+
 `POST /chat/stream`은 요청 형식과 세션 규칙이 `/chat`과 같고 다음 SSE event를
 순서대로 보낸다.
 
@@ -249,6 +274,7 @@ LLM이 `[[NO_SOURCE]]`로 자료 부재를 표시하면 API는 마커를 사용�
 |---|---|---|
 | `session` | 세션 요약 | 새 세션 또는 요청한 세션 식별 |
 | `delta` | `{"text":"..."}` | 화면에 즉시 추가할 답변 조각 |
+| `revision` | `{"text":"..."}` | 인용 검증으로 보정된 최종 답변 전체 교체 |
 | `sources` | source 배열 | 근거가 있는 답변의 출처, 자료 부재 시 빈 배열 |
 | `done` | 세션 요약 포함 객체 | 답변과 대화 이력 저장 완료 |
 | `error` | 안전한 오류와 request ID | 스트림 처리 실패, `done`은 전송하지 않음 |
@@ -256,6 +282,9 @@ LLM이 `[[NO_SOURCE]]`로 자료 부재를 표시하면 API는 마커를 사용�
 완료된 스트림만 사용자 질문과 답변을 DB에 저장한다. 새 세션에서 생성 또는
 전송이 실패하면 빈 세션도 정리한다. 초기 출력은 `NO_SOURCE` 판정이 끝날 때까지
 짧게 버퍼링하므로 자료 부재 마커가 브라우저에 노출되지 않는다.
+실질 문장에 인용이 없거나 Source/Page가 검색 Context와 맞지 않으면 인용 보정
+LLM을 한 번 호출한다. 스트리밍 중 보정이 발생하면 기존 delta를 유지하면서
+`revision`으로 화면을 교체하고, 보정된 답변만 대화 이력에 저장한다.
 
 ## 5. 상태 확인
 
@@ -271,6 +300,7 @@ curl -sS -c session.cookie \
   http://localhost:8080/auth/register
 curl -sS -b session.cookie http://localhost:8080/documents
 curl -sS -b session.cookie -D - -o /dev/null http://localhost:8080/documents/1/file
+curl -sS -b admin.cookie 'http://localhost:8080/admin/retrieval/traces?limit=20'
 ```
 
 모든 API 응답은 `X-Request-ID`를 반환한다. 클라이언트가 영문·숫자와 `._-`로
@@ -279,10 +309,21 @@ curl -sS -b session.cookie -D - -o /dev/null http://localhost:8080/documents/1/f
 전체 응답 시간(`duration_ms`)을 포함한다. 스트리밍 요청의 시간은 마지막 SSE
 event 전송까지 측정한다.
 
+각 완료 답변은 assistant 메시지 metadata에 schema version 1 retrieval trace를
+저장한다. trace에는 request ID, 검색 계획, 단계별 문서·페이지·chunk ID·점수,
+근거 충족도와 재검색어, 최종 `grounded`/`no_context`/`no_source`/
+`uncited_answer` 상태와 지연이 포함된다. chunk 본문과 답변 본문은 중복 저장하지
+않는다. 관리자만 `GET /admin/retrieval/traces`로 최신순 조회할 수 있으며 대화가
+삭제되면 해당 trace도 함께 삭제된다. 같은 trace는 JSON 구조화 로그에도 기록된다.
+
 `/metrics`에는 다음 애플리케이션 지표가 포함된다.
 
 - `mininblm_http_requests_total`, `mininblm_http_request_duration_seconds`
 - `mininblm_retrieval_requests_total`, `mininblm_retrieval_duration_seconds`
+- `mininblm_rerank_requests_total`, `mininblm_rerank_duration_seconds`
+- `mininblm_evidence_coverage_requests_total`, `mininblm_evidence_coverage_duration_seconds`
+- `mininblm_retrieval_retries_total`
+- `mininblm_citation_validation_requests_total`, `mininblm_citation_validation_duration_seconds`
 - `mininblm_llm_requests_total`, `mininblm_llm_duration_seconds`
 - `mininblm_llm_time_to_first_token_seconds`, `mininblm_chat_streams_total`
 
@@ -347,15 +388,60 @@ KV cache is needed, which is larger than the available KV cache memory
 
 `docker compose down`은 위 데이터를 삭제하지 않습니다. `down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 있을 때만 사용합니다.
 
+### 백업과 복원
+
+`backup.sh`는 API를 잠시 정지하고 PostgreSQL custom dump와 `data/uploads`를
+동일 시점에 수집합니다. 기본 출력은 Git에서 제외되는 `./backups`입니다.
+
+```bash
+./backup.sh
+```
+
+bundle에는 다음 파일이 포함됩니다.
+
+- `database.dump`
+- `uploads.tar.gz`
+- 생성 시각과 Git commit을 기록한 `manifest.txt`
+- 세 파일의 SHA-256을 기록한 `SHA256SUMS`
+
+먼저 데이터를 변경하지 않는 검증 모드를 실행합니다.
+
+```bash
+./restore.sh --verify-only backups/mininblm-backup-<timestamp>.tar.gz
+```
+
+실제 복원은 DB와 업로드 PDF를 교체하므로 서비스 점검 시간에 실행합니다.
+스크립트는 API를 정지하고 현재 DB·uploads rollback snapshot을 만든 후 복원하며,
+실패하면 직전 상태를 되돌리고 API를 다시 시작합니다.
+
+```bash
+./restore.sh --yes backups/mininblm-backup-<timestamp>.tar.gz
+```
+
+운영 배포 전에는 운영 복사본 또는 격리 환경에서 `--yes` 복원 리허설과 문서 원본
+열기까지 확인해야 합니다. `down -v` 실행 전에는 반드시 별도 저장장치로 bundle을
+복사합니다.
+
 ## 8. 현재 제한사항
 
 - 이메일 확인, 비밀번호 재설정, 계정 잠금과 가입 rate limit이 없습니다.
 - HTTP로 실행하는 로컬/LAN 기본 설정에서는 `AUTH_COOKIE_SECURE=false`입니다. 외부 운영 환경은 HTTPS와 `true` 설정이 필요합니다.
-- 대화 생성 문맥은 최근 8개 메시지, 최대 8,000자로 제한됩니다. 후속 질문의
-  검색 query는 직전 사용자 질문 최대 500자와 직전 답변 최대 1,000자를 사용해
-  독립형으로 재작성합니다. 재작성 실패 시 원문 질문으로 검색합니다.
-- 후속 질문은 검색 질의 재작성용 LLM 호출이 1회 추가되므로 첫 질문보다 지연이
-  늘어날 수 있습니다.
+- 대화 생성 문맥은 최근 8개 메시지, 최대 8,000자로 제한됩니다. 검색 계획은 직전
+  사용자 질문 최대 500자와 직전 답변 최대 1,000자를 참고해 독립형 질문과 최대
+  4개의 검색 질의를 만듭니다. 계획 실패 시 원문 질문 하나로 검색합니다.
+- 모든 질문은 검색 계획용 LLM 호출이 1회 추가됩니다. Dense와 Hybrid는 최대
+  `top_k × 3` 후보를 원 질문과 하위 질의의 BGE-M3 유사도로 재정렬하므로 batch
+  embedding 호출도 1회 추가됩니다. 하위 질의별 1위 검색·의미 후보를 보존하며,
+  재정렬 실패 시 기존 검색 순위를 사용합니다.
+- 검색 결과가 있으면 근거 충족도 LLM 호출이 1회 추가됩니다. 부족 판정이
+  계속되면 표적 chunk 검색과 page 계층 fallback을 합쳐 최대 2회 재시도하고 각
+  결과를 다시 판정하므로 충족도 호출은 최대 3회입니다. page fallback은 최대
+  12개 페이지와 16개 chunk로 제한합니다. 최종 판정은 검색 제어와 관측 목적으로
+  사용하며 답변 가능 여부는 RAG 답변 모델이 다시 판단합니다.
+- 답변의 실질 문장마다 유효한 Source/Page가 이미 있으면 인용 검증 호출을
+  생략합니다. 인용 누락이나 잘못된 번호·페이지가 감지된 경우에만 보정 LLM을
+  최대 1회 호출하며, 실패하거나 유효한 인용을 만들지 못하면 원 답변을 유지하고
+  유효한 Source/Page만 출처 목록에 포함합니다.
 - 질문은 로그인 사용자의 모든 `indexed` 문서를 검색하며, 처리 중이거나 실패한
   문서는 검색 대상에서 제외됩니다.
 - 문서 처리는 API process의 `BackgroundTasks`를 사용하며 재시작 시 처음부터 복구하지만 별도 worker/queue가 없어 API process 수명과 자원을 공유합니다.
@@ -379,6 +465,8 @@ KV cache is needed, which is larger than the available KV cache memory
 - 모바일 문서 drawer, 질문 전송, 출처 선택과 PDF frame 열기
 - Argon2id 비밀번호 해시, 회원가입·로그인·로그아웃과 세션 폐기
 - 기본 관리자 제거, 명시적 bootstrap과 최초 로그인 비밀번호 변경 강제
+- 일반 사용자 비밀번호 변경, 다른 세션 폐기와 회원탈퇴 데이터 정리
+- DB·uploads 백업 bundle 생성, SHA-256 검증과 API 자동 재시작
 - 서로 다른 두 사용자 간 문서 목록·원본 PDF·질의·삭제 접근 격리
 - 데스크톱·모바일 인증 UI와 모바일 가로 overflow 없음
 - 관리자 권한 격리, 프리셋 5개 조회·전환·진행 상태 UI
@@ -387,6 +475,11 @@ KV cache is needed, which is larger than the available KV cache memory
 - API 재시작 후 중단된 재인덱싱 작업의 자동 복구
 - API 재시작 후 `uploaded/processing` PDF의 자동 재인덱싱과 누락 원본 실패 처리
 - Dense, FTS Keyword, pg_trgm Substring과 RRF Hybrid 검색 결과
+- 다중 질의 RRF, 인접 청크 확장과 BGE-M3 원 질문 semantic reranker
+- 복합 질의 근거 충족도 판정, 표적·페이지 계층 재검색 최대 2회와 Context 보존
+- 사용자별 page FTS·trigram 범위 탐색, 질의별 page anchor와 BGE-M3 chunk 재정렬
+- 답변별 retrieval trace metadata, 구조화 로그와 관리자 조회 API
+- 주장별 Source/Page 검증과 동기·SSE 인용 보정 및 저장 일치
 - 관리자 UI의 청킹 preset·검색 알고리즘 독립 전환과 모바일 overflow 없음
 - 서버의 업로드 크기, 확장자, MIME, PDF 시그니처·구조·암호화 검증
 - DB, embedding, vLLM 통합 readiness와 API Docker healthcheck
@@ -417,7 +510,8 @@ KV cache is needed, which is larger than the available KV cache memory
 비밀번호 변경·다중 세션 폐기, RRF 병합, 회원가입과 세션, 사용자별 문서 격리,
 PDF 업로드·삭제 제약, 대화 저장·복원·소유권·페이지 조회, SSE 스트리밍,
 request ID·metric, 관리자 권한과
-프리셋 전환, 네 검색 알고리즘의 실제 PostgreSQL 질의, 문서 및 재인덱싱 복구를
+프리셋 전환, 네 검색 알고리즘의 실제 PostgreSQL 질의, 문서 및 재인덱싱 복구,
+비밀번호 변경과 회원탈퇴 데이터 정리를
 포함합니다. 실제 PDF 파싱·embedding·LLM 생성과 브라우저 레이아웃은 별도의
 서비스 및 UI smoke 검증 범위입니다.
 

@@ -24,6 +24,11 @@ class PasswordChangeRequest(BaseModel):
     new_password: str = Field(min_length=MIN_SECURE_PASSWORD_LENGTH, max_length=128)
 
 
+class AccountDeleteRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    username_confirmation: str = Field(min_length=3, max_length=32)
+
+
 class UserResponse(BaseModel):
     user_id: uuid.UUID
     username: str

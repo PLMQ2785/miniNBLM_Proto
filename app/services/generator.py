@@ -4,6 +4,10 @@ from dataclasses import dataclass
 
 from app.clients.vllm_client import VLLMClient
 from app.schemas.chat import SourceRef
+from app.services.citation_validator import (
+    valid_cited_source_indexes,
+    validate_answer_citations,
+)
 from app.services.prompt_builder import build_rag_messages
 from app.services.retriever import RetrievedChunk
 
@@ -42,6 +46,7 @@ class StreamingAnswer:
         self.chunks = chunks
         self.history = history
         self.generated: GeneratedAnswer | None = None
+        self.revision: str | None = None
 
     def __iter__(self) -> Iterator[str]:
         if not self.chunks:
@@ -54,11 +59,19 @@ class StreamingAnswer:
         for raw_delta in VLLMClient().stream_chat_completion(messages, operation="answer"):
             yield from normalizer.push(raw_delta)
         yield from normalizer.finish()
+        raw_answer = normalizer.answer
+        answer = (
+            validate_answer_citations(self.question, raw_answer, self.chunks)
+            if normalizer.has_grounded_source
+            else raw_answer
+        )
+        answer, has_grounded_source = _normalize_source_decision(answer)
+        self.revision = answer if answer != raw_answer else None
         self.generated = GeneratedAnswer(
-            answer=normalizer.answer,
+            answer=answer,
             sources=(
-                _sources_for_citations(normalizer.answer, self.chunks)
-                if normalizer.has_grounded_source
+                _sources_for_citations(answer, self.chunks)
+                if has_grounded_source
                 else []
             ),
         )
@@ -75,6 +88,9 @@ def generate_answer(
     messages = build_rag_messages(question, chunks, history)
     answer = VLLMClient().chat_completion(messages, operation="answer")
     answer, has_grounded_source = _normalize_source_decision(answer)
+    if has_grounded_source:
+        answer = validate_answer_citations(question, answer, chunks)
+        answer, has_grounded_source = _normalize_source_decision(answer)
     return GeneratedAnswer(
         answer=answer,
         sources=_sources_for_citations(answer, chunks) if has_grounded_source else [],
@@ -108,7 +124,7 @@ def _sources_for_citations(answer: str, chunks: list[RetrievedChunk]) -> list[So
     sources: list[SourceRef] = []
     seen_locations: set[tuple[int, int | None]] = set()
 
-    for source_index in cited_source_indexes(answer, len(chunks)):
+    for source_index in valid_cited_source_indexes(answer, chunks):
         chunk = chunks[source_index]
         location = (chunk.document_id, chunk.page_start)
         if location in seen_locations:

@@ -11,6 +11,12 @@
   background: var(--bg-app);
 }
 
+.account-panel {
+  width: min(480px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+}
+
 .admin-view {
   min-height: 100dvh;
   background: var(--bg-subtle);

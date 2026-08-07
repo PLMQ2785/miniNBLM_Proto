@@ -155,6 +155,48 @@ def test_generate_answer_returns_only_cited_unique_source_pages(
     assert generated.sources[0].chunk_id == 11
 
 
+def test_generate_answer_keeps_all_sources_used_for_a_derived_conclusion(
+    monkeypatch: pytest.MonkeyPatch,
+    retrieved_chunk: RetrievedChunk,
+) -> None:
+    reset_chunk = RetrievedChunk(
+        chunk_id=21,
+        document_id=30,
+        document_title="git-history.pdf",
+        content="reset은 브랜치가 가리키는 커밋을 이동시켜 이후 이력을 변경한다.",
+        page_start=10,
+        page_end=10,
+        score=0.9,
+        source_refs={"page": 10},
+    )
+    revert_chunk = RetrievedChunk(
+        chunk_id=22,
+        document_id=30,
+        document_title="git-history.pdf",
+        content="revert는 기존 변경을 취소하는 새 커밋을 만들어 이전 이력을 보존한다.",
+        page_start=11,
+        page_end=11,
+        score=0.8,
+        source_refs={"page": 11},
+    )
+    monkeypatch.setattr(
+        VLLMClient,
+        "chat_completion",
+        lambda self, messages, **kwargs: (
+            "reset은 기존 이력을 변경하지만 revert는 취소 커밋을 추가해 이력을 보존하므로 "
+            "공유 이력에는 revert가 적합합니다. "
+            "[Source 2, Page 10; Source 3, Page 11]"
+        ),
+    )
+
+    generated = generate_answer(
+        "공유된 커밋에는 왜 revert를 사용하나요?",
+        [retrieved_chunk, reset_chunk, revert_chunk],
+    )
+
+    assert [source.chunk_id for source in generated.sources] == [21, 22]
+
+
 def test_generate_answer_does_not_expose_uncited_candidates(
     monkeypatch: pytest.MonkeyPatch,
     retrieved_chunk: RetrievedChunk,

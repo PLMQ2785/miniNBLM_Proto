@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -44,3 +45,16 @@ class RetrievalAdminStateResponse(BaseModel):
     index_version: int
     maintenance_mode: bool
     latest_job: ReindexJobResponse | None
+
+
+class RetrievalTraceResponse(BaseModel):
+    message_id: int
+    session_id: int
+    owner_id: int
+    username: str
+    created_at: datetime
+    trace: dict[str, Any]
+
+
+class RetrievalTraceListResponse(BaseModel):
+    traces: list[RetrievalTraceResponse]

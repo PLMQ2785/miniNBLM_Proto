@@ -22,8 +22,10 @@ from app.schemas.chat import (
 from app.services.conversation_service import MAX_CONTEXT_MESSAGES, build_conversation_context
 from app.observability import CHAT_STREAMS, request_id_context
 from app.services.generator import StreamingAnswer, cited_source_indexes, generate_answer
-from app.services.query_rewriter import rewrite_retrieval_query
+from app.services.evidence_coverage import complete_evidence_coverage
+from app.services.query_rewriter import plan_retrieval_queries
 from app.services.retriever import retrieve_chunks
+from app.services.retrieval_trace import RetrievalTrace
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
@@ -93,7 +95,13 @@ def _persist_exchange(
     answer: str,
     chunks,
     sources: list[SourceRef],
+    trace: RetrievalTrace | None = None,
 ) -> None:
+    trace_metadata = (
+        trace.complete(answer=answer, chunks=chunks, sources=sources)
+        if trace is not None
+        else None
+    )
     chat_repository.create_message(db, session.id, "user", question)
     chat_repository.create_message(
         db,
@@ -104,9 +112,12 @@ def _persist_exchange(
         metadata={
             "sources": [source.model_dump() for source in sources],
             "source_selection": "cited",
+            **({"retrieval_trace": trace_metadata} if trace_metadata is not None else {}),
         },
     )
     chat_repository.touch_session(session)
+    if trace_metadata is not None:
+        logger.info("Retrieval trace completed", extra={"retrieval_trace": trace_metadata})
 
 
 def _sse(event: str, payload: dict | list) -> str:
@@ -128,6 +139,7 @@ def _chat_event_stream(
     question: str,
     chunks,
     history: list[dict[str, str]],
+    trace: RetrievalTrace,
 ):
     try:
         with SessionLocal() as db:
@@ -141,6 +153,8 @@ def _chat_event_stream(
             yield _sse("delta", {"text": delta})
         if streamed.generated is None:
             raise RuntimeError("Streaming answer completed without a final result")
+        if streamed.revision is not None:
+            yield _sse("revision", {"text": streamed.revision})
 
         with SessionLocal() as db:
             session = chat_repository.get_session(db, session_id, owner_id)
@@ -153,6 +167,7 @@ def _chat_event_stream(
                 streamed.generated.answer,
                 chunks,
                 streamed.generated.sources,
+                trace,
             )
             db.commit()
             db.refresh(session)
@@ -263,11 +278,35 @@ def chat(
         )
         history = build_conversation_context(recent_messages)
 
-    retrieval_query = rewrite_retrieval_query(request.question, history)
-    chunks = retrieve_chunks(db=db, owner_id=user.id, question=retrieval_query)
+    retrieval_plan = plan_retrieval_queries(request.question, history)
+    trace = RetrievalTrace(request_id=request_id_context.get())
+    trace.set_query_plan(retrieval_plan.standalone_query, retrieval_plan.queries)
+    chunks = retrieve_chunks(
+        db=db,
+        owner_id=user.id,
+        question=retrieval_plan.standalone_query,
+        queries=retrieval_plan.queries,
+        trace=trace,
+    )
+    chunks = complete_evidence_coverage(
+        db=db,
+        owner_id=user.id,
+        question=request.question,
+        queries=retrieval_plan.queries,
+        chunks=chunks,
+        trace=trace,
+    )
     generated = generate_answer(question=request.question, chunks=chunks, history=history)
 
-    _persist_exchange(db, session, request.question, generated.answer, chunks, generated.sources)
+    _persist_exchange(
+        db,
+        session,
+        request.question,
+        generated.answer,
+        chunks,
+        generated.sources,
+        trace,
+    )
     db.commit()
     db.refresh(session)
 
@@ -301,8 +340,24 @@ def chat_stream(
         )
         history = build_conversation_context(recent_messages)
 
-    retrieval_query = rewrite_retrieval_query(request.question, history)
-    chunks = retrieve_chunks(db=db, owner_id=owner_id, question=retrieval_query)
+    retrieval_plan = plan_retrieval_queries(request.question, history)
+    trace = RetrievalTrace(request_id=request_id_context.get())
+    trace.set_query_plan(retrieval_plan.standalone_query, retrieval_plan.queries)
+    chunks = retrieve_chunks(
+        db=db,
+        owner_id=owner_id,
+        question=retrieval_plan.standalone_query,
+        queries=retrieval_plan.queries,
+        trace=trace,
+    )
+    chunks = complete_evidence_coverage(
+        db=db,
+        owner_id=owner_id,
+        question=request.question,
+        queries=retrieval_plan.queries,
+        chunks=chunks,
+        trace=trace,
+    )
 
     if session is None:
         session = chat_repository.create_session(
@@ -323,6 +378,7 @@ def chat_stream(
             question=request.question,
             chunks=chunks,
             history=history,
+            trace=trace,
         ),
         media_type="text/event-stream",
         headers={

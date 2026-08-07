@@ -1,12 +1,14 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_admin, get_db
 from app.models.retrieval_config import ReindexJob, RetrievalPresetRecord, SearchAlgorithmRecord
 from app.models.user import User
-from app.repositories import retrieval_config_repository
+from app.repositories import chat_repository, retrieval_config_repository
 from app.schemas.admin_retrieval import (
     ReindexJobResponse,
+    RetrievalTraceListResponse,
+    RetrievalTraceResponse,
     RetrievalAdminStateResponse,
     RetrievalPresetResponse,
     SearchAlgorithmResponse,
@@ -25,6 +27,29 @@ from app.services.search_algorithm_service import (
 )
 
 router = APIRouter(prefix="/admin/retrieval", tags=["admin-retrieval"])
+
+
+@router.get("/traces", response_model=RetrievalTraceListResponse)
+def list_retrieval_traces(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+) -> RetrievalTraceListResponse:
+    rows = chat_repository.list_retrieval_traces(db, limit=limit, offset=offset)
+    return RetrievalTraceListResponse(
+        traces=[
+            RetrievalTraceResponse(
+                message_id=message.id,
+                session_id=message.session_id,
+                owner_id=owner_id,
+                username=username,
+                created_at=message.created_at,
+                trace=message.message_metadata["retrieval_trace"],
+            )
+            for message, owner_id, username in rows
+        ]
+    )
 
 
 def _preset_response(preset: RetrievalPresetRecord) -> RetrievalPresetResponse:

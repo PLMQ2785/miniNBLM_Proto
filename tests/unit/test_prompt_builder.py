@@ -31,6 +31,17 @@ def test_build_role_messages_use_generic_rag_contract() -> None:
     assert "[Question]\n핵심은?" in user_message["content"]
 
 
+def test_system_prompt_allows_only_fully_supported_multi_source_inference() -> None:
+    content = build_system_message()["content"]
+
+    assert "여러 Context에 모두 명시" in content
+    assert "결론이 직접 도출" in content
+    assert "자료에 없는 중간 전제" in content
+    assert "필요한 전제가 하나라도 Context에 없어서" in content
+    assert "각 사실이나 비교 항목 바로 뒤" in content
+    assert "비교 대상 양쪽의 근거" in content
+
+
 def test_build_rag_messages_places_history_before_current_question() -> None:
     messages = build_rag_messages(
         "그 다음은?",

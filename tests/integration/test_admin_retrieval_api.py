@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.models.chat import ChatMessage, ChatSession
 from app.models.retrieval_config import ReindexJob
 from app.repositories import retrieval_config_repository
 
@@ -81,3 +82,41 @@ def test_unknown_algorithm_is_rejected(client: TestClient) -> None:
     _login_admin(client)
 
     assert client.post("/admin/retrieval/algorithms/not-real/activate").status_code == 404
+
+
+def test_admin_can_list_stored_retrieval_traces(
+    client: TestClient,
+    db: Session,
+    user_factory,
+) -> None:
+    owner = user_factory("trace-owner")
+    session = ChatSession(owner_id=owner.id, title="trace session")
+    db.add(session)
+    db.flush()
+    message = ChatMessage(
+        session_id=session.id,
+        role="assistant",
+        content="답변",
+        message_metadata={
+            "sources": [],
+            "retrieval_trace": {
+                "schema_version": 1,
+                "request_id": "trace-request",
+                "query_plan": {"queries": ["질문"]},
+                "retrieval_events": [],
+                "coverage_events": [],
+                "outcome": {"status": "no_source"},
+            },
+        },
+    )
+    db.add(message)
+    db.commit()
+
+    assert client.get("/admin/retrieval/traces").status_code == 401
+    _login_admin(client)
+    response = client.get("/admin/retrieval/traces?limit=10")
+
+    assert response.status_code == 200
+    assert response.json()["traces"][0]["message_id"] == message.id
+    assert response.json()["traces"][0]["username"] == "trace-owner"
+    assert response.json()["traces"][0]["trace"]["request_id"] == "trace-request"

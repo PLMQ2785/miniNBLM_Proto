@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.chat import ChatMessage, ChatSession
 from app.models.document import Document
+from app.models.user import User
 
 
 def create_session(
@@ -116,3 +117,26 @@ def delete_sessions_for_document(db: Session, document_id: int) -> None:
     sessions = list(db.scalars(select(ChatSession).where(ChatSession.document_id == document_id)))
     for chat_session in sessions:
         db.delete(chat_session)
+
+
+def list_retrieval_traces(
+    db: Session,
+    *,
+    limit: int,
+    offset: int,
+) -> list[tuple[ChatMessage, int, str]]:
+    return list(
+        db.execute(
+            select(ChatMessage, ChatSession.owner_id, User.username)
+            .join(ChatSession, ChatSession.id == ChatMessage.session_id)
+            .join(User, User.id == ChatSession.owner_id)
+            .where(
+                ChatMessage.role == "assistant",
+                ChatMessage.message_metadata.is_not(None),
+                ChatMessage.message_metadata.has_key("retrieval_trace"),  # type: ignore[attr-defined]
+            )
+            .order_by(ChatMessage.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    )

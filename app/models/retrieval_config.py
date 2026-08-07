@@ -65,7 +65,10 @@ class ReindexJob(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    requested_by: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    requested_by: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="SET NULL"),
+    )
     source_preset_key: Mapped[str] = mapped_column(Text, ForeignKey("retrieval_presets.key"), nullable=False)
     target_preset_key: Mapped[str] = mapped_column(Text, ForeignKey("retrieval_presets.key"), nullable=False)
     target_index_version: Mapped[int] = mapped_column(Integer, nullable=False)

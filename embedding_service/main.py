@@ -16,6 +16,10 @@ class QueryEmbeddingRequest(BaseModel):
     text: str = Field(min_length=1)
 
 
+class QueriesEmbeddingRequest(BaseModel):
+    texts: list[str] = Field(min_length=1, max_length=5)
+
+
 class DocumentsEmbeddingRequest(BaseModel):
     texts: list[str] = Field(min_length=1)
 
@@ -47,6 +51,13 @@ def health_check() -> dict[str, str]:
 def embed_query(request: QueryEmbeddingRequest) -> EmbeddingResponse:
     embedding = get_model().encode([request.text], normalize_embeddings=True)
     values = embedding.tolist()
+    return EmbeddingResponse(embeddings=values, dimension=len(values[0]))
+
+
+@app.post("/embed/queries", response_model=EmbeddingResponse)
+def embed_queries(request: QueriesEmbeddingRequest) -> EmbeddingResponse:
+    embeddings = get_model().encode(request.texts, normalize_embeddings=True)
+    values = embeddings.tolist()
     return EmbeddingResponse(embeddings=values, dimension=len(values[0]))
 
 

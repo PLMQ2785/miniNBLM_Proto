@@ -2,9 +2,9 @@
 
 ## 1. 현재 상태
 
-- 기준일: 2026-08-06 (Asia/Seoul)
+- 기준일: 2026-08-07 (Asia/Seoul)
 - 프로젝트: 사용자 PDF 기반 범용 RAG Assistant
-- 현재 단계: 1차 MVP, 기본 안정화, 관측성과 답변 스트리밍 완료
+- 현재 단계: 1차 MVP, 기본 안정화, 복합 질의 검색·관측성·답변 스트리밍·계정 생명주기 완료
 - 패키지 관리: `uv`
 - 런타임: Docker Compose의 `api`, `db`, `embedding`, `llm` 4개 서비스
 - Web UI: React 없이 FastAPI가 Vanilla HTML/CSS/JavaScript 정적 파일 제공
@@ -13,7 +13,7 @@
 
 최근 검증 결과:
 
-- 빠른 단위/API 통합 테스트: `91 passed`, 실제 모델 E2E `1 skipped`
+- 빠른 단위/API 통합 테스트: `132 passed`, 실제 모델 E2E `1 skipped`
 - 실제 BGE-M3/Gemma 4 E2E: `1 passed`
 - 실제 Gemma 4 SSE에서 다중 delta, 출처, 완료 event와 대화 저장 확인
 - JSON 구조화 로그, `X-Request-ID`, Prometheus HTTP·검색·LLM 지표 확인
@@ -38,6 +38,21 @@
 - 12페이지/8질문 fixture로 5 preset x 4 알고리즘 Recall@5·MRR·latency matrix 완료
 - Keyword OR-query 개선 후 실측 Recall@5: 전 preset `1.0` (기존 `0.125`)
 - 후속 질문 retrieval query rewriting 단위/API 통합 테스트 완료
+- 일반 사용자 비밀번호 변경과 다른 로그인 세션 폐기 API/UI 적용
+- 비밀번호·사용자명 재확인 회원탈퇴와 문서·대화·PDF 원본 일괄 삭제 적용
+- DB dump와 uploads, manifest, SHA-256을 묶는 백업 bundle 생성·검증 완료
+- Playwright 계정 smoke: 일반 사용자 비밀번호 변경, 390px overflow 없음,
+  회원탈퇴 후 세션·재로그인 차단 확인
+- 복합 Git 질의에서 최대 4개 검색 질의, RRF, 인접 chunk, BGE-M3 semantic
+  reranker와 근거 충족도 기반 제한 재검색(표적 chunk + page 계층, 최대 2회) 확인
+- 실제 Gemma 4에서 reset·revert·DVCS 근거를 여러 PDF 페이지에서 결합하고,
+  답변에 인용된 5개 문서 페이지만 source로 반환하는 경로 확인
+- 주장별 인용 검증 적용 후 동일 복합 질의의 모든 실질 문장에 유효한
+  Source/Page가 붙고 실제 인용된 4개 페이지만 source로 반환되는 경로 확인
+- 장문·간접 표현을 포함한 7개 복합 fixture에서 balanced+hybrid Recall@3,
+  Hit@3, MRR@3 모두 `1.000` 확인
+- 최초 Context를 비운 실제 Gemma 강제 테스트에서 page 계층 fallback과 표적
+  검색이 정확히 2회 내 종료되고 reset·revert·DVCS 결합 답변 생성 확인
 
 최근 작업:
 
@@ -105,6 +120,9 @@ WSL mirrored networking에서 Docker bridge port가 Windows localhost로 전달�
 - 기본 관리자 없음, 두 bootstrap 환경변수를 명시한 경우에만 최초 관리자 생성
 - bootstrap/CLI 승격 관리자의 최초 로그인 비밀번호 변경 강제
 - 비밀번호 변경 전 문서·채팅·관리 API 차단 및 다른 로그인 세션 폐기
+- 일반 사용자 계정 화면에서 비밀번호 변경
+- 회원탈퇴 시 인증 세션, 문서/page/chunk, 대화와 PDF 원본 hard delete
+- 재인덱싱 감사 이력은 요청자만 `NULL`로 전환해 보존
 
 ### PDF 문서 처리
 
@@ -139,6 +157,14 @@ WSL mirrored networking에서 Docker bridge port가 Windows localhost로 전달�
 - 후속 질문 생성에 최근 8개 메시지를 최대 8,000자까지 전달
 - 후속 질문 검색에는 직전 사용자 질문 500자와 답변 1,000자까지만 사용해
   독립형 retrieval query를 생성하며, 최종 답변과 저장에는 원문 질문을 유지
+- 복합 질문은 독립형 질문을 포함해 최대 4개 검색 질의로 분해하고 RRF로 병합
+- Dense/Hybrid 후보는 원질문·세부 질의 BGE-M3 유사도와 기존 순위로 재정렬하며
+  질의별 최상위 검색·의미 후보를 보존
+- 검색 근거 충족도를 LLM으로 검사하고 부족한 전제는 표적 chunk 검색과 page
+  FTS·trigram 계층 fallback으로 최대 2회 재검색한다. 빈 재검색은 기존 Context를
+  보존하고 최종 판정이 불안정해도 병합 근거를 답변 모델에 전달한다.
+- 계층 fallback은 세부 질의별 상위 페이지를 보존하고 해당 페이지와 겹치는
+  chunk만 BGE-M3로 재정렬한다.
 - 삭제된 PDF의 과거 source 제목은 보존하고 원본 접근은 비활성화
 - 자료에서 답을 확인할 수 없다는 응답은 source를 반환하지 않으며, 모델이
   `[[NO_SOURCE]`처럼 마커 대괄호를 일부 누락해도 후처리함
@@ -146,6 +172,8 @@ WSL mirrored networking에서 Docker bridge port가 Windows localhost로 전달�
 - SSE 답변 스트리밍, 완료 후 대화 이력 저장과 실패한 신규 세션 정리
 - 스트리밍 중 `NO_SOURCE` 판정 전 초기 출력 버퍼링과 marker 비노출
 - retrieval top-k 전체가 아니라 답변의 유효한 `Source N` 인용만 source로 반환
+- 인용 누락·잘못된 Source/Page가 있는 답변만 LLM 보정 1회 수행
+- SSE 보정 결과는 `revision` event로 화면을 교체하고 보정본만 DB에 저장
 - 동일 문서·페이지 인용 중복 제거, 미인용 후보와 잘못된 번호 제외
 - 기존 대화의 후보 source metadata도 조회 시 인용 번호로 동적 필터링
 - 간호 특화 시스템 프롬프트를 범용 문서 RAG 정책으로 교체하고 prompt builder를
@@ -208,7 +236,10 @@ WSL mirrored networking에서 Docker bridge port가 Windows localhost로 전달�
 
 - 모든 API 응답의 `X-Request-ID` 생성·전파
 - stdout JSON 구조화 로그와 method, route, status, 전체 응답 지연 기록
-- Prometheus HTTP 요청 수·지연, retrieval 결과·지연, LLM 결과·지연·TTFT 지표
+- Prometheus HTTP 요청 수·지연, retrieval·rerank·근거 충족도·재검색,
+  인용 검증, LLM 결과·지연·TTFT 지표
+- assistant metadata와 JSON 로그에 request별 retrieval trace 저장
+- 관리자 전용 `GET /admin/retrieval/traces` 최신 trace 조회
 - 스트림 success/error/cancelled 결과 지표
 - `/metrics` 공개 endpoint 제공, 운영 reverse proxy에서 모니터링망 제한 필요
 
@@ -223,6 +254,7 @@ WSL mirrored networking에서 Docker bridge port가 Windows localhost로 전달�
 | `POST` | `/auth/login` | 로그인 |
 | `POST` | `/auth/logout` | 세션 폐기 |
 | `POST` | `/auth/password` | 현재 비밀번호 검증 및 안전한 비밀번호 변경 |
+| `DELETE` | `/auth/account` | 비밀번호·사용자명 재확인 후 계정과 소유 데이터 삭제 |
 | `GET` | `/auth/me` | 현재 사용자 |
 | `POST` | `/documents` | PDF 업로드 |
 | `GET` | `/documents` | 현재 사용자 문서 목록 |
@@ -235,6 +267,7 @@ WSL mirrored networking에서 Docker bridge port가 Windows localhost로 전달�
 | `GET` | `/chat/sessions/{id}` | 대화 메시지/source 페이지 조회 |
 | `DELETE` | `/chat/sessions/{id}` | 현재 사용자 소유 대화 삭제 |
 | `GET` | `/admin/retrieval` | 관리자 검색 설정 상태 |
+| `GET` | `/admin/retrieval/traces` | 최근 답변 retrieval trace 조회 |
 | `POST` | `/admin/retrieval/presets/{key}/activate` | preset 변경/재인덱싱 |
 | `POST` | `/admin/retrieval/algorithms/{key}/activate` | 알고리즘 즉시 변경 |
 | `GET` | `/admin/retrieval/jobs/{id}` | 재인덱싱 작업 조회 |
@@ -303,7 +336,7 @@ docker compose exec api python -m app.cli.set_admin --revoke <username>
 - embedding과 LLM 호출은 test double로 대체
 - 테스트 종료 시 컨테이너 자동 정리
 - 운영 DB 오접속을 막는 `MININBLM_TEST_DATABASE=1` 안전장치 존재
-- 마지막 결과: `91 passed`, 실제 모델 E2E `1 skipped`
+- 마지막 결과: `94 passed`, 실제 모델 E2E `1 skipped`
 
 단위 테스트만 실행:
 
@@ -357,6 +390,7 @@ Alembic migration:
 4. `0004_search_algorithms.py`
 5. `0005_chat_session_history.py`
 6. `0006_admin_password_change.py`
+7. `0007_account_deletion.py`
 
 영속 데이터:
 
@@ -368,6 +402,17 @@ Alembic migration:
 `docker compose down`과 `./down.sh`는 위 데이터를 보존한다. `docker compose
 down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없으면 실행하지
 않는다.
+
+백업과 복원:
+
+```bash
+./backup.sh
+./restore.sh --verify-only backups/mininblm-backup-<timestamp>.tar.gz
+./restore.sh --yes backups/mininblm-backup-<timestamp>.tar.gz
+```
+
+`--yes` 복원은 현재 데이터를 교체한다. checksum 포함 bundle 생성과 검증 모드는
+실데이터로 확인했으며, 실제 복원은 격리 환경에서 추가 리허설해야 한다.
 
 ## 9. 주요 파일
 
@@ -386,6 +431,7 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 | `run.sh`, `down.sh` | 전체 서비스 시작/종료 |
 | `scripts/test.sh` | 단위/API 통합 테스트 진입점 |
 | `scripts/e2e.sh` | 실제 모델 E2E 진입점 |
+| `backup.sh`, `restore.sh` | PostgreSQL·uploads 백업 bundle 생성 및 복원 |
 | `scripts/benchmark-retrieval.sh` | preset/알고리즘 품질·지연 benchmark 진입점 |
 | `evaluation/` | 버전 관리되는 질문/source fixture와 혼동 문서 |
 | `app/evaluation/` | fixture 검증, metric 계산과 benchmark runner |
@@ -408,7 +454,11 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 - 이전 대화 생성 문맥은 최근 8개 메시지, 최대 8,000자로 제한된다.
 - retrieval query rewriting은 장기 대화 전체가 아닌 직전 질문·답변 한 쌍만
   사용하며, 재작성 LLM 호출이 실패하면 원문 질문으로 검색한다.
-- 후속 질문은 검색 질의 재작성 때문에 LLM 호출이 1회 추가된다.
+- 모든 질문은 검색 계획 LLM 호출이 1회 추가되고, 검색 결과가 있으면 근거
+  충족도 호출도 1회 추가된다. 부족 판정이 지속되면 표적 chunk 검색과 page
+  계층 fallback을 합쳐 최대 2회, 충족도 판정은 최대 3회 수행한다.
+- 답변에 문장별 유효 인용이 빠졌을 때만 인용 보정 LLM 호출이 최대 1회
+  추가된다. 완전한 인용 답변과 자료 부재 답변은 보정 호출을 생략한다.
 - 문서 처리와 재인덱싱이 API process의 background task를 사용한다.
 - 별도 worker/영속 queue가 없어 API process 수명과 자원을 공유한다.
 - 텍스트 기반 PDF만 지원하며 scanned PDF OCR은 없다.
@@ -426,7 +476,7 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 
 - HTTPS reverse proxy와 `AUTH_COOKIE_SECURE=true` 운영 구성
 - 회원가입/로그인 rate limit, 계정 잠금, 비밀번호 재설정
-- PostgreSQL 및 업로드 원본의 백업/복원 절차와 복구 리허설
+- PostgreSQL 및 업로드 원본 bundle의 격리 환경 복원 리허설
 - Prometheus 수집·대시보드·경보 규칙 구성
 - 검증된 vLLM base digest/version 고정과 custom image tag 정합성 확보
 - reverse proxy request body 제한을 애플리케이션의 50MB 제한과 일치시킴

@@ -27,3 +27,15 @@ class EmbeddingClient:
         response.raise_for_status()
         payload = response.json()
         return payload["embeddings"][0]
+
+    def embed_queries(self, texts: list[str]) -> list[list[float]]:
+        if len(texts) == 1:
+            return [self.embed_query(texts[0])]
+        response = httpx.post(
+            f"{self.base_url}/embed/queries",
+            json={"texts": texts},
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return payload["embeddings"]

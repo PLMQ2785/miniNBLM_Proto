@@ -12,6 +12,7 @@ wheels/
 # Local environment and runtime data
 .env
 data/
+backups/
 benchmark_results/
 
 # Private keys and credential containers

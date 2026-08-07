@@ -51,6 +51,17 @@ export class ApiClient {
     });
   }
 
+  async deleteAccount(currentPassword, usernameConfirmation) {
+    return this.request("/auth/account", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        current_password: currentPassword,
+        username_confirmation: usernameConfirmation,
+      }),
+    });
+  }
+
   async getRetrievalAdminState() {
     return this.request("/admin/retrieval");
   }
@@ -175,6 +186,7 @@ export class ApiClient {
       }
       if (event === "session") result.session = data;
       else if (event === "delta") result.answer += data.text || "";
+      else if (event === "revision") result.answer = data.text || "";
       else if (event === "sources") result.sources = data;
       else if (event === "done") {
         result.session = data.session || result.session;
@@ -256,6 +268,15 @@ export class ApiClient {
       if (status === 400) {
         return "영문 대·소문자, 숫자, 기호 중 3종 이상을 사용해 주세요.";
       }
+    }
+    if (path === "/auth/account") {
+      if (status === 400 && detail === "Current password is incorrect") {
+        return "현재 비밀번호가 올바르지 않습니다.";
+      }
+      if (status === 400 && detail === "Username confirmation does not match") {
+        return "사용자명이 일치하지 않습니다.";
+      }
+      if (status === 409) return "문서 인덱싱이 끝난 후 회원탈퇴를 진행해 주세요.";
     }
     if (status === 400) return detail || "요청한 파일을 확인해 주세요.";
     if (status === 401) return "사용자명 또는 비밀번호를 확인해 주세요.";
