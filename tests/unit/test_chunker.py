@@ -16,5 +16,32 @@ def test_chunk_preserves_page_quality_metadata() -> None:
     chunks = chunk_pages([page], document_id=12)
 
     assert len(chunks) == 1
-    assert chunks[0].source_refs["page_metadata"] == page.metadata
+    assert chunks[0].source_refs["page_metadata"]["has_visual_content"] is True
     assert chunks[0].metadata["visual_evidence_risk"] == "visual_heavy"
+    assert chunks[0].content_type == "text"
+
+
+def test_chunker_adds_separate_vision_caption_chunk() -> None:
+    page = ParsedPage(
+        page_number=19,
+        text="통신 화면 설명",
+        metadata={
+            "language_hint": "ko",
+            "visual_evidence_risk": "visual_heavy",
+            "vision_caption": {
+                "status": "completed",
+                "model": "gemma4",
+                "version": "v1",
+                "confidence": 0.95,
+                "search_text": "[Vision evidence]\nVisible text:\n- LB05-01 NLNNN",
+            },
+        },
+    )
+
+    chunks = chunk_pages([page], document_id=12)
+
+    assert [chunk.content_type for chunk in chunks] == ["text", "vision_caption"]
+    assert chunks[1].source_refs["modality"] == "vision_caption"
+    assert chunks[1].page_start == 19
+    assert "LB05-01 NLNNN" in chunks[1].content
+    assert "search_text" not in chunks[1].source_refs["page_metadata"]["vision_caption"]

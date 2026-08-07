@@ -1675,7 +1675,7 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
 - 빈 재검색 시 기존 Context 보존과 답변별 retrieval trace 관리자 조회
 - 문장별 Source/Page 검증, 조건부 인용 보정과 SSE `revision`
 - 7개 복합 Git/라이선스 fixture의 balanced+hybrid Recall@3·MRR@3 `1.0`
-- 빠른 단위/API 통합 테스트 `150 passed`, 실제 모델 E2E `1 skipped`
+- 빠른 단위/API 통합 테스트 `166 passed`, 실제 모델 E2E `1 skipped`
 - 최초 Context를 비운 실제 Gemma 4 강제 테스트에서 최대 2회 검색과 유효 인용 확인
 - API·DB·embedding·LLM 4개 컨테이너 및 `/health/ready` 정상 확인
 - `sample/`의 3개 문서군을 위한 복합·다층 추론 10개 fixture와 격리 benchmark runner
@@ -1690,7 +1690,12 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
   2건은 안전 거부, 영문 지연 감점은 recall 1.0 및 정량/정성 구분 답변으로 개선
 - Gemma 4 W4A16의 실제 PDF 페이지 이미지 입력과 화면 문자열 판독 성공
 - vLLM 양자화 vision projection dtype 호환성 보완 및 요청당 이미지 1개 제한 적용
-- Vision caption의 업로드·인덱싱 통합은 아직 후속 범위
+- `risk_only`/`all_visual` 선택 페이지의 144 DPI 렌더링과 구조화 Vision caption 적용
+- page metadata에 caption 상태·버전·모델·confidence를 저장하고 원문과 분리된
+  `vision_caption` chunk를 BGE-M3로 임베딩해 기존 네 검색 알고리즘에 통합
+- 실제 Manual 19페이지에서 `LB05 01 NLNNN` 추출과 text/vision chunk 생성 확인
+- query plan·근거 충족도 JSON 출력을 강제하고 복구 시 직전 대화 문맥을 유지하며,
+  절차 질문의 표준 명령어 검색 확장과 chunk metadata 기반 Source/Page 정규화 적용
 
 빠른 테스트는 `./scripts/test.sh -q`, 실제 모델 E2E는 네 서비스 실행 후
 `./scripts/e2e.sh -q`로 수행한다. E2E API와 DB는 운영 데이터와 분리된다.

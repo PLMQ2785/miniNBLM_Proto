@@ -29,7 +29,19 @@ def test_build_role_messages_use_generic_rag_contract() -> None:
     assert "간호" not in system_message["content"]
     assert user_message["role"] == "user"
     assert "[Source 1]" in user_message["content"]
+    assert "Evidence Modality: text" in user_message["content"]
     assert "[Question]\n핵심은?" in user_message["content"]
+
+
+def test_user_message_marks_vision_caption_evidence() -> None:
+    chunk = _chunk()
+    vision_chunk = RetrievedChunk(
+        **{**chunk.__dict__, "content_type": "vision_caption"},
+    )
+
+    message = build_user_message("화면의 값은?", [vision_chunk])
+
+    assert "Evidence Modality: vision_caption" in message["content"]
 
 
 def test_system_prompt_allows_only_fully_supported_multi_source_inference() -> None:
@@ -43,6 +55,7 @@ def test_system_prompt_allows_only_fully_supported_multi_source_inference() -> N
     assert "비교 대상 양쪽의 근거" in content
     assert "관련 사실까지 버리라는 뜻이 아니다" in content
     assert "각 SUPPORTED 항목을 빠짐없이" in content
+    assert "vision_caption" in content
 
 
 def test_build_rag_messages_places_history_before_current_question() -> None:

@@ -120,6 +120,7 @@ class RetrievalTrace:
         self.outcome = {
             "status": _answer_status(answer, chunks, sources),
             "final_chunk_ids": [chunk.chunk_id for chunk in chunks],
+            "final_modalities": [chunk.content_type for chunk in chunks],
             "cited_chunk_ids": [source.chunk_id for source in sources],
             "duration_ms": round((time.perf_counter() - self.started_at) * 1000, 2),
         }
@@ -127,7 +128,7 @@ class RetrievalTrace:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": 2,
+            "schema_version": 3,
             "request_id": self.request_id,
             "created_at": self.created_at,
             "query_plan": self.query_plan,
@@ -150,6 +151,7 @@ def _candidate_snapshot(row) -> dict[str, Any]:
         "document_title": document_title,
         "page_start": chunk.page_start,
         "page_end": chunk.page_end,
+        "content_type": getattr(chunk, "content_type", "text"),
         "score": round(float(score), 6),
     }
 

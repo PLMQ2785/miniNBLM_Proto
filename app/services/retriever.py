@@ -34,6 +34,7 @@ class RetrievedChunk:
     page_end: int | None
     score: float
     source_refs: dict
+    content_type: str = "text"
 
 
 def retrieve_chunks(
@@ -150,6 +151,7 @@ def retrieve_chunks(
             page_end=chunk.page_end,
             score=score,
             source_refs=chunk.source_refs or {},
+            content_type=getattr(chunk, "content_type", "text"),
         )
         for chunk, score, document_title in rows
     ]

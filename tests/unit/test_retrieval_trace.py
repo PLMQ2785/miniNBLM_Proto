@@ -45,6 +45,8 @@ def test_retrieval_trace_serializes_candidates_coverage_and_outcome() -> None:
     assert payload["request_id"] == "request-123"
     assert payload["query_plan"]["queries"] == ["독립 질문", "세부 질문"]
     assert payload["retrieval_events"][0]["candidates"][0]["page_start"] == 3
+    assert payload["retrieval_events"][0]["candidates"][0]["content_type"] == "text"
     assert payload["coverage_events"][0]["retry_queries"] == ["구체 검색어"]
     assert payload["outcome"]["status"] == "grounded"
     assert payload["outcome"]["cited_chunk_ids"] == [10]
+    assert payload["outcome"]["final_modalities"] == ["text"]

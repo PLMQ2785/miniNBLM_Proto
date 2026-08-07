@@ -25,6 +25,7 @@ def build_retrieval_context(chunks: list[RetrievedChunk]) -> str:
                     f"Document ID: {chunk.document_id}",
                     f"Page: {page}",
                     f"Chunk ID: {chunk.chunk_id}",
+                    f"Evidence Modality: {chunk.content_type}",
                     f"Text Evidence Quality: {_format_evidence_quality(chunk)}",
                     "Content:",
                     chunk.content,
@@ -75,6 +76,10 @@ def _format_evidence_quality(chunk: RetrievedChunk) -> str:
     if not isinstance(metadata, dict):
         return "unknown"
     risk = metadata.get("visual_evidence_risk", "unknown")
+    if chunk.content_type == "vision_caption":
+        vision = metadata.get("vision_caption", {})
+        confidence = vision.get("confidence") if isinstance(vision, dict) else None
+        return f"vision caption; confidence={confidence if confidence is not None else 'unknown'}"
     if metadata.get("text_only_incomplete"):
         return f"{risk}; visual content may be absent from extracted text"
     return str(risk)

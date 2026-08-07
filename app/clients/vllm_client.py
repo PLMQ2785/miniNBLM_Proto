@@ -17,6 +17,7 @@ MAX_TOKENS_BY_OPERATION = {
     "citation_validation": 1400,
     "answer": 900,
     "answer_retry": 900,
+    "vision_caption": 900,
 }
 DEFAULT_MAX_TOKENS = 1024
 
@@ -36,9 +37,10 @@ class VLLMClient:
 
     def chat_completion(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, object]],
         temperature: float = 0.2,
         operation: str = "completion",
+        response_format: dict[str, str] | None = None,
     ) -> str:
         started_at = time.perf_counter()
         try:
@@ -48,6 +50,7 @@ class VLLMClient:
                 temperature=temperature,
                 max_tokens=MAX_TOKENS_BY_OPERATION.get(operation, DEFAULT_MAX_TOKENS),
                 extra_body={"repetition_penalty": 1.15},
+                **({"response_format": response_format} if response_format else {}),
             )
             content = response.choices[0].message.content or ""
         except Exception:

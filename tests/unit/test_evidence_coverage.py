@@ -98,6 +98,28 @@ def test_coverage_assessment_parses_json_contract(
     assert assessment.retry_queries == ("project report late penalty per day",)
 
 
+def test_coverage_assessment_requests_json_object_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    call: dict = {}
+
+    def assess(self, messages, **kwargs):
+        call.update(kwargs)
+        return '{"status":"SUFFICIENT","missing":[],"retry_queries":{}}'
+
+    monkeypatch.setattr(VLLMClient, "chat_completion", assess)
+
+    assessment = assess_evidence_coverage(
+        "질문",
+        ("근거 목표",),
+        [_chunk(1, "충분한 근거", 1)],
+    )
+
+    assert assessment is not None
+    assert assessment.sufficient is True
+    assert call["response_format"] == {"type": "json_object"}
+
+
 def test_coverage_assessment_treats_malformed_mixed_status_as_insufficient(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

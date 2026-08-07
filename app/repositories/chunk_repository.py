@@ -26,6 +26,7 @@ def create_chunks(
             chunk_index=chunk.chunk_index,
             content=chunk.content,
             embedding=embedding,
+            content_type=chunk.content_type,
             source_refs=chunk.source_refs,
             chunk_metadata=chunk.metadata,
         )

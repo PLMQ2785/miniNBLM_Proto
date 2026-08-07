@@ -4,5 +4,6 @@ services:
       VLLM_BASE_URL: http://127.0.0.1:8010/v1
       VLLM_API_KEY: EMPTY
       VLLM_MODEL: gemma4
+      VISION_CAPTION_MODE: ${VISION_CAPTION_MODE:-disabled}
     volumes:
       - ./sample:/app/sample:ro

@@ -103,6 +103,41 @@ def test_keyword_search_matches_partial_terms_in_a_natural_language_question(
     assert [result.chunk_id for result in results] == [target_id]
 
 
+def test_keyword_search_preserves_vision_caption_modality(
+    db: Session,
+    user_factory,
+    document_factory,
+) -> None:
+    user = user_factory("vision-caption-searcher")
+    document = document_factory(user, title="manual.pdf")
+    visual_chunk = Chunk(
+        document_id=document.id,
+        page_start=19,
+        page_end=19,
+        chunk_index=0,
+        content="[Vision evidence] Visible text: LB05 01 NLNNN",
+        content_type="vision_caption",
+        embedding=[1.0] + [0.0] * 1023,
+        source_refs={"page": 19, "modality": "vision_caption"},
+    )
+    db.add(visual_chunk)
+    db.commit()
+
+    configuration = retrieval_config_repository.get_configuration(db)
+    configuration.active_search_algorithm_key = "keyword"
+    db.commit()
+
+    results = retrieve_chunks(
+        db,
+        owner_id=user.id,
+        question="LB05 01 NLNNN",
+        top_k=5,
+    )
+
+    assert results[0].content_type == "vision_caption"
+    assert results[0].page_start == 19
+
+
 def test_multi_query_search_combines_evidence_for_different_facets(
     db: Session,
     user_factory,

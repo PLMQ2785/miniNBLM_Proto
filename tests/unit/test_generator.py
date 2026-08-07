@@ -241,7 +241,7 @@ def test_generate_answer_blocks_exact_visual_page_request_without_llm(
         [chunk],
     )
 
-    assert "텍스트 전용 처리" in generated.answer
+    assert "시각 근거가 검색되지 않았습니다" in generated.answer
     assert generated.sources == []
 
 

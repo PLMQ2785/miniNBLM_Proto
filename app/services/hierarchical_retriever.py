@@ -89,6 +89,7 @@ def retrieve_hierarchical_chunks(
             page_end=chunk.page_end,
             score=score,
             source_refs=chunk.source_refs or {},
+            content_type=getattr(chunk, "content_type", "text"),
         )
         for chunk, score, title in rows
     ]

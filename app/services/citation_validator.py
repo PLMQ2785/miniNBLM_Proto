@@ -100,7 +100,27 @@ def _normalize_structural_citations(
         return f"Source {source_index + 1}, Page {page}"
 
     normalized = BARE_SOURCE_PATTERN.sub(add_page, answer)
+    normalized = CITATION_ITEM_PATTERN.sub(
+        lambda match: _citation_with_chunk_page(match, chunks),
+        normalized,
+    )
     return CHUNK_SUFFIX_PATTERN.sub("", normalized)
+
+
+def _citation_with_chunk_page(
+    match: re.Match,
+    chunks: list[RetrievedChunk],
+) -> str:
+    source_index = int(match.group("source")) - 1
+    if not 0 <= source_index < len(chunks):
+        return match.group(0)
+    chunk = chunks[source_index]
+    if chunk.page_start is None:
+        return match.group(0)
+    page = str(chunk.page_start)
+    if chunk.page_end is not None and chunk.page_end != chunk.page_start:
+        page = f"{chunk.page_start}-{chunk.page_end}"
+    return f"Source {source_index + 1}, Page {page}"
 
 
 def answer_needs_citation_repair(answer: str, chunks: list[RetrievedChunk]) -> bool:

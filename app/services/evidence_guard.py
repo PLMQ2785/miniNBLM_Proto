@@ -28,7 +28,7 @@ class EvidenceGuardDecision:
     pages: tuple[int, ...] = ()
 
 
-def assess_text_only_answerability(
+def assess_evidence_answerability(
     question: str,
     chunks: list[RetrievedChunk],
 ) -> EvidenceGuardDecision:
@@ -47,22 +47,28 @@ def assess_text_only_answerability(
             reason="requested_visual_page_is_missing_from_text_context",
             pages=tuple(sorted(requested_pages)),
         )
-    risky_pages = sorted(
-        {
-            page
-            for chunk in candidates
-            if _has_unparsed_visual_content(chunk)
-            for page in _chunk_pages(chunk)
-            if not requested_pages or page in requested_pages
-        }
-    )
+    visual_pages = {
+        page
+        for chunk in candidates
+        if _has_visual_content(chunk)
+        for page in _chunk_pages(chunk)
+        if not requested_pages or page in requested_pages
+    }
+    captioned_pages = {
+        page
+        for chunk in candidates
+        if chunk.content_type == "vision_caption"
+        for page in _chunk_pages(chunk)
+        if not requested_pages or page in requested_pages
+    }
+    risky_pages = sorted(visual_pages - captioned_pages)
     if requested_pages and risky_pages:
         return EvidenceGuardDecision(
             False,
-            reason="requested_visual_page_is_not_fully_represented_as_text",
+            reason="requested_visual_page_has_no_caption_in_context",
             pages=tuple(risky_pages),
         )
-    if not requested_pages and candidates and all(
+    if not requested_pages and candidates and not captioned_pages and all(
         _visual_risk(chunk) in {"empty_text", "visual_heavy"} for chunk in candidates[:5]
     ):
         return EvidenceGuardDecision(
@@ -97,7 +103,7 @@ def _visual_risk(chunk: RetrievedChunk) -> str:
     return str(_page_metadata(chunk).get("visual_evidence_risk", "unknown"))
 
 
-def _has_unparsed_visual_content(chunk: RetrievedChunk) -> bool:
+def _has_visual_content(chunk: RetrievedChunk) -> bool:
     metadata = _page_metadata(chunk)
     return bool(metadata.get("has_visual_content")) or _visual_risk(chunk) in {
         "empty_text",

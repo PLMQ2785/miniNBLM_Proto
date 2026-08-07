@@ -75,7 +75,7 @@ def test_multi_hop_question_is_decomposed_and_deduplicated(
 def test_follow_up_is_rewritten_from_the_latest_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
     call: dict = {}
 
-    def rewrite(self, messages, temperature=0.2, operation="completion"):
+    def rewrite(self, messages, temperature=0.2, operation="completion", **kwargs):
         call["messages"] = messages
         call["temperature"] = temperature
         call["operation"] = operation
@@ -101,10 +101,57 @@ def test_follow_up_is_rewritten_from_the_latest_exchange(monkeypatch: pytest.Mon
     assert "그 다음에는 무엇을 하나요?" in call["messages"][-1]["content"]
 
 
+def test_query_plan_requests_json_object_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    call: dict = {}
+
+    def rewrite(self, messages, **kwargs):
+        call.update(kwargs)
+        return '{"standalone_query":"독립 질문","queries":["독립 질문"]}'
+
+    monkeypatch.setattr(VLLMClient, "chat_completion", rewrite)
+
+    plan_retrieval_queries("질문", [])
+
+    assert call["response_format"] == {"type": "json_object"}
+
+
+def test_query_plan_repair_keeps_previous_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict] = []
+
+    def rewrite(self, messages, **kwargs):
+        calls.append({"messages": messages, **kwargs})
+        if len(calls) == 1:
+            return '{"standalone_query":"잘린 응답", "queries":['
+        return (
+            '{"standalone_query":"기능 브랜치 변경을 stash한 뒤 hotfix 처리하고 복원",'
+            '"evidence_goals":["변경 임시 보관","브랜치 전환","작업 복원과 병합"],'
+            '"queries":["git stash","hotfix branch","git stash pop git merge"]}'
+        )
+
+    monkeypatch.setattr(VLLMClient, "chat_completion", rewrite)
+    history = [
+        {"role": "user", "content": "기능 작업 중 긴급 수정 요청을 받았습니다."},
+        {"role": "assistant", "content": "hotfix 브랜치를 사용할 수 있습니다."},
+    ]
+
+    plan = plan_retrieval_queries("변경을 잃지 않고 돌아와 복원하려면?", history)
+
+    repair_request = calls[1]["messages"][-1]["content"]
+    assert "기능 작업 중 긴급 수정 요청" in repair_request
+    assert "hotfix 브랜치를 사용할 수 있습니다" in repair_request
+    assert plan.queries == (
+        "기능 브랜치 변경을 stash한 뒤 hotfix 처리하고 복원",
+        "git stash",
+        "hotfix branch",
+        "git stash pop git merge",
+    )
+    assert calls[1]["response_format"] == {"type": "json_object"}
+
+
 def test_rewrite_uses_bounded_previous_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
     call: dict = {}
 
-    def rewrite(self, messages, temperature=0.2, operation="completion"):
+    def rewrite(self, messages, temperature=0.2, operation="completion", **kwargs):
         call["messages"] = messages
         return '{"standalone_query":"독립 질문","queries":["독립 질문"]}'
 

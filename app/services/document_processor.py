@@ -12,6 +12,7 @@ from app.repositories import (
 )
 from app.services.chunker import chunk_pages
 from app.services.pdf_parser import extract_pages
+from app.services.vision_captioner import enrich_pages_with_vision_captions
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +58,9 @@ def process_document(
         db.commit()
 
         pages = extract_pages(document.file_path)
-        if not pages or not any(page.text.strip() for page in pages):
-            raise ValueError("No extractable text found in PDF")
+        pages = enrich_pages_with_vision_captions(document.file_path, pages)
+        if not pages:
+            raise ValueError("No pages found in PDF")
 
         page_repository.create_pages(db, document.id, pages)
         chunks = chunk_pages(
@@ -68,7 +70,7 @@ def process_document(
             document_id=document.id,
         )
         if not chunks:
-            raise ValueError("No chunks generated from PDF text")
+            raise ValueError("No searchable text or visual evidence found in PDF")
 
         embeddings = EmbeddingClient().embed_documents([chunk.content for chunk in chunks])
         chunk_repository.create_chunks(db, document.id, chunks, embeddings)

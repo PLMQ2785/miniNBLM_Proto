@@ -263,3 +263,37 @@ W4A16 대상이다. 단일 프로브는 통과했지만 운영용 품질을 위�
 스크립트처럼 vision/audio connector를 BF16으로 제외해 다시 내보낸 모델과 정확도,
 VRAM, 지연을 비교해야 한다. 또한 같은 GPU에서 embedding, caption, 답변 생성을
 동시에 실행하므로 caption 작업은 초기에는 동시성 1의 별도 queue로 제한한다.
+
+## 2026-08-07 Vision caption 인덱싱 구현
+
+문서 처리 경로에 선택적 Vision caption을 연결했다. 운영 기본값은 품질 기준선이
+확정될 때까지 `disabled`다. `risk_only`는 text-only가
+불완전한 페이지, 검출된 표, 도형이 많은 mixed 페이지를 처리하고 `all_visual`은
+시각 요소가 있는 모든 페이지를 처리한다. 테스트 및 retrieval benchmark는 비교
+기준을 보존하도록 `disabled`를 명시한다.
+
+페이지는 기본 144 DPI PNG data URL로 일시 렌더링하며 이미지 자체는 DB에 저장하지
+않는다. Gemma 4는 summary, visible text, table 관계, diagram 관계, key/value,
+limitations와 confidence를 JSON으로 반환한다. 구조화 결과와 모델·caption 버전·상태는
+`document_pages.metadata`에 저장하고, 검색용 표현은 기존 `chunks`에
+`content_type=vision_caption`으로 추가한다. 원문은 `content_type=text`로 유지하며
+두 종류 모두 BGE-M3 텍스트 embedding과 기존 Dense/Keyword/Substring/Hybrid 검색을
+사용한다.
+
+Caption 실패는 해당 page metadata에 실패 상태만 기록하고 문서의 text-only
+인덱싱을 계속한다. 시각 질문 guard는 같은 페이지의 `vision_caption` chunk가 실제
+검색 Context에 있을 때만 시각 근거가 확보된 것으로 판단한다. retrieval trace
+schema v3는 후보와 최종 Context의 modality를 기록한다.
+
+실제 Manual 19페이지를 새 서비스 경로로 처리한 결과 JSON 파싱과
+`LB05 01 NLNNN` 추출에 성공했고, 동일 페이지에서 `text`, `vision_caption` chunk가
+각각 생성됐다. 이 결과는 단일 페이지 기능 검증이며 품질 기준선은 visual-only
+fixture를 text-only와 text+vision으로 각 3회 재실행해 확정해야 한다.
+
+추가로 Behavior Modeling II 20페이지 상태 다이어그램을 반복 확인한 결과, 화면
+문자열 사례와 달리 JSON 형식 실패, 잘못된 한국어 전사, 관계 누락과 계산값 모순이
+발생했다. 모델의 자체 confidence는 이 경우에도 1.0이어서 품질 gate로 사용할 수
+없다. JSON Schema 응답 강제로 최신 실행은 repair 없이 유효 JSON을 반환하고
+계산 답을 직접 삽입하는 문제는 줄었지만, 한국어 OCR과 표·관계 전사는 여전히
+노이즈가 있었다. diagram fixture 반복 평가와 별도 OCR 또는 더 강한 VLM 비교가
+끝나기 전에는 `risk_only`를 명시적으로 활성화한 실험 범위로 제한한다.

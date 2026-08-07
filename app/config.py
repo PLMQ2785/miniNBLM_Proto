@@ -1,5 +1,6 @@
 from functools import lru_cache
 import re
+from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -20,6 +21,9 @@ class Settings(BaseSettings):
     vllm_base_url: str = "http://localhost:8010/v1"
     vllm_api_key: str = "EMPTY"
     vllm_model: str = "gemma4"
+    vision_caption_mode: Literal["disabled", "risk_only", "all_visual"] = "disabled"
+    vision_caption_dpi: int = Field(default=144, ge=72, le=200)
+    vision_caption_version: str = "gemma4-page-caption-v1"
     readiness_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
     log_level: str = "INFO"
 

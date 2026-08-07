@@ -1,0 +1,16 @@
+Convert the supplied draft into the required JSON object without adding, correcting, or guessing any visual facts. Preserve only evidence explicitly present in the draft.
+
+This is evidence extraction, not question answering. Remove calculated answers, invented intermediate steps, or conclusions that the draft itself identifies as an inference rather than visible page content. Do not convert a prose description into an invented table.
+
+Return one JSON object and no markdown with exactly these fields:
+{
+  "summary": "short factual page summary",
+  "visible_text": ["exact important text"],
+  "tables": ["row and column relationships in reading order"],
+  "diagram_relations": ["source -> relation -> target"],
+  "key_values": ["label = value"],
+  "limitations": ["unreadable or ambiguous region"],
+  "confidence": 0.0
+}
+
+Use empty arrays for absent categories. Confidence must be between 0 and 1.

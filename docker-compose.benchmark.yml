@@ -29,6 +29,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://rag_benchmark_user:rag_benchmark_password@127.0.0.1:55434/rag_benchmark_db
       EMBEDDING_BASE_URL: http://127.0.0.1:8070
+      VISION_CAPTION_MODE: disabled
     volumes:
       - ./evaluation:/app/evaluation:ro
       - ./sample_fall_prevention.pdf:/app/sample_fall_prevention.pdf:ro

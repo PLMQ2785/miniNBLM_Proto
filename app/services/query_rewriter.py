@@ -16,6 +16,7 @@ MAX_RETRIEVAL_QUERY_CHARS = 500
 MAX_RETRIEVAL_QUERIES = 6
 MAX_LOCAL_RETRIEVAL_QUERIES = 4
 MAX_EVIDENCE_GOALS = 4
+JSON_OBJECT_RESPONSE_FORMAT = {"type": "json_object"}
 QUERY_LABEL_PATTERN = re.compile(
     r"^(?:검색\s*질의|독립형\s*(?:검색\s*)?질의|standalone\s+(?:retrieval\s+)?query)\s*:\s*",
     re.IGNORECASE,
@@ -52,14 +53,11 @@ def plan_retrieval_queries(question: str, history: list[dict[str, str]]) -> Retr
             messages,
             temperature=0.0,
             operation="query_rewrite",
+            response_format=JSON_OBJECT_RESPONSE_FORMAT,
         )
         return _normalize_query_plan(rewritten, original_question, fallback_on_error=False)
     except Exception:
         logger.warning("Retrieval query planning failed; attempting one format repair")
-    if "{" not in rewritten and "[" not in rewritten:
-        normalized = _normalize_rewritten_query(rewritten, original_question)
-        if normalized != rewritten.strip() or QUERY_LABEL_PATTERN.match(rewritten.strip()):
-            return _fallback_plan(normalized)
     try:
         repaired = client.chat_completion(
             [
@@ -74,17 +72,23 @@ def plan_retrieval_queries(question: str, history: list[dict[str, str]]) -> Retr
                 {
                     "role": "user",
                     "content": (
-                        f"Question: {original_question}\n\n"
+                        f"Conversation context:\n{_format_exchange(previous_exchange)}\n\n"
+                        f"Current question: {original_question}\n\n"
                         f"Malformed plan:\n{rewritten[:2000]}\n\nRepaired JSON:"
                     ),
                 },
             ],
             temperature=0.0,
             operation="query_rewrite_repair",
+            response_format=JSON_OBJECT_RESPONSE_FORMAT,
         )
         return _normalize_query_plan(repaired, original_question, fallback_on_error=False)
     except Exception:
-        logger.warning("Retrieval query plan repair failed; using the original question")
+        logger.warning("Retrieval query plan repair failed; using a safe fallback query")
+        if "{" not in rewritten and "[" not in rewritten:
+            normalized = _normalize_rewritten_query(rewritten, original_question)
+            if normalized != rewritten.strip() or QUERY_LABEL_PATTERN.match(rewritten.strip()):
+                return _fallback_plan(normalized)
         return _fallback_plan(original_question)
 
 
@@ -109,6 +113,14 @@ def _latest_exchange(history: list[dict[str, str]]) -> list[dict[str, str]]:
     if previous_assistant:
         exchange.append({"role": "assistant", "content": previous_assistant})
     return exchange
+
+
+def _format_exchange(exchange: list[dict[str, str]]) -> str:
+    if not exchange:
+        return "(none)"
+    return "\n".join(
+        f"[{message['role']}] {message['content']}" for message in exchange
+    )
 
 
 def _normalize_rewritten_query(rewritten: str, fallback: str) -> str:

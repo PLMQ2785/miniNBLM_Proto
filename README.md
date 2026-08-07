@@ -24,6 +24,12 @@ Browser
 
 기본 모델 경로는 `./google/google-gemma-4-12B-it-W4A16`입니다. 다른 위치를 사용하려면 `.env`의 `VLLM_MODEL_PATH`를 변경합니다.
 
+Docker 실행의 기본 `VISION_CAPTION_MODE=disabled`는 검증된 text-only 경로를
+유지합니다. `risk_only`는 텍스트만으로 불완전한 페이지, 표, 도형이 많은 mixed
+페이지를 선택하고 `all_visual`은 시각 요소가 검출된 모든 페이지를 처리합니다.
+Caption은 페이지당 이미지 1장을 순차 처리하므로 큰 PDF의 최초 인덱싱과
+재인덱싱 시간이 늘어납니다.
+
 ## Docker 빠른 시작
 
 ```bash
@@ -224,7 +230,7 @@ curl -N -b session.cookie \
 
 ## 현재 MVP 범위
 
-- PDF 추가·삭제, 텍스트 추출, page 단위 chunking 및 BGE-M3 embedding
+- PDF 추가·삭제, 텍스트 추출, page 단위 text/Vision caption chunking 및 BGE-M3 embedding
 - 50MB 서버 제한, PDF 시그니처·구조·암호화 여부 업로드 검증
 - 공개 회원가입, 로그인·로그아웃과 사용자별 문서·대화 격리
 - 일반 사용자 비밀번호 변경·다른 세션 폐기와 사용자 소유 데이터 회원탈퇴
@@ -232,7 +238,8 @@ curl -N -b session.cookie \
 - pgvector Dense, PostgreSQL FTS, pg_trgm 및 RRF Hybrid 검색
 - 로그인 사용자의 모든 indexed 문서를 대상으로 하는 작업공간 RAG 검색
 - 좌표 기반 PDF 텍스트 순서, 반복 머리말·꼬리말 제거와 표 행·열 보존
-- 페이지별 시각 의존도 감지 및 text-only로 확인할 수 없는 화면·도표 값의 명시적 거부
+- 페이지별 시각 의존도 감지, 선택적 Gemma 4 구조화 caption과 시각 근거가 검색되지
+  않은 화면·도표 질문의 명시적 거부
 - 최대 4개 근거 질의와 최대 2개 교차언어 질의, 검색 방식별 후보 보존 및 부분 근거 답변
 - 여러 대화 세션 저장, 최근 대화 자동 복원과 직전 대화 기반 후속 검색 질의 재작성
 - Gemma 4 12B W4A16 모델을 사용한 답변 생성
@@ -246,10 +253,8 @@ curl -N -b session.cookie \
 - PostgreSQL과 업로드 PDF의 checksum 포함 백업·복원 bundle
 
 기존에 인덱싱한 문서에 새 페이지 품질 메타데이터를 적용하려면 관리자 preset을
-다시 적용해 전체 재인덱싱해야 합니다. 이메일 확인, 비밀번호 재설정, OCR·Vision과
-영속 작업 큐는 후속 범위입니다.
-
-현재 Gemma 4 W4A16과 custom vLLM 이미지의 단일 PDF 페이지 Vision 입력은 실제로
-검증했습니다. 다만 Vision caption은 아직 문서 업로드·인덱싱 경로에 연결되지
-않았으므로 현재 서비스의 검색 근거는 text-only입니다. 도입안과 검증 결과는
+다시 적용해 전체 재인덱싱해야 합니다. Vision caption도 이 재인덱싱부터 생성됩니다.
+원본 텍스트와 caption은 각각 `text`, `vision_caption` chunk로 분리되지만 둘 다
+BGE-M3 텍스트 embedding으로 검색합니다. Scanned PDF 전용 OCR, 영속 작업 queue,
+전체 문서군 Vision 품질 benchmark는 후속 범위입니다. 상세 설계와 실제 검증 결과는
 `docs/reasoning-evaluation.md`를 참고합니다.

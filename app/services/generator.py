@@ -9,7 +9,7 @@ from app.services.citation_validator import (
     validate_answer_citations,
 )
 from app.services.prompt_builder import build_rag_messages
-from app.services.evidence_guard import assess_text_only_answerability
+from app.services.evidence_guard import assess_evidence_answerability
 from app.services.evidence_coverage import EvidenceMatrix
 from app.services.retriever import RetrievedChunk
 
@@ -30,9 +30,9 @@ EMPTY_CONTEXT_ANSWER = (
     "업로드된 자료에서 관련 내용을 찾지 못했습니다. "
     "질문을 조금 더 구체적으로 바꾸거나, 해당 내용이 포함된 자료를 업로드해 주세요."
 )
-TEXT_ONLY_LIMIT_ANSWER = (
+VISUAL_EVIDENCE_LIMIT_ANSWER = (
     "업로드된 자료에서 확인되지 않습니다. 해당 페이지의 핵심 근거가 이미지, "
-    "화면 또는 다이어그램에 포함되어 있어 현재 텍스트 전용 처리로는 정확히 확인할 수 없습니다."
+    "화면 또는 다이어그램에 포함되어 있으나 이 질문에 필요한 시각 근거가 검색되지 않았습니다."
 )
 
 
@@ -63,10 +63,10 @@ class StreamingAnswer:
             yield EMPTY_CONTEXT_ANSWER
             return
 
-        guard = assess_text_only_answerability(self.question, self.chunks)
+        guard = assess_evidence_answerability(self.question, self.chunks)
         if not guard.answerable:
-            self.generated = GeneratedAnswer(answer=TEXT_ONLY_LIMIT_ANSWER, sources=[])
-            yield TEXT_ONLY_LIMIT_ANSWER
+            self.generated = GeneratedAnswer(answer=VISUAL_EVIDENCE_LIMIT_ANSWER, sources=[])
+            yield VISUAL_EVIDENCE_LIMIT_ANSWER
             return
 
         messages = build_rag_messages(
@@ -109,9 +109,9 @@ def generate_answer(
     if not chunks:
         return GeneratedAnswer(answer=EMPTY_CONTEXT_ANSWER, sources=[])
 
-    guard = assess_text_only_answerability(question, chunks)
+    guard = assess_evidence_answerability(question, chunks)
     if not guard.answerable:
-        return GeneratedAnswer(answer=TEXT_ONLY_LIMIT_ANSWER, sources=[])
+        return GeneratedAnswer(answer=VISUAL_EVIDENCE_LIMIT_ANSWER, sources=[])
 
     messages = build_rag_messages(
         question,

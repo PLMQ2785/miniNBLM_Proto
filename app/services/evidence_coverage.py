@@ -27,6 +27,7 @@ RETRY_PATTERN = re.compile(r"^RETRY\s+(\d+)\s*:\s*(.+?)\s*$", re.IGNORECASE)
 MAX_COVERAGE_CONTEXT_CHARS = 18_000
 MAX_RETRY_CONTEXT_CHARS = 18_000
 MAX_RETRY_CONTEXT_CHUNKS = 20
+JSON_OBJECT_RESPONSE_FORMAT = {"type": "json_object"}
 
 
 @dataclass(frozen=True)
@@ -282,6 +283,7 @@ def assess_evidence_coverage(
             messages,
             temperature=0.0,
             operation="evidence_coverage",
+            response_format=JSON_OBJECT_RESPONSE_FORMAT,
         )
         assessment = _parse_coverage_response(response, queries)
     except Exception:

@@ -4,9 +4,8 @@
 
 - 기준일: 2026-08-07 (Asia/Seoul)
 - 프로젝트: 사용자 PDF 기반 범용 RAG Assistant
-- 현재 단계: 1차 MVP, 기본 안정화와 text-only grounding 1차 개선 완료
-- Git 상태: `feature/text-only-grounding`에서 평가 harness와 text-only 개선 작업 중,
-  아직 commit·main 병합·원격 반영 전
+- 현재 단계: 1차 MVP, 선택적 Vision caption 인덱싱 prototype과 후속 질의 안정화 완료
+- Git 상태: `feature/vision-caption-indexing`의 검증된 변경을 로컬 `main`에 병합
 - 패키지 관리: `uv`
 - 런타임: Docker Compose의 `api`, `db`, `embedding`, `llm` 4개 서비스
 - Web UI: React 없이 FastAPI가 Vanilla HTML/CSS/JavaScript 정적 파일 제공
@@ -15,7 +14,7 @@
 
 최근 검증 결과:
 
-- 빠른 단위/API 통합 테스트: `150 passed`, 실제 모델 E2E `1 skipped`
+- 빠른 단위/API 통합 테스트: `166 passed`, 실제 모델 E2E `1 skipped`
 - 실제 BGE-M3/Gemma 4 E2E: `1 passed`
 - 실제 Gemma 4 SSE에서 다중 delta, 출처, 완료 event와 대화 저장 확인
 - JSON 구조화 로그, `X-Request-ID`, Prometheus HTTP·검색·LLM 지표 확인
@@ -76,11 +75,26 @@
   `LB05-01 NLNNN`을 정확히 읽고, 직후 텍스트 요청과 네 컨테이너 정상 상태 확인
 - 양자화 projection에서 vLLM 0.25.0이 `weight.dtype`를 조회해 종료되던 문제를
   custom LLM 이미지의 `params_dtype` 보완으로 해결하고 이미지 입력을 요청당 1개로 제한
+- 선택된 페이지를 144 DPI PNG로 렌더링하고 Gemma 4 구조화 caption을 page metadata와
+  별도 `vision_caption` chunk로 저장해 기존 BGE-M3 검색에 통합
+- 실제 Manual 19페이지 전체 경로에서 `LB05 01 NLNNN` 구조화 추출,
+  `text`와 `vision_caption` 두 검색 chunk 생성 확인
+- 복잡한 상태 다이어그램은 형식 실패와 OCR·관계 모순이 반복되어 운영 기본값을
+  `disabled`로 유지하고, JSON Schema 강제 및 명시적 `risk_only` 실험 모드로 제한
+- query plan과 evidence coverage 출력에 JSON object 형식을 강제하고, 형식 복구에도
+  직전 질문·답변을 전달해 후속 질문이 원문 한 줄 검색으로 퇴행하지 않도록 보완
+- 기능 브랜치 작업 중 Hotfix 전환 후 복원하는 후속 질문에서 `git stash` 검색어와
+  Version management II 13페이지, Branch 20페이지를 함께 회수하고 답변 생성 확인
+- Source 번호가 유효하지만 모델이 Page 번호를 잘못 쓴 경우 chunk의 실제 page metadata로
+  결정적으로 정규화해 UI source 목록과 본문 인용이 일치하도록 보완
+- 답변 delta 종료 후 조건부 citation validation LLM과 DB 저장이 끝나야 source/done SSE를
+  전송한다. 재시작 후 실측 citation validation 1회는 7.36초였으며 현재 동작을 유지
 
 최근 작업:
 
 | Commit | 내용 |
 |---|---|
+| `ece7d7e` | text-only grounding, 교차언어 검색, 복합 추론 평가와 Vision 런타임 호환성 |
 | `7cb7cec` | 계정 생명주기·백업/복원과 복합 RAG 제한 재검색·계층 fallback·trace 통합 |
 | `158c952` | 답변 스트리밍, 관측성 및 범용 RAG prompt 적용 |
 | `2a8afe6` | 복합 retrieval과 후속 질문 검색 개선 |
@@ -489,8 +503,11 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
   추가된다. 완전한 인용 답변과 자료 부재 답변은 보정 호출을 생략한다.
 - 문서 처리와 재인덱싱이 API process의 background task를 사용한다.
 - 별도 worker/영속 queue가 없어 API process 수명과 자원을 공유한다.
-- 텍스트 기반 PDF만 지원하며 scanned PDF OCR은 없다.
-- 표, 그림, 도표용 Vision caption이 없다.
+- scanned PDF 전용 OCR은 없지만 선택된 visual page는 Vision caption으로 검색 가능하다.
+- Vision caption은 API background task에서 페이지당 1장씩 순차 생성하므로 큰 PDF의
+  처리 시간이 늘고 API process가 종료되면 기존 복구 흐름에 의존한다.
+- 현재 W4A16 Vision 품질은 Manual 19페이지 단일 사례만 실측했으며 전체 문서군
+  반복 benchmark와 vision connector BF16 재양자화 비교가 필요하다.
 - 새 layout/시각 위험 메타데이터는 재인덱싱 이후 기존 업로드 문서에 적용된다.
 - Prometheus 수집 서버, 대시보드와 경보 규칙은 아직 배포하지 않는다.
 - vLLM base image가 `latest`라 재빌드 시 버전이 변할 수 있다.
@@ -517,7 +534,7 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 - 다양한 업무·교육 문서로 평가 fixture 확대
 - 복합 추론 실패 사례 3회 반복, visual-only 답변 제한과 coverage 형식 안정화
 - 도메인별 용어·약어 정규화 및 reranker 비교
-- OCR과 표/그림/도표 Vision caption
+- scanned PDF OCR과 text+vision 전체 문서군 반복 benchmark
 - 문서 버전 관리, 이메일 인증, 학습 피드백
 
 ## 12. Git 및 작업공간 주의사항
@@ -525,7 +542,7 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 Git baseline은 `ceb4d37 V0.3.0`이다. 이후 통합 readiness, 작업공간 전체 검색,
 source 문서명, 문서 선택 제거, 대화 세션, 스트리밍·관측성, 계정 생명주기와
 복합 RAG 검색이 순서대로 반영되었다. 2026-08-07 현재 로컬 `main`의 최신
-통합 commit은 `7cb7cec`이며 `origin/main`보다 3개 commit 앞서 있어 push가
+통합 commit은 `ece7d7e`이며 `origin/main`보다 4개 commit 앞서 있어 push가
 필요하다. 최초
 commit에 실수로 포함된
 `id_container` RSA private key는 commit amend, reflog 만료 및 unreachable object

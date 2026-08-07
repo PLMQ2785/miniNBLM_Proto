@@ -134,7 +134,7 @@ def test_wrong_page_triggers_repair(
     monkeypatch.setattr(
         VLLMClient,
         "chat_completion",
-        lambda *args, **kwargs: "reset은 이력을 삭제합니다. [Source 1, Page 6]",
+        lambda *args, **kwargs: pytest.fail("Known source pages need no LLM repair"),
     )
 
     result = validate_answer_citations(
@@ -144,6 +144,28 @@ def test_wrong_page_triggers_repair(
     )
 
     assert result.endswith("[Source 1, Page 6]")
+
+
+def test_grouped_citation_pages_are_normalized_from_source_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+    chunks: list[RetrievedChunk],
+) -> None:
+    monkeypatch.setattr(
+        VLLMClient,
+        "chat_completion",
+        lambda *args, **kwargs: pytest.fail("Known source pages need no LLM repair"),
+    )
+
+    result = validate_answer_citations(
+        "차이는?",
+        (
+            "reset과 revert는 이력 처리 방식이 다릅니다. "
+            "[Source 1, Page 99; Source 2, Page 98]"
+        ),
+        chunks,
+    )
+
+    assert result.endswith("[Source 1, Page 6; Source 2, Page 7]")
 
 
 def test_parenthesized_source_is_not_treated_as_a_valid_citation(
