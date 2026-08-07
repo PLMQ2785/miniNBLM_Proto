@@ -1675,7 +1675,7 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
 - 빈 재검색 시 기존 Context 보존과 답변별 retrieval trace 관리자 조회
 - 문장별 Source/Page 검증, 조건부 인용 보정과 SSE `revision`
 - 7개 복합 Git/라이선스 fixture의 balanced+hybrid Recall@3·MRR@3 `1.0`
-- 빠른 단위/API 통합 테스트 `166 passed`, 실제 모델 E2E `1 skipped`
+- 빠른 단위/API 통합 테스트 `171 passed`, 실제 모델 E2E `1 skipped`
 - 최초 Context를 비운 실제 Gemma 4 강제 테스트에서 최대 2회 검색과 유효 인용 확인
 - API·DB·embedding·LLM 4개 컨테이너 및 `/health/ready` 정상 확인
 - `sample/`의 3개 문서군을 위한 복합·다층 추론 10개 fixture와 격리 benchmark runner
@@ -1696,6 +1696,8 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
 - 실제 Manual 19페이지에서 `LB05 01 NLNNN` 추출과 text/vision chunk 생성 확인
 - query plan·근거 충족도 JSON 출력을 강제하고 복구 시 직전 대화 문맥을 유지하며,
   절차 질문의 표준 명령어 검색 확장과 chunk metadata 기반 Source/Page 정규화 적용
+- 모든 근거 목표가 부족한 모호 질의는 LLM 초안을 스트리밍하지 않고 구체화를 요청하며,
+  citation repair의 전면 거부 시에는 유효하게 인용된 문장만 보존하는 fallback 적용
 
 빠른 테스트는 `./scripts/test.sh -q`, 실제 모델 E2E는 네 서비스 실행 후
 `./scripts/e2e.sh -q`로 수행한다. E2E API와 DB는 운영 데이터와 분리된다.

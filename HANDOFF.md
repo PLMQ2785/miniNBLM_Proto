@@ -14,7 +14,7 @@
 
 최근 검증 결과:
 
-- 빠른 단위/API 통합 테스트: `166 passed`, 실제 모델 E2E `1 skipped`
+- 빠른 단위/API 통합 테스트: `171 passed`, 실제 모델 E2E `1 skipped`
 - 실제 BGE-M3/Gemma 4 E2E: `1 passed`
 - 실제 Gemma 4 SSE에서 다중 delta, 출처, 완료 event와 대화 저장 확인
 - JSON 구조화 로그, `X-Request-ID`, Prometheus HTTP·검색·LLM 지표 확인
@@ -89,6 +89,11 @@
   결정적으로 정규화해 UI source 목록과 본문 인용이 일치하도록 보완
 - 답변 delta 종료 후 조건부 citation validation LLM과 DB 저장이 끝나야 source/done SSE를
   전송한다. 재시작 후 실측 citation validation 1회는 7.36초였으며 현재 동작을 유지
+- citation repair가 `NO_SOURCE`를 반환해도 초안의 유효한 Source/Page 인용 문장은
+  보존하고 인용 없는 주장은 제거하며, 모든 근거 목표가 부족하면 LLM 초안을 스트리밍하지
+  않고 수행 작업·오류·현재 상태를 구체화해 달라는 단일 응답으로 종료
+- 실제 commit rollback 모호 질의에서 `revision` 없이 구체화 요청 1회, 빈 source를
+  반환하는 경로를 확인하고 잘못된 `[Source 1, Page 5, 4, ...]` 목록도 무효 처리
 
 최근 작업:
 

@@ -168,6 +168,14 @@ def test_grouped_citation_pages_are_normalized_from_source_chunks(
     assert result.endswith("[Source 1, Page 6; Source 2, Page 7]")
 
 
+def test_malformed_source_number_list_is_not_a_valid_citation(
+    chunks: list[RetrievedChunk],
+) -> None:
+    answer = "관련 자료입니다. [Source 1, Page 6, 2, 5, 7]"
+
+    assert answer_needs_citation_repair(answer, chunks) is True
+
+
 def test_parenthesized_source_is_not_treated_as_a_valid_citation(
     monkeypatch: pytest.MonkeyPatch,
     chunks: list[RetrievedChunk],
@@ -216,6 +224,35 @@ def test_repair_can_reject_all_unsupported_claims(
     result = validate_answer_citations("자료 밖 질문", "근거 없는 답변입니다.", chunks)
 
     assert result.startswith("[[NO_SOURCE]]")
+
+
+def test_no_source_repair_preserves_only_validly_cited_claims(
+    monkeypatch: pytest.MonkeyPatch,
+    chunks: list[RetrievedChunk],
+) -> None:
+    monkeypatch.setattr(
+        VLLMClient,
+        "chat_completion",
+        lambda *args, **kwargs: (
+            "[[NO_SOURCE]] 업로드된 자료에서 확인되지 않습니다."
+        ),
+    )
+    draft = (
+        "reset은 이후 이력을 삭제합니다. [Source 1, Page 6]\n"
+        "문제가 생기면 reflog로 임의 복구하면 됩니다."
+    )
+
+    result = validate_answer_citations(
+        "commit rollback 중 꼬이면 어떻게 하나요?",
+        draft,
+        chunks,
+    )
+
+    assert "reset은 이후 이력을 삭제" in result
+    assert "[Source 1, Page 6]" in result
+    assert "reflog" not in result
+    assert "구체적인 상황을 추가로 알려주세요" in result
+    assert not result.startswith("[[NO_SOURCE]]")
 
 
 def test_repair_removes_bracketed_revised_answer_heading(

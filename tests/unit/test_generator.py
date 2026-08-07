@@ -1,7 +1,8 @@
 import pytest
 
 from app.clients.vllm_client import VLLMClient
-from app.services.generator import generate_answer
+from app.services.evidence_coverage import EvidenceMatrix
+from app.services.generator import INSUFFICIENT_EVIDENCE_ANSWER, generate_answer
 from app.services.retriever import RetrievedChunk
 
 
@@ -242,6 +243,29 @@ def test_generate_answer_blocks_exact_visual_page_request_without_llm(
     )
 
     assert "시각 근거가 검색되지 않았습니다" in generated.answer
+    assert generated.sources == []
+
+
+def test_generate_answer_requests_detail_when_all_evidence_goals_are_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    retrieved_chunk: RetrievedChunk,
+) -> None:
+    monkeypatch.setattr(
+        VLLMClient,
+        "chat_completion",
+        lambda *args, **kwargs: pytest.fail("Insufficient evidence must not call the answer LLM"),
+    )
+
+    generated = generate_answer(
+        "rollback 중 꼬이면 어떻게 하나요?",
+        [retrieved_chunk],
+        evidence_matrix=EvidenceMatrix(
+            status="insufficient",
+            missing_goals=("현재 상태별 안전한 복구 절차",),
+        ),
+    )
+
+    assert generated.answer == INSUFFICIENT_EVIDENCE_ANSWER
     assert generated.sources == []
 
 

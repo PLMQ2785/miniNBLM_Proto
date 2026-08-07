@@ -34,6 +34,10 @@ VISUAL_EVIDENCE_LIMIT_ANSWER = (
     "업로드된 자료에서 확인되지 않습니다. 해당 페이지의 핵심 근거가 이미지, "
     "화면 또는 다이어그램에 포함되어 있으나 이 질문에 필요한 시각 근거가 검색되지 않았습니다."
 )
+INSUFFICIENT_EVIDENCE_ANSWER = (
+    "업로드된 자료만으로는 현재 질문의 구체적인 상황에 맞는 답변을 확정하기 어렵습니다. "
+    "수행한 작업, 발생한 오류와 현재 상태를 조금 더 구체적으로 알려주세요."
+)
 
 
 @dataclass(frozen=True)
@@ -67,6 +71,10 @@ class StreamingAnswer:
         if not guard.answerable:
             self.generated = GeneratedAnswer(answer=VISUAL_EVIDENCE_LIMIT_ANSWER, sources=[])
             yield VISUAL_EVIDENCE_LIMIT_ANSWER
+            return
+        if self.evidence_matrix is not None and self.evidence_matrix.status == "insufficient":
+            self.generated = GeneratedAnswer(answer=INSUFFICIENT_EVIDENCE_ANSWER, sources=[])
+            yield INSUFFICIENT_EVIDENCE_ANSWER
             return
 
         messages = build_rag_messages(
@@ -112,6 +120,8 @@ def generate_answer(
     guard = assess_evidence_answerability(question, chunks)
     if not guard.answerable:
         return GeneratedAnswer(answer=VISUAL_EVIDENCE_LIMIT_ANSWER, sources=[])
+    if evidence_matrix is not None and evidence_matrix.status == "insufficient":
+        return GeneratedAnswer(answer=INSUFFICIENT_EVIDENCE_ANSWER, sources=[])
 
     messages = build_rag_messages(
         question,

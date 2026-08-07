@@ -74,6 +74,13 @@ def validate_answer_citations(
         CITATION_VALIDATION_REQUESTS.labels(status="invalid").inc()
         return answer
     if NO_SOURCE_PATTERN.match(repaired):
+        grounded_fallback = _grounded_claim_fallback(question, answer, chunks)
+        if grounded_fallback is not None:
+            logger.warning(
+                "Citation validation rejected grounded claims; preserving cited subset"
+            )
+            CITATION_VALIDATION_REQUESTS.labels(status="partial_fallback").inc()
+            return grounded_fallback
         CITATION_VALIDATION_REQUESTS.labels(status="no_source").inc()
         return repaired
     if _has_invalid_citation(repaired, chunks) or not valid_cited_source_indexes(repaired, chunks):
@@ -178,6 +185,9 @@ def _has_invalid_citation(answer: str, chunks: list[RetrievedChunk]) -> bool:
         matches = list(CITATION_ITEM_PATTERN.finditer(group.group("body")))
         if not matches:
             return True
+        remainder = CITATION_ITEM_PATTERN.sub("", group.group("body"))
+        if re.sub(r"[;\s]+", "", remainder):
+            return True
         for match in matches:
             source_index = int(match.group("source")) - 1
             if not 0 <= source_index < len(chunks):
@@ -213,6 +223,40 @@ def _claim_segments(line: str) -> list[str]:
         return []
     segments = [match.group(0).strip() for match in CLAIM_SEGMENT_PATTERN.finditer(normalized)]
     return [segment for segment in segments if segment]
+
+
+def _grounded_claim_fallback(
+    question: str,
+    answer: str,
+    chunks: list[RetrievedChunk],
+) -> str | None:
+    grounded_claims: list[str] = []
+    seen: set[str] = set()
+    for raw_line in answer.splitlines():
+        for claim in _claim_segments(raw_line):
+            if _has_invalid_citation(claim, chunks):
+                continue
+            if not valid_cited_source_indexes(claim, chunks):
+                continue
+            normalized = claim.strip()
+            key = normalized.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            grounded_claims.append(normalized)
+
+    if not grounded_claims:
+        return None
+    limitation = (
+        "업로드된 자료에서는 위 내용까지만 확인됩니다. 나머지 부분을 판단하려면 "
+        "질문의 구체적인 상황을 추가로 알려주세요."
+        if re.search(r"[가-힣]", question)
+        else (
+            "The uploaded material supports only the statements above. Please provide "
+            "more details about the specific situation for the remaining parts."
+        )
+    )
+    return "\n".join([*grounded_claims, "", limitation])
 
 
 def _build_validation_request(
