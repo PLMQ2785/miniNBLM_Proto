@@ -1634,6 +1634,10 @@ retrieve top 30
 FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 네 검색
 알고리즘을 청킹 preset과 독립적으로 선택할 수 있다.
 
+계정 생명주기·백업/복원과 복합 RAG 개선은 `7cb7cec`으로 커밋하고 로컬
+`main`에 fast-forward 병합했다. 현재 `main`은 `origin/main`보다 3개 commit
+앞서 있으며 아직 push하지 않았다.
+
 추가로 다음 안정화 항목을 완료했다.
 
 - 공개 회원가입과 사용자별 문서·대화 격리
@@ -1665,11 +1669,28 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
 - 일반 사용자 비밀번호 변경 UI와 다른 로그인 세션 폐기
 - 비밀번호·사용자명 재확인 후 계정 소유 문서·대화·PDF 원본 회원탈퇴
 - PostgreSQL dump와 uploads, manifest, SHA-256을 묶는 백업·복원 스크립트
-- 복합 질문 최대 4개 질의 분해, RRF, 인접 chunk와 BGE-M3 semantic reranker
+- 복합 질문 최대 4개 근거 질의와 최대 2개 교차언어 질의, RRF, 인접 chunk와
+  BGE-M3 semantic reranker
 - 근거 충족도 기반 표적 검색과 page FTS·trigram 계층 fallback 최대 2회
 - 빈 재검색 시 기존 Context 보존과 답변별 retrieval trace 관리자 조회
 - 문장별 Source/Page 검증, 조건부 인용 보정과 SSE `revision`
 - 7개 복합 Git/라이선스 fixture의 balanced+hybrid Recall@3·MRR@3 `1.0`
+- 빠른 단위/API 통합 테스트 `150 passed`, 실제 모델 E2E `1 skipped`
+- 최초 Context를 비운 실제 Gemma 4 강제 테스트에서 최대 2회 검색과 유효 인용 확인
+- API·DB·embedding·LLM 4개 컨테이너 및 `/health/ready` 정상 확인
+- `sample/`의 3개 문서군을 위한 복합·다층 추론 10개 fixture와 격리 benchmark runner
+- text-only page 감사, `parse/retrieval/reasoning/citation/calibration` 실패 분류 절차
+- 19개 PDF 696페이지 1차 실측: 복합 추론 10개 중 pass 3, partial 4, fail 3
+- 시각 전용 페이지 환각 2건, 설계 지연 감점 retrieval 실패 1건을 개선 기준선으로 확보
+- 좌표 기반 block 추출, 반복 머리말·꼬리말/페이지 번호 제거, 표 구조와 페이지별
+  언어·시각 근거 위험 metadata 저장
+- 화면 전사·다이어그램 계산 질문의 text-only 사전 차단, 교차언어 검색,
+  evidence matrix 부분 답변과 재검색 Context 보존 적용
+- 최종 실제 모델 10건 잠정 수동 평가 `pass 7 / partial 2 / fail 1`; 시각 전용
+  2건은 안전 거부, 영문 지연 감점은 recall 1.0 및 정량/정성 구분 답변으로 개선
+- Gemma 4 W4A16의 실제 PDF 페이지 이미지 입력과 화면 문자열 판독 성공
+- vLLM 양자화 vision projection dtype 호환성 보완 및 요청당 이미지 1개 제한 적용
+- Vision caption의 업로드·인덱싱 통합은 아직 후속 범위
 
 빠른 테스트는 `./scripts/test.sh -q`, 실제 모델 E2E는 네 서비스 실행 후
 `./scripts/e2e.sh -q`로 수행한다. E2E API와 DB는 운영 데이터와 분리된다.

@@ -24,6 +24,11 @@ CITATION_GROUP_PATTERN = re.compile(
     re.IGNORECASE,
 )
 SOURCE_TOKEN_PATTERN = re.compile(r"\bSource\s+\d+\b", re.IGNORECASE)
+BARE_SOURCE_PATTERN = re.compile(
+    r"\bSource\s+(?P<source>\d+)\b(?!\s*,\s*Page\b)",
+    re.IGNORECASE,
+)
+CHUNK_SUFFIX_PATTERN = re.compile(r"\s*,\s*Chunk\s+\d+\b", re.IGNORECASE)
 MARKDOWN_PREFIX_PATTERN = re.compile(r"^(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+)")
 WORD_PATTERN = re.compile(r"[0-9A-Za-z가-힣]")
 CLAIM_SEGMENT_PATTERN = re.compile(
@@ -37,6 +42,8 @@ def validate_answer_citations(
     answer: str,
     chunks: list[RetrievedChunk],
 ) -> str:
+    answer = _strip_answer_heading(answer)
+    answer = _normalize_structural_citations(answer, chunks)
     if not chunks or NO_SOURCE_PATTERN.match(answer) or not answer_needs_citation_repair(answer, chunks):
         CITATION_VALIDATION_REQUESTS.labels(status="skipped").inc()
         return answer
@@ -77,6 +84,23 @@ def validate_answer_citations(
     status = "unchanged" if repaired == answer.strip() else "repaired"
     CITATION_VALIDATION_REQUESTS.labels(status=status).inc()
     return repaired
+
+
+def _normalize_structural_citations(
+    answer: str,
+    chunks: list[RetrievedChunk],
+) -> str:
+    def add_page(match: re.Match) -> str:
+        source_index = int(match.group("source")) - 1
+        if not 0 <= source_index < len(chunks):
+            return match.group(0)
+        page = chunks[source_index].page_start
+        if page is None:
+            return match.group(0)
+        return f"Source {source_index + 1}, Page {page}"
+
+    normalized = BARE_SOURCE_PATTERN.sub(add_page, answer)
+    return CHUNK_SUFFIX_PATTERN.sub("", normalized)
 
 
 def answer_needs_citation_repair(answer: str, chunks: list[RetrievedChunk]) -> bool:
@@ -190,5 +214,14 @@ def _normalize_repaired_answer(response: str) -> str:
     if normalized.startswith("```"):
         normalized = re.sub(r"^```(?:markdown|text)?\s*", "", normalized, flags=re.IGNORECASE)
         normalized = re.sub(r"\s*```$", "", normalized)
-    normalized = re.sub(r"^\s*(?:REVISED\s+)?ANSWER\s*:\s*", "", normalized, flags=re.IGNORECASE)
+    return _strip_answer_heading(normalized)
+
+
+def _strip_answer_heading(answer: str) -> str:
+    normalized = re.sub(
+        r"^\s*(?:#{1,6}\s*)?\[?\s*(?:REVISED\s+)?ANSWER\s*\]?\s*:?\s*",
+        "",
+        answer,
+        flags=re.IGNORECASE,
+    )
     return normalized.strip()

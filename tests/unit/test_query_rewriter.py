@@ -179,3 +179,28 @@ def test_malformed_structured_response_falls_back_to_original_question(
 
     assert plan.standalone_query == "원래 질문"
     assert plan.queries == ("원래 질문",)
+
+
+def test_cross_language_query_is_preserved_without_becoming_evidence_goal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        VLLMClient,
+        "chat_completion",
+        lambda *args, **kwargs: (
+            '{"standalone_query":"분석 보고서 지연 감점과 모델 불일치 영향",'
+            '"evidence_goals":["지연 일수별 감점률","모델 일치성 평가 영향"],'
+            '"queries":["분석 보고서 지연 감점","분석 설계 모델 일치성"],'
+            '"cross_language_queries":["project report late penalty",'
+            '"implementation design model consistency"]}'
+        ),
+    )
+
+    plan = plan_retrieval_queries("복합 질문", [])
+
+    assert plan.evidence_goals == ("지연 일수별 감점률", "모델 일치성 평가 영향")
+    assert plan.queries[-2:] == (
+        "project report late penalty",
+        "implementation design model consistency",
+    )
+    assert all(query not in plan.evidence_goals for query in plan.queries[-2:])

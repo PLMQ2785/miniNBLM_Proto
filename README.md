@@ -180,6 +180,16 @@ retrieval 지연을 비교할 때는 다음 명령을 사용합니다. LLM은 �
 ./scripts/benchmark-retrieval.sh
 ```
 
+로컬 `sample/`의 실제 PDF를 사용해 복합·다층 추론과 text-only 한계를
+문서군별로 평가할 때는 다음 명령을 사용합니다. 실제 embedding과 LLM을
+사용하지만 전용 tmpfs DB에서 실행됩니다.
+
+```bash
+./scripts/benchmark-reasoning.sh --group Manual
+./scripts/benchmark-reasoning.sh --group OpenSWDesign
+./scripts/benchmark-reasoning.sh --group OpenSWUnderstand
+```
+
 회원가입, 문서 업로드와 질문 요청 예시:
 
 ```bash
@@ -209,6 +219,7 @@ curl -N -b session.cookie \
 - [프런트엔드 요구사항과 구조 설계](docs/frontend-design.md)
 - [검색 preset 요구사항](docs/retrieval-presets.md)
 - [Retrieval 품질 평가 및 benchmark](docs/retrieval-evaluation.md)
+- [복합·다층 추론 및 text-only 한계 평가](docs/reasoning-evaluation.md)
 - [운영, 검증 및 문제 해결](docs/operations.md)
 
 ## 현재 MVP 범위
@@ -220,6 +231,9 @@ curl -N -b session.cookie \
 - 명시적 관리자 bootstrap과 최초 로그인 비밀번호 변경 강제
 - pgvector Dense, PostgreSQL FTS, pg_trgm 및 RRF Hybrid 검색
 - 로그인 사용자의 모든 indexed 문서를 대상으로 하는 작업공간 RAG 검색
+- 좌표 기반 PDF 텍스트 순서, 반복 머리말·꼬리말 제거와 표 행·열 보존
+- 페이지별 시각 의존도 감지 및 text-only로 확인할 수 없는 화면·도표 값의 명시적 거부
+- 최대 4개 근거 질의와 최대 2개 교차언어 질의, 검색 방식별 후보 보존 및 부분 근거 답변
 - 여러 대화 세션 저장, 최근 대화 자동 복원과 직전 대화 기반 후속 검색 질의 재작성
 - Gemma 4 12B W4A16 모델을 사용한 답변 생성
 - SSE 기반 답변 스트리밍과 완료된 대화의 이력 저장
@@ -231,4 +245,11 @@ curl -N -b session.cookie \
 - JSON 구조화 로그, request ID와 Prometheus HTTP·검색·LLM 지표
 - PostgreSQL과 업로드 PDF의 checksum 포함 백업·복원 bundle
 
-이메일 확인, 비밀번호 재설정, OCR과 영속 작업 큐는 후속 범위입니다.
+기존에 인덱싱한 문서에 새 페이지 품질 메타데이터를 적용하려면 관리자 preset을
+다시 적용해 전체 재인덱싱해야 합니다. 이메일 확인, 비밀번호 재설정, OCR·Vision과
+영속 작업 큐는 후속 범위입니다.
+
+현재 Gemma 4 W4A16과 custom vLLM 이미지의 단일 PDF 페이지 Vision 입력은 실제로
+검증했습니다. 다만 Vision caption은 아직 문서 업로드·인덱싱 경로에 연결되지
+않았으므로 현재 서비스의 검색 근거는 text-only입니다. 도입안과 검증 결과는
+`docs/reasoning-evaluation.md`를 참고합니다.

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import json
 import logging
 from pathlib import Path
 import re
@@ -33,6 +34,53 @@ class EvidenceCoverageAssessment:
     sufficient: bool
     missing_queries: tuple[str, ...] = ()
     retry_queries: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class EvidenceMatrix:
+    status: str
+    supported_goals: tuple[str, ...] = ()
+    missing_goals: tuple[str, ...] = ()
+
+
+def build_evidence_matrix(
+    goals: tuple[str, ...],
+    trace: RetrievalTrace | None,
+) -> EvidenceMatrix:
+    normalized_goals = tuple(dict.fromkeys(goal.strip() for goal in goals if goal.strip()))
+    if not normalized_goals or trace is None:
+        return EvidenceMatrix(status="unchecked")
+
+    if trace.coverage_events and trace.coverage_events[-1].get("status") == "unchecked":
+        return EvidenceMatrix(status="unchecked")
+
+    decisive_event = next(
+        (
+            event
+            for event in reversed(trace.coverage_events)
+            if event.get("status") == "sufficient" or event.get("missing_queries")
+        ),
+        None,
+    )
+    if decisive_event is None:
+        return EvidenceMatrix(status="unchecked")
+    if decisive_event.get("status") == "sufficient":
+        return EvidenceMatrix(status="complete", supported_goals=normalized_goals)
+
+    missing_values = {
+        str(query).strip().casefold()
+        for query in decisive_event.get("missing_queries", [])
+        if str(query).strip()
+    }
+    missing = tuple(goal for goal in normalized_goals if goal.casefold() in missing_values)
+    supported = tuple(goal for goal in normalized_goals if goal.casefold() not in missing_values)
+    if not missing:
+        return EvidenceMatrix(status="unchecked")
+    return EvidenceMatrix(
+        status="partial" if supported else "insufficient",
+        supported_goals=supported,
+        missing_goals=missing,
+    )
 
 
 def complete_evidence_coverage(
@@ -249,7 +297,7 @@ def assess_evidence_coverage(
 
 
 def _coverage_queries(queries: tuple[str, ...]) -> tuple[str, ...]:
-    return queries[1:] if len(queries) > 1 else queries
+    return queries
 
 
 def _build_coverage_request(
@@ -282,6 +330,32 @@ def _parse_coverage_response(
     response: str,
     queries: tuple[str, ...],
 ) -> EvidenceCoverageAssessment:
+    if json_payload := _parse_coverage_json(response):
+        status = str(json_payload.get("status", "")).upper()
+        if status == "SUFFICIENT":
+            return EvidenceCoverageAssessment(True)
+        raw_missing = json_payload.get("missing", [])
+        missing_indexes = [
+            int(value)
+            for value in raw_missing
+            if str(value).isdigit() and 1 <= int(value) <= len(queries)
+        ] if isinstance(raw_missing, list) else []
+        raw_retries = json_payload.get("retry_queries", {})
+        retry_by_index = {
+            int(index): str(value).strip()
+            for index, value in raw_retries.items()
+            if str(index).isdigit() and str(value).strip()
+        } if isinstance(raw_retries, dict) else {}
+        if status == "INSUFFICIENT" and missing_indexes:
+            return EvidenceCoverageAssessment(
+                False,
+                tuple(queries[index - 1] for index in missing_indexes),
+                tuple(
+                    retry_by_index.get(index, queries[index - 1])
+                    for index in missing_indexes
+                ),
+            )
+
     lines = [_normalize_response_line(line) for line in response.splitlines()]
     lines = [line for line in lines if line]
     status = None
@@ -315,6 +389,18 @@ def _parse_coverage_response(
     return EvidenceCoverageAssessment(False, missing_queries, retry_queries)
 
 
+def _parse_coverage_json(response: str) -> dict | None:
+    candidate = response.strip()
+    if candidate.startswith("```"):
+        candidate = re.sub(r"^```(?:json)?\s*", "", candidate, flags=re.IGNORECASE)
+        candidate = re.sub(r"\s*```$", "", candidate)
+    try:
+        payload = json.loads(candidate)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def _normalize_response_line(line: str) -> str:
     normalized = line.strip()
     if normalized.startswith("```"):
@@ -330,13 +416,7 @@ def _merge_retry_chunks(
     merged: list[RetrievedChunk] = []
     seen_ids: set[int] = set()
     used_chars = 0
-    reserve = MAX_RETRY_CONTEXT_CHUNKS // 2
-    ordered_chunks = [
-        *supplemental[:reserve],
-        *original[:reserve],
-        *supplemental[reserve:],
-        *original[reserve:],
-    ]
+    ordered_chunks = [*original, *supplemental]
     for chunk in ordered_chunks:
         if chunk.chunk_id in seen_ids:
             continue

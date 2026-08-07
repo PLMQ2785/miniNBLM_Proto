@@ -4,7 +4,9 @@
 
 - 기준일: 2026-08-07 (Asia/Seoul)
 - 프로젝트: 사용자 PDF 기반 범용 RAG Assistant
-- 현재 단계: 1차 MVP, 기본 안정화, 복합 질의 검색·관측성·답변 스트리밍·계정 생명주기 완료
+- 현재 단계: 1차 MVP, 기본 안정화와 text-only grounding 1차 개선 완료
+- Git 상태: `feature/text-only-grounding`에서 평가 harness와 text-only 개선 작업 중,
+  아직 commit·main 병합·원격 반영 전
 - 패키지 관리: `uv`
 - 런타임: Docker Compose의 `api`, `db`, `embedding`, `llm` 4개 서비스
 - Web UI: React 없이 FastAPI가 Vanilla HTML/CSS/JavaScript 정적 파일 제공
@@ -13,7 +15,7 @@
 
 최근 검증 결과:
 
-- 빠른 단위/API 통합 테스트: `132 passed`, 실제 모델 E2E `1 skipped`
+- 빠른 단위/API 통합 테스트: `150 passed`, 실제 모델 E2E `1 skipped`
 - 실제 BGE-M3/Gemma 4 E2E: `1 passed`
 - 실제 Gemma 4 SSE에서 다중 delta, 출처, 완료 event와 대화 저장 확인
 - JSON 구조화 로그, `X-Request-ID`, Prometheus HTTP·검색·LLM 지표 확인
@@ -43,7 +45,7 @@
 - DB dump와 uploads, manifest, SHA-256을 묶는 백업 bundle 생성·검증 완료
 - Playwright 계정 smoke: 일반 사용자 비밀번호 변경, 390px overflow 없음,
   회원탈퇴 후 세션·재로그인 차단 확인
-- 복합 Git 질의에서 최대 4개 검색 질의, RRF, 인접 chunk, BGE-M3 semantic
+- 복합 Git 질의에서 최대 4개 근거 질의와 최대 2개 교차언어 질의, RRF, 인접 chunk, BGE-M3 semantic
   reranker와 근거 충족도 기반 제한 재검색(표적 chunk + page 계층, 최대 2회) 확인
 - 실제 Gemma 4에서 reset·revert·DVCS 근거를 여러 PDF 페이지에서 결합하고,
   답변에 인용된 5개 문서 페이지만 source로 반환하는 경로 확인
@@ -53,11 +55,35 @@
   Hit@3, MRR@3 모두 `1.000` 확인
 - 최초 Context를 비운 실제 Gemma 강제 테스트에서 page 계층 fallback과 표적
   검색이 정확히 2회 내 종료되고 reset·revert·DVCS 결합 답변 생성 확인
+- 실제 `sample/` 19개 PDF, 696페이지의 text-only 감사와 문서군별 복합 추론
+  10개 기준선 완료: pass 3, partial 4, fail 3
+- 시각 전용 2개 사례에서 정답 페이지는 검색했지만 화면 근거가 없어 잘못된 값을
+  생성했고, 설계 지연 감점 사례는 source recall 0으로 retrieval 실패 확인
+- 설계 지연 감점 실패 trace에서 영문 정답 문서에 대한 검색 계획이 한국어 질의만
+  생성되어 hybrid와 page 후보가 한국어 문서에 편향된 교차언어 retrieval gap 확인
+- 좌표 기반 PDF block 순서, 반복 머리말·꼬리말/페이지 번호 제거, 표 구조 보존과
+  페이지별 언어·image/drawing·시각 근거 위험 메타데이터를 chunk까지 전달
+- 페이지를 지정한 화면 전사·다이어그램 계산 질문은 시각 근거가 있으면 LLM 호출 전에
+  text-only 한계 답변으로 종료하고 source를 반환하지 않음
+- 교차언어 검색어 1~2개, query plan 형식 복구 1회, 검색 방식/질의별 후보 보존,
+  재검색 시 최초 Context 우선 보존과 근거 매트릭스 기반 부분 답변 적용
+- embedding query 5개 batch 계약 준수, 생성 토큰 제한·반복 퇴행 감지 후 1회 재생성,
+  불완전한 Source/Page 구조 보정 적용
+- 최종 10개 실제 모델 실행(`20260807T060016Z`)에서 source recall은 8건 1.0,
+  2건 0.75/0.667이며 시각 전용 2건은 모두 source 없이 거부됨. 잠정 수동 평가는
+  `pass 7 / partial 2 / fail 1`; RS485 `L` 오독과 stash의 ignore 해제 누락은 잔여 회귀
+- Gemma 4 W4A16의 실제 `image_url` 입력으로 PDF 화면 문자열
+  `LB05-01 NLNNN`을 정확히 읽고, 직후 텍스트 요청과 네 컨테이너 정상 상태 확인
+- 양자화 projection에서 vLLM 0.25.0이 `weight.dtype`를 조회해 종료되던 문제를
+  custom LLM 이미지의 `params_dtype` 보완으로 해결하고 이미지 입력을 요청당 1개로 제한
 
 최근 작업:
 
 | Commit | 내용 |
 |---|---|
+| `7cb7cec` | 계정 생명주기·백업/복원과 복합 RAG 제한 재검색·계층 fallback·trace 통합 |
+| `158c952` | 답변 스트리밍, 관측성 및 범용 RAG prompt 적용 |
+| `2a8afe6` | 복합 retrieval과 후속 질문 검색 개선 |
 | `e49d13b` | 사용자 소유의 모든 indexed 문서를 검색하도록 API/검색 쿼리 전환 |
 | `39ef1e7` | RAG source에 문서 제목을 포함하고 UI/PDF panel에 표시 |
 | `2b1f005` | 채팅 요청과 UI에서 문서 선택 개념 제거 |
@@ -157,7 +183,7 @@ WSL mirrored networking에서 Docker bridge port가 Windows localhost로 전달�
 - 후속 질문 생성에 최근 8개 메시지를 최대 8,000자까지 전달
 - 후속 질문 검색에는 직전 사용자 질문 500자와 답변 1,000자까지만 사용해
   독립형 retrieval query를 생성하며, 최종 답변과 저장에는 원문 질문을 유지
-- 복합 질문은 독립형 질문을 포함해 최대 4개 검색 질의로 분해하고 RRF로 병합
+- 복합 질문은 최대 4개 근거 검색어와 최대 2개 반대 언어 검색어로 계획하고 RRF로 병합
 - Dense/Hybrid 후보는 원질문·세부 질의 BGE-M3 유사도와 기존 순위로 재정렬하며
   질의별 최상위 검색·의미 후보를 보존
 - 검색 근거 충족도를 LLM으로 검사하고 부족한 전제는 표적 chunk 검색과 page
@@ -424,6 +450,7 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 | `docs/frontend-design.md` | FE 요구사항과 구조 설계 |
 | `docs/retrieval-presets.md` | preset 및 검색 알고리즘 정책 |
 | `docs/retrieval-evaluation.md` | retrieval 평가 fixture, 지표와 benchmark 결과 |
+| `docs/reasoning-evaluation.md` | 실제 수업자료 복합 추론, 수동 rubric과 text-only 한계 평가 |
 | `docker-compose.yml` | 운영 4개 서비스 |
 | `docker-compose.test.yml` | 빠른 테스트용 임시 DB |
 | `docker-compose.e2e.yml` | 실제 모델 E2E용 API/DB |
@@ -433,6 +460,7 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 | `scripts/e2e.sh` | 실제 모델 E2E 진입점 |
 | `backup.sh`, `restore.sh` | PostgreSQL·uploads 백업 bundle 생성 및 복원 |
 | `scripts/benchmark-retrieval.sh` | preset/알고리즘 품질·지연 benchmark 진입점 |
+| `scripts/benchmark-reasoning.sh` | 문서군별 실제 LLM 복합 추론 benchmark 진입점 |
 | `evaluation/` | 버전 관리되는 질문/source fixture와 혼동 문서 |
 | `app/evaluation/` | fixture 검증, metric 계산과 benchmark runner |
 | `app/main.py` | FastAPI 조립 및 lifespan |
@@ -463,6 +491,7 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 - 별도 worker/영속 queue가 없어 API process 수명과 자원을 공유한다.
 - 텍스트 기반 PDF만 지원하며 scanned PDF OCR은 없다.
 - 표, 그림, 도표용 Vision caption이 없다.
+- 새 layout/시각 위험 메타데이터는 재인덱싱 이후 기존 업로드 문서에 적용된다.
 - Prometheus 수집 서버, 대시보드와 경보 규칙은 아직 배포하지 않는다.
 - vLLM base image가 `latest`라 재빌드 시 버전이 변할 수 있다.
 - 이메일 확인, 비밀번호 재설정, 계정 잠금, rate limit이 없다.
@@ -486,6 +515,7 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 - Redis + RQ/Celery worker로 문서 처리와 재인덱싱 분리
 - MinIO/S3 object storage 전환
 - 다양한 업무·교육 문서로 평가 fixture 확대
+- 복합 추론 실패 사례 3회 반복, visual-only 답변 제한과 coverage 형식 안정화
 - 도메인별 용어·약어 정규화 및 reranker 비교
 - OCR과 표/그림/도표 Vision caption
 - 문서 버전 관리, 이메일 인증, 학습 피드백
@@ -493,8 +523,10 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 ## 12. Git 및 작업공간 주의사항
 
 Git baseline은 `ceb4d37 V0.3.0`이다. 이후 통합 readiness, 작업공간 전체 검색,
-source 문서명, 문서 선택 제거, UI 문구 정리와 대화 세션 이력 기능이 순서대로
-반영되었다. 정확한 최신 commit은 `git log -1 --oneline`으로 확인한다. 최초
+source 문서명, 문서 선택 제거, 대화 세션, 스트리밍·관측성, 계정 생명주기와
+복합 RAG 검색이 순서대로 반영되었다. 2026-08-07 현재 로컬 `main`의 최신
+통합 commit은 `7cb7cec`이며 `origin/main`보다 3개 commit 앞서 있어 push가
+필요하다. 최초
 commit에 실수로 포함된
 `id_container` RSA private key는 commit amend, reflog 만료 및 unreachable object
 정리를 통해 작업공간과 전체 로컬 이력에서 제거했다. Remote `origin`은 GitHub
@@ -516,6 +548,9 @@ commit에 실수로 포함된
 데이터와 모델 파일은 코드 저장소에 포함하지 않는다.
 
 새 작업을 commit하기 전 `git status --short`와 실제 staging 목록을 확인한다.
+현재 `sample/`에는 수동 테스트용 PDF가 로컬에만 있으며 `/sample/` 규칙으로
+Git과 Docker build context에서 제외된다. `7cb7cec`에도 포함되지 않았고,
+평가 runner는 이 디렉터리를 컨테이너에 read-only bind mount한다.
 
 또한 작업공간에 사용자가 만든 변경이 있을 수 있으므로 확인 없이 파일을
 되돌리거나 `git reset --hard`, `git checkout --`, `down -v` 같은 파괴적 명령을

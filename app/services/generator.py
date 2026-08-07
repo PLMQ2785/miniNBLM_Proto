@@ -9,6 +9,8 @@ from app.services.citation_validator import (
     validate_answer_citations,
 )
 from app.services.prompt_builder import build_rag_messages
+from app.services.evidence_guard import assess_text_only_answerability
+from app.services.evidence_coverage import EvidenceMatrix
 from app.services.retriever import RetrievedChunk
 
 NO_SOURCE_MARKER_PATTERN = re.compile(r"^\s*\[{1,2}\s*NO_SOURCE\b\s*\]{0,2}", re.IGNORECASE)
@@ -23,9 +25,14 @@ NO_SOURCE_MARKER_CANDIDATES = (
     "[NO_SOURCE]]",
     "[NO_SOURCE]",
 )
+DEGENERATE_REPETITION_PATTERN = re.compile(r"(.{1,12}?)\1{10,}", re.DOTALL)
 EMPTY_CONTEXT_ANSWER = (
     "업로드된 자료에서 관련 내용을 찾지 못했습니다. "
     "질문을 조금 더 구체적으로 바꾸거나, 해당 내용이 포함된 자료를 업로드해 주세요."
+)
+TEXT_ONLY_LIMIT_ANSWER = (
+    "업로드된 자료에서 확인되지 않습니다. 해당 페이지의 핵심 근거가 이미지, "
+    "화면 또는 다이어그램에 포함되어 있어 현재 텍스트 전용 처리로는 정확히 확인할 수 없습니다."
 )
 
 
@@ -41,10 +48,12 @@ class StreamingAnswer:
         question: str,
         chunks: list[RetrievedChunk],
         history: list[dict[str, str]] | None = None,
+        evidence_matrix: EvidenceMatrix | None = None,
     ) -> None:
         self.question = question
         self.chunks = chunks
         self.history = history
+        self.evidence_matrix = evidence_matrix
         self.generated: GeneratedAnswer | None = None
         self.revision: str | None = None
 
@@ -54,19 +63,33 @@ class StreamingAnswer:
             yield EMPTY_CONTEXT_ANSWER
             return
 
-        messages = build_rag_messages(self.question, self.chunks, self.history)
+        guard = assess_text_only_answerability(self.question, self.chunks)
+        if not guard.answerable:
+            self.generated = GeneratedAnswer(answer=TEXT_ONLY_LIMIT_ANSWER, sources=[])
+            yield TEXT_ONLY_LIMIT_ANSWER
+            return
+
+        messages = build_rag_messages(
+            self.question,
+            self.chunks,
+            self.history,
+            evidence_matrix=self.evidence_matrix,
+        )
         normalizer = _StreamingSourceNormalizer()
         for raw_delta in VLLMClient().stream_chat_completion(messages, operation="answer"):
             yield from normalizer.push(raw_delta)
         yield from normalizer.finish()
-        raw_answer = normalizer.answer
+        streamed_answer = normalizer.answer
+        raw_answer = streamed_answer
+        if _has_degenerate_repetition(raw_answer):
+            raw_answer = _retry_degenerate_answer(messages, raw_answer)
         answer = (
             validate_answer_citations(self.question, raw_answer, self.chunks)
             if normalizer.has_grounded_source
             else raw_answer
         )
         answer, has_grounded_source = _normalize_source_decision(answer)
-        self.revision = answer if answer != raw_answer else None
+        self.revision = answer if answer != streamed_answer else None
         self.generated = GeneratedAnswer(
             answer=answer,
             sources=(
@@ -81,12 +104,24 @@ def generate_answer(
     question: str,
     chunks: list[RetrievedChunk],
     history: list[dict[str, str]] | None = None,
+    evidence_matrix: EvidenceMatrix | None = None,
 ) -> GeneratedAnswer:
     if not chunks:
         return GeneratedAnswer(answer=EMPTY_CONTEXT_ANSWER, sources=[])
 
-    messages = build_rag_messages(question, chunks, history)
+    guard = assess_text_only_answerability(question, chunks)
+    if not guard.answerable:
+        return GeneratedAnswer(answer=TEXT_ONLY_LIMIT_ANSWER, sources=[])
+
+    messages = build_rag_messages(
+        question,
+        chunks,
+        history,
+        evidence_matrix=evidence_matrix,
+    )
     answer = VLLMClient().chat_completion(messages, operation="answer")
+    if _has_degenerate_repetition(answer):
+        answer = _retry_degenerate_answer(messages, answer)
     answer, has_grounded_source = _normalize_source_decision(answer)
     if has_grounded_source:
         answer = validate_answer_citations(question, answer, chunks)
@@ -95,6 +130,32 @@ def generate_answer(
         answer=answer,
         sources=_sources_for_citations(answer, chunks) if has_grounded_source else [],
     )
+
+
+def _has_degenerate_repetition(answer: str) -> bool:
+    return DEGENERATE_REPETITION_PATTERN.search(answer) is not None
+
+
+def _retry_degenerate_answer(
+    messages: list[dict[str, str]],
+    fallback_answer: str,
+) -> str:
+    retry_messages = [dict(message) for message in messages]
+    retry_messages[0] = {
+        **retry_messages[0],
+        "content": (
+            retry_messages[0]["content"]
+            + "\n15. 같은 문자, 단어 또는 구절을 반복하지 말고 800토큰 이내로 답한다."
+        ),
+    }
+    try:
+        retry = VLLMClient().chat_completion(retry_messages, operation="answer_retry")
+    except Exception:
+        retry = fallback_answer
+    if not _has_degenerate_repetition(retry):
+        return retry
+    match = DEGENERATE_REPETITION_PATTERN.search(retry)
+    return retry[: match.start()].rstrip() if match else retry
 
 
 def _normalize_source_decision(answer: str) -> tuple[str, bool]:

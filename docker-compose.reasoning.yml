@@ -1,0 +1,8 @@
+services:
+  benchmark:
+    environment:
+      VLLM_BASE_URL: http://127.0.0.1:8010/v1
+      VLLM_API_KEY: EMPTY
+      VLLM_MODEL: gemma4
+    volumes:
+      - ./sample:/app/sample:ro

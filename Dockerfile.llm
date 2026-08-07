@@ -10,4 +10,10 @@ COPY docker/vllm-gemma4-unified-quant.patch /tmp/vllm-gemma4-unified-quant.patch
 
 RUN patch --forward --batch \
     /usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/gemma4_unified.py \
-    /tmp/vllm-gemma4-unified-quant.patch
+    /tmp/vllm-gemma4-unified-quant.patch \
+    && sed -i \
+        's/self.embed_vision.embedding_projection.weight.dtype/self.embed_vision.embedding_projection.params_dtype/g' \
+        /usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/gemma4_unified.py \
+    && ! grep -q \
+        'self.embed_vision.embedding_projection.weight.dtype' \
+        /usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/gemma4_unified.py

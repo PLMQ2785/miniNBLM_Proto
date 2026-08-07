@@ -17,10 +17,16 @@ class RetrievalTrace:
     coverage_events: list[dict[str, Any]] = field(default_factory=list)
     outcome: dict[str, Any] = field(default_factory=dict)
 
-    def set_query_plan(self, standalone_query: str, queries: tuple[str, ...]) -> None:
+    def set_query_plan(
+        self,
+        standalone_query: str,
+        queries: tuple[str, ...],
+        evidence_goals: tuple[str, ...] = (),
+    ) -> None:
         self.query_plan = {
             "standalone_query": standalone_query,
             "queries": list(queries),
+            "evidence_goals": list(evidence_goals),
         }
 
     def record_candidates(
@@ -121,7 +127,7 @@ class RetrievalTrace:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "request_id": self.request_id,
             "created_at": self.created_at,
             "query_plan": self.query_plan,

@@ -53,6 +53,44 @@ def test_complete_citations_skip_llm(
     assert answer_needs_citation_repair(answer, chunks) is False
 
 
+def test_complete_citations_remove_revised_answer_heading_without_llm(
+    monkeypatch: pytest.MonkeyPatch,
+    chunks: list[RetrievedChunk],
+) -> None:
+    monkeypatch.setattr(
+        VLLMClient,
+        "chat_completion",
+        lambda *args, **kwargs: pytest.fail("Citation repair must be skipped"),
+    )
+
+    result = validate_answer_citations(
+        "reset은?",
+        "### [Revised answer]\nreset은 이후 이력을 삭제합니다. [Source 1, Page 6]",
+        chunks,
+    )
+
+    assert result == "reset은 이후 이력을 삭제합니다. [Source 1, Page 6]"
+
+
+def test_bare_source_reference_is_completed_from_chunk_page(
+    monkeypatch: pytest.MonkeyPatch,
+    chunks: list[RetrievedChunk],
+) -> None:
+    monkeypatch.setattr(
+        VLLMClient,
+        "chat_completion",
+        lambda *args, **kwargs: pytest.fail("Structural normalization needs no LLM"),
+    )
+
+    result = validate_answer_citations(
+        "reset은?",
+        "reset은 대상 이후 이력을 삭제합니다. [Source 1]",
+        chunks,
+    )
+
+    assert result.endswith("[Source 1, Page 6]")
+
+
 def test_uncited_conclusion_is_repaired(
     monkeypatch: pytest.MonkeyPatch,
     chunks: list[RetrievedChunk],
@@ -156,3 +194,21 @@ def test_repair_can_reject_all_unsupported_claims(
     result = validate_answer_citations("자료 밖 질문", "근거 없는 답변입니다.", chunks)
 
     assert result.startswith("[[NO_SOURCE]]")
+
+
+def test_repair_removes_bracketed_revised_answer_heading(
+    monkeypatch: pytest.MonkeyPatch,
+    chunks: list[RetrievedChunk],
+) -> None:
+    monkeypatch.setattr(
+        VLLMClient,
+        "chat_completion",
+        lambda *args, **kwargs: (
+            "### [Revised answer]\nreset은 이후 이력을 삭제합니다. [Source 1, Page 6]"
+        ),
+    )
+
+    result = validate_answer_citations("reset은?", "reset은 이력을 삭제합니다.", chunks)
+
+    assert not result.startswith("[Revised answer]")
+    assert result.endswith("[Source 1, Page 6]")

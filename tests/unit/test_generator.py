@@ -210,3 +210,61 @@ def test_generate_answer_does_not_expose_uncited_candidates(
     generated = generate_answer("낙상 예방은?", [retrieved_chunk])
 
     assert generated.sources == []
+
+
+def test_generate_answer_blocks_exact_visual_page_request_without_llm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chunk = RetrievedChunk(
+        chunk_id=30,
+        document_id=40,
+        document_title="diagram.pdf",
+        content="e1 e2 e4 e4 e3 e1",
+        page_start=20,
+        page_end=20,
+        score=0.9,
+        source_refs={
+            "page_metadata": {
+                "has_visual_content": True,
+                "visual_evidence_risk": "visual_heavy",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        VLLMClient,
+        "chat_completion",
+        lambda *args, **kwargs: pytest.fail("Visual-only request must be blocked locally"),
+    )
+
+    generated = generate_answer(
+        "20페이지 상태 다이어그램의 최종 값을 계산해 주세요.",
+        [chunk],
+    )
+
+    assert "텍스트 전용 처리" in generated.answer
+    assert generated.sources == []
+
+
+def test_generate_answer_retries_degenerate_repetition_once(
+    monkeypatch: pytest.MonkeyPatch,
+    retrieved_chunk: RetrievedChunk,
+) -> None:
+    responses = iter(
+        [
+            "낙상 예방은 t.t.t.t.t.t.t.t.t.t.t.t.t.t.t.t.t.t.t.t.",
+            "자료에서는 낙상 예방 교육을 시행합니다. [Source 1, Page 3]",
+        ]
+    )
+    operations: list[str] = []
+
+    def complete(self, messages, **kwargs):
+        operations.append(kwargs["operation"])
+        return next(responses)
+
+    monkeypatch.setattr(VLLMClient, "chat_completion", complete)
+
+    generated = generate_answer("낙상 예방은?", [retrieved_chunk])
+
+    assert operations == ["answer", "answer_retry"]
+    assert "t.t.t" not in generated.answer
+    assert len(generated.sources) == 1

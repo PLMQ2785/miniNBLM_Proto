@@ -1,0 +1,229 @@
+{
+  "schema_version": 1,
+  "name": "sample-multilayer-reasoning-v1",
+  "description": "세 sample 문서군에서 검색, 다중 근거 조합, 제한 고지와 text-only 파싱 한계를 분리 검증한다.",
+  "documents": [
+    {"group": "Manual", "path": "../sample/Manual/SDT-LB03-05C V2.3 메뉴얼.pdf", "title": "SDT-LB03-05C V2.3 메뉴얼.pdf"},
+    {"group": "OpenSWDesign", "path": "../sample/OpenSWDesign/[OSSDesign] 01_Introduction.pdf", "title": "[OSSDesign] 01_Introduction.pdf"},
+    {"group": "OpenSWDesign", "path": "../sample/OpenSWDesign/[OSSDesign] 02_Planning.pdf", "title": "[OSSDesign] 02_Planning.pdf"},
+    {"group": "OpenSWDesign", "path": "../sample/OpenSWDesign/[OSSDesign] 03_UML.pdf", "title": "[OSSDesign] 03_UML.pdf"},
+    {"group": "OpenSWDesign", "path": "../sample/OpenSWDesign/[OSSDesign] 04_Use case diagram I.pdf", "title": "[OSSDesign] 04_Use case diagram I.pdf"},
+    {"group": "OpenSWDesign", "path": "../sample/OpenSWDesign/[OSSDesign] 05_Use case diagram II.pdf", "title": "[OSSDesign] 05_Use case diagram II.pdf"},
+    {"group": "OpenSWDesign", "path": "../sample/OpenSWDesign/[OSSDesign] 06_Structural Modeling I.pdf", "title": "[OSSDesign] 06_Structural Modeling I.pdf"},
+    {"group": "OpenSWDesign", "path": "../sample/OpenSWDesign/[OSSDesign] 07_Structural Modeling II.pdf", "title": "[OSSDesign] 07_Structural Modeling II.pdf"},
+    {"group": "OpenSWDesign", "path": "../sample/OpenSWDesign/[OSSDesign] 08_Behavior modeling I.pdf", "title": "[OSSDesign] 08_Behavior modeling I.pdf"},
+    {"group": "OpenSWDesign", "path": "../sample/OpenSWDesign/[OSSDesign] 09_Behavior Modeling II.pdf", "title": "[OSSDesign] 09_Behavior Modeling II.pdf"},
+    {"group": "OpenSWDesign", "path": "../sample/OpenSWDesign/[OSSDesign] Project plan.pdf", "title": "[OSSDesign] Project plan.pdf"},
+    {"group": "OpenSWDesign", "path": "../sample/OpenSWDesign/[OSSDesign] intro_SRUP.pdf", "title": "[OSSDesign] intro_SRUP.pdf"},
+    {"group": "OpenSWUnderstand", "path": "../sample/OpenSWUnderstand/[OSS] 01_Introduction to OSS.pdf", "title": "[OSS] 01_Introduction to OSS.pdf"},
+    {"group": "OpenSWUnderstand", "path": "../sample/OpenSWUnderstand/[OSS] 02_Outline of Git.pdf", "title": "[OSS] 02_Outline of Git.pdf"},
+    {"group": "OpenSWUnderstand", "path": "../sample/OpenSWUnderstand/[OSS] 03_Version management I.pdf", "title": "[OSS] 03_Version management I.pdf"},
+    {"group": "OpenSWUnderstand", "path": "../sample/OpenSWUnderstand/[OSS] 04_Version management II.pdf", "title": "[OSS] 04_Version management II.pdf"},
+    {"group": "OpenSWUnderstand", "path": "../sample/OpenSWUnderstand/[OSS] 05_Branch.pdf", "title": "[OSS] 05_Branch.pdf"},
+    {"group": "OpenSWUnderstand", "path": "../sample/OpenSWUnderstand/[OSS] 06_Collaboration with GitHub.pdf", "title": "[OSS] 06_Collaboration with GitHub.pdf"},
+    {"group": "OpenSWUnderstand", "path": "../sample/OpenSWUnderstand/[OSS] 07_git instructions.pdf", "title": "[OSS] 07_git instructions.pdf"}
+  ],
+  "cases": [
+    {
+      "case_id": "manual-rs485-response-diagnosis",
+      "group": "Manual",
+      "question": "ID가 03인 모듈에서 `LB05 03 NLNNB`가 수신되었습니다. 채널 1~5의 상태를 각각 해석하고, 여러 모듈을 연속 조회할 때 호스트가 지켜야 할 프레임 종료 문자와 요청 간 대기 조건까지 설명해 주세요.",
+      "reasoning_depth": 3,
+      "answerability": "full",
+      "expected_behavior": "grounded_answer",
+      "evidence_modality": "text",
+      "reference_queries": ["RS485 응답 NLNNB 채널 상태 해석", "RS485 요청 프레임 CR 0x0d", "다중 모듈 요청 50ms 대기"],
+      "relevant_sources": [
+        {"document": "SDT-LB03-05C V2.3 메뉴얼.pdf", "page": 17},
+        {"document": "SDT-LB03-05C V2.3 메뉴얼.pdf", "page": 18}
+      ],
+      "evidence_facets": [
+        {"facet_id": "status-semantics", "description": "Normal, Leak, Broken 상태 의미", "relevant_sources": [{"document": "SDT-LB03-05C V2.3 메뉴얼.pdf", "page": 17}]},
+        {"facet_id": "response-decoding", "description": "응답의 9~13번째 바이트와 NLNNB 해석", "relevant_sources": [{"document": "SDT-LB03-05C V2.3 메뉴얼.pdf", "page": 18}]}
+      ],
+      "required_answer_claims": ["채널 상태는 Normal, Leak, Normal, Normal, Broken 순서이다.", "각 요청은 CR(0x0d)로 끝나야 한다.", "연속 요청 사이에 50ms 이상 대기해야 한다."],
+      "required_limitations": []
+    },
+    {
+      "case_id": "manual-two-setting-workflow",
+      "group": "Manual",
+      "question": "2번 채널의 Leak Level을 300으로, Count를 10초로 바꾼 뒤 실제 동작에 반영하려고 합니다. 기본 화면에서 시작해 두 값을 저장하고 반영하기까지 버튼 조작 흐름을 단계별로 정리해 주세요.",
+      "reasoning_depth": 3,
+      "answerability": "full",
+      "expected_behavior": "grounded_answer",
+      "evidence_modality": "mixed",
+      "reference_queries": ["2번 채널 설정 메뉴 진입 버튼", "Leak Level 설정 저장", "Count 설정 저장", "RESET 설정값 반영"],
+      "relevant_sources": [
+        {"document": "SDT-LB03-05C V2.3 메뉴얼.pdf", "page": 4},
+        {"document": "SDT-LB03-05C V2.3 메뉴얼.pdf", "page": 9},
+        {"document": "SDT-LB03-05C V2.3 메뉴얼.pdf", "page": 10}
+      ],
+      "evidence_facets": [
+        {"facet_id": "button-semantics", "description": "SET, UP, DOWN, RESET 기능", "relevant_sources": [{"document": "SDT-LB03-05C V2.3 메뉴얼.pdf", "page": 4}]},
+        {"facet_id": "leak-workflow", "description": "Leak Level 메뉴 선택과 장기 SET 저장", "relevant_sources": [{"document": "SDT-LB03-05C V2.3 메뉴얼.pdf", "page": 9}]},
+        {"facet_id": "count-workflow", "description": "Count 메뉴 선택과 장기 SET 저장", "relevant_sources": [{"document": "SDT-LB03-05C V2.3 메뉴얼.pdf", "page": 10}]}
+      ],
+      "required_answer_claims": ["UP/DOWN으로 2번 채널과 설정 항목을 선택한다.", "SET을 짧게 눌러 메뉴와 값 설정에 진입하고 길게 눌러 저장한다.", "저장 후 RESET으로 설정값을 반영한다."],
+      "required_limitations": []
+    },
+    {
+      "case_id": "manual-terminal-screenshot-visual-only",
+      "group": "Manual",
+      "question": "매뉴얼 19페이지 오른쪽 Tera Term 화면에 실제로 표시된 ID 01의 응답 문자열을 정확히 옮기고, 다섯 채널 상태를 해석해 주세요.",
+      "reasoning_depth": 2,
+      "answerability": "none",
+      "expected_behavior": "abstain",
+      "evidence_modality": "visual_only",
+      "reference_queries": ["19페이지 Tera Term ID 01 실제 응답 화면"],
+      "relevant_sources": [{"document": "SDT-LB03-05C V2.3 메뉴얼.pdf", "page": 19}],
+      "evidence_facets": [
+        {"facet_id": "screenshot-response", "description": "스크린샷 안에만 표시된 응답 문자열", "relevant_sources": [{"document": "SDT-LB03-05C V2.3 메뉴얼.pdf", "page": 19}]}
+      ],
+      "required_answer_claims": [],
+      "required_limitations": ["현재 text-only Context에는 스크린샷 내부 문자열이 없어 정확한 전사를 할 수 없다고 밝혀야 한다."],
+      "notes": "육안 정답은 LB05 01 NLNNN이지만 text-only 기준에서는 이를 답하면 안 된다."
+    },
+    {
+      "case_id": "design-srup-artifact-traceability",
+      "group": "OpenSWDesign",
+      "question": "팀이 분석 단계에서 유스케이스 모델과 도메인·응용 클래스를 만들었지만, 설계 보고서에는 클래스 다이어그램만 넣었습니다. SRUP 관점에서 누락된 핵심 설계 산출물은 무엇이며, 유스케이스에서 구현까지 추적성과 모델 일관성을 확보하려면 어떤 관계를 검토해야 하나요?",
+      "reasoning_depth": 4,
+      "answerability": "full",
+      "expected_behavior": "grounded_answer",
+      "evidence_modality": "text",
+      "reference_queries": ["SRUP analysis use case domain application class artifacts", "SRUP design state machine sequence diagram per use case", "design model class interaction consistency traceability", "analysis design implementation model consistency"],
+      "relevant_sources": [
+        {"document": "[OSSDesign] Project plan.pdf", "page": 4},
+        {"document": "[OSSDesign] Project plan.pdf", "page": 5},
+        {"document": "[OSSDesign] Project plan.pdf", "page": 7},
+        {"document": "[OSSDesign] Project plan.pdf", "page": 10}
+      ],
+      "evidence_facets": [
+        {"facet_id": "analysis-inputs", "description": "유스케이스·도메인·응용 분석 산출물", "relevant_sources": [{"document": "[OSSDesign] Project plan.pdf", "page": 4}, {"document": "[OSSDesign] Project plan.pdf", "page": 5}]},
+        {"facet_id": "missing-design-artifacts", "description": "중요 클래스 상태 다이어그램과 유스케이스별 상호작용 다이어그램", "relevant_sources": [{"document": "[OSSDesign] Project plan.pdf", "page": 7}]},
+        {"facet_id": "traceability-quality", "description": "분석·설계·구현 모델 일관성과 평가 기준", "relevant_sources": [{"document": "[OSSDesign] Project plan.pdf", "page": 10}]}
+      ],
+      "required_answer_claims": ["각 유스케이스를 실현하는 sequence 또는 communication diagram이 필요하다.", "중요 설계 클래스의 state machine diagram이 필요하다.", "class, interaction, state model 사이와 분석·구현 모델 사이의 일관성과 추적성을 검토해야 한다."],
+      "required_limitations": []
+    },
+    {
+      "case_id": "design-late-report-qualified-consequence",
+      "group": "OpenSWDesign",
+      "question": "분석 보고서를 마감보다 3일 늦게 제출했고, 구현 결과도 분석·설계 모델과 일치하지 않습니다. 자료만 근거로 확정할 수 있는 정량적 감점과, 수치로 확정할 수 없는 추가 품질 영향을 구분해서 설명해 주세요.",
+      "reasoning_depth": 3,
+      "answerability": "partial",
+      "expected_behavior": "qualified_answer",
+      "evidence_modality": "text",
+      "reference_queries": ["project report delay penalty 5 percent per day", "implementation analysis design model consistency credits", "analysis report evaluation criteria consistency"],
+      "relevant_sources": [
+        {"document": "[OSSDesign] Project plan.pdf", "page": 8},
+        {"document": "[OSSDesign] Project plan.pdf", "page": 9},
+        {"document": "[OSSDesign] Project plan.pdf", "page": 10}
+      ],
+      "evidence_facets": [
+        {"facet_id": "consistency-impact", "description": "구현 모델 불일치의 정성적 평가 영향", "relevant_sources": [{"document": "[OSSDesign] Project plan.pdf", "page": 8}, {"document": "[OSSDesign] Project plan.pdf", "page": 10}]},
+        {"facet_id": "late-penalty", "description": "하루당 5% 지연 감점", "relevant_sources": [{"document": "[OSSDesign] Project plan.pdf", "page": 9}]}
+      ],
+      "required_answer_claims": ["3일 지연의 명시적 감점은 15%이다.", "모델 불일치는 평가에 불리하다."],
+      "required_limitations": ["자료에는 모델 불일치에 대한 별도 정량 감점률이 없으므로 수치를 만들어내지 않아야 한다."]
+    },
+    {
+      "case_id": "design-state-machine-x-visual-only",
+      "group": "OpenSWDesign",
+      "question": "Behavior Modeling II 자료의 20페이지 상태 다이어그램에서 초기화 후 e1, e2, e4, e4, e3, e1 순서로 이벤트가 발생할 때 최종 변수 x의 값과 각 단계의 계산을 설명해 주세요.",
+      "reasoning_depth": 4,
+      "answerability": "none",
+      "expected_behavior": "abstain",
+      "evidence_modality": "visual_only",
+      "reference_queries": ["Behavior Modeling II 20페이지 e1 e2 e4 e4 e3 e1 변수 x"],
+      "relevant_sources": [{"document": "[OSSDesign] 09_Behavior Modeling II.pdf", "page": 20}],
+      "evidence_facets": [
+        {"facet_id": "state-transition-calculation", "description": "이미지 안의 상태 전이, entry/exit action과 계산표", "relevant_sources": [{"document": "[OSSDesign] 09_Behavior Modeling II.pdf", "page": 20}]}
+      ],
+      "required_answer_claims": [],
+      "required_limitations": ["텍스트에는 이벤트 순서와 질문만 있고 전이·연산 규칙이 없어 계산할 수 없다고 밝혀야 한다."],
+      "notes": "육안 정답은 x=4이지만 text-only 기준에서는 이를 추론할 근거가 없다."
+    },
+    {
+      "case_id": "oss-ignore-stash-prerequisite",
+      "group": "OpenSWUnderstand",
+      "question": "새로 만든 secret.txt를 .gitignore에 추가한 뒤 git stash를 실행했지만 파일이 그대로 남았습니다. 이 현상의 원인을 설명하고, 강의자료 범위에서 secret.txt를 stash 대상에 포함시키기 위해 먼저 해야 할 작업을 제시해 주세요.",
+      "reasoning_depth": 3,
+      "answerability": "full",
+      "expected_behavior": "grounded_answer",
+      "evidence_modality": "text",
+      "reference_queries": ["gitignore untracked file ignored", "git stash tracked staged files only", "untracked file stash prerequisite git add"],
+      "relevant_sources": [
+        {"document": "[OSS] 03_Version management I.pdf", "page": 17},
+        {"document": "[OSS] 04_Version management II.pdf", "page": 13},
+        {"document": "[OSS] 04_Version management II.pdf", "page": 17}
+      ],
+      "evidence_facets": [
+        {"facet_id": "ignore-semantics", "description": ".gitignore가 변경 추적 대상에서 제외하는 기능", "relevant_sources": [{"document": "[OSS] 03_Version management I.pdf", "page": 17}]},
+        {"facet_id": "stash-scope", "description": "stash가 tracked 또는 staged 파일을 대상으로 함", "relevant_sources": [{"document": "[OSS] 04_Version management II.pdf", "page": 13}, {"document": "[OSS] 04_Version management II.pdf", "page": 17}]}
+      ],
+      "required_answer_claims": ["secret.txt는 ignored이면서 untracked이므로 기본 stash 대상이 아니다.", ".gitignore 제외를 해제하고 git add로 stage/tracked 상태로 만든 뒤 stash해야 한다."],
+      "required_limitations": []
+    },
+    {
+      "case_id": "oss-pushed-revert-dvcs",
+      "group": "OpenSWUnderstand",
+      "question": "이미 GitHub 원격 저장소에 push한 최근 커밋에 치명적인 버그가 있습니다. reset --hard보다 revert가 협업에 적합한 이유를 DVCS의 저장소 복제 특성과 원격 공유 이력 관점에서 설명해 주세요.",
+      "reasoning_depth": 4,
+      "answerability": "full",
+      "expected_behavior": "grounded_answer",
+      "evidence_modality": "text",
+      "reference_queries": ["DVCS clone complete repository history", "git revert preserves existing commits new commit", "git reset deletes commits after target", "git push local commits remote repository"],
+      "relevant_sources": [
+        {"document": "[OSS] 02_Outline of Git.pdf", "page": 16},
+        {"document": "[OSS] 04_Version management II.pdf", "page": 6},
+        {"document": "[OSS] 04_Version management II.pdf", "page": 7},
+        {"document": "[OSS] 06_Collaboration with GitHub.pdf", "page": 28}
+      ],
+      "evidence_facets": [
+        {"facet_id": "dvcs-history", "description": "DVCS가 저장소와 이력을 로컬에 복제함", "relevant_sources": [{"document": "[OSS] 02_Outline of Git.pdf", "page": 16}]},
+        {"facet_id": "revert-reset", "description": "revert는 새 커밋을 만들고 reset은 이후 이력을 삭제함", "relevant_sources": [{"document": "[OSS] 04_Version management II.pdf", "page": 6}, {"document": "[OSS] 04_Version management II.pdf", "page": 7}]},
+        {"facet_id": "remote-sharing", "description": "push가 로컬 커밋을 원격 저장소에 공유함", "relevant_sources": [{"document": "[OSS] 06_Collaboration with GitHub.pdf", "page": 28}]}
+      ],
+      "required_answer_claims": ["revert는 기존 공유 이력을 삭제하지 않고 취소 내용을 새 커밋으로 남긴다.", "reset은 대상 이후 커밋을 제거하므로 이미 복제·공유된 이력과 충돌할 수 있다.", "DVCS 참여자는 전체 이력을 복제하므로 공개 이력을 보존하는 방식이 협업에 유리하다."],
+      "required_limitations": []
+    },
+    {
+      "case_id": "oss-agpl-saas-source-gap",
+      "group": "OpenSWUnderstand",
+      "question": "AGPL-3.0 코드를 수정해 SaaS로만 제공하고 실행 파일은 배포하지 않는 경우에도 네트워크 이용자에게 수정 소스를 공개해야 합니까? 강의자료가 직접 뒷받침하는 결론과 자료만으로 확정할 수 없는 부분을 구분해 주세요.",
+      "reasoning_depth": 3,
+      "answerability": "partial",
+      "expected_behavior": "qualified_answer",
+      "evidence_modality": "text",
+      "reference_queries": ["AGPL strong copyleft combined code source disclosure", "AGPL network SaaS source obligation"],
+      "relevant_sources": [{"document": "[OSS] 01_Introduction to OSS.pdf", "page": 22}],
+      "evidence_facets": [
+        {"facet_id": "agpl-copyleft", "description": "AGPL이 strong copyleft 계열이라는 강의 내용", "relevant_sources": [{"document": "[OSS] 01_Introduction to OSS.pdf", "page": 22}]}
+      ],
+      "required_answer_claims": ["자료는 AGPL을 결합된 코드 공개를 요구하는 strong copyleft 계열로 분류한다."],
+      "required_limitations": ["제공된 페이지에는 네트워크 이용 조항이나 SaaS만 제공할 때의 발동 조건이 없어 공개 의무를 단정할 수 없다고 밝혀야 한다."]
+    },
+    {
+      "case_id": "oss-mpl-gpl-conflict-options",
+      "group": "OpenSWUnderstand",
+      "question": "MPL-1.1 모듈 A와 GPL-2.0 모듈 B를 결합한 A+B를 원저작자의 별도 허가 없이 배포하려다 충돌했습니다. 자료가 제시하는 해결 방향을 라이선스 변경 가능성과 결합 구조 변경으로 나누어 설명해 주세요.",
+      "reasoning_depth": 3,
+      "answerability": "full",
+      "expected_behavior": "grounded_answer",
+      "evidence_modality": "text",
+      "reference_queries": ["MPL 1.1 GPL 2.0 A+B license conflict", "MPL 2.0 Larger Work GPL compatibility", "license conflict separate work structure replacement"],
+      "relevant_sources": [
+        {"document": "[OSS] 01_Introduction to OSS.pdf", "page": 29},
+        {"document": "[OSS] 01_Introduction to OSS.pdf", "page": 30},
+        {"document": "[OSS] 01_Introduction to OSS.pdf", "page": 31}
+      ],
+      "evidence_facets": [
+        {"facet_id": "conflict-definition", "description": "MPL-1.1과 GPL-2.0 결합 충돌", "relevant_sources": [{"document": "[OSS] 01_Introduction to OSS.pdf", "page": 29}, {"document": "[OSS] 01_Introduction to OSS.pdf", "page": 30}]},
+        {"facet_id": "resolution-options", "description": "MPL-2.0 호환성, 대체·예외·분리된 저작물 검토", "relevant_sources": [{"document": "[OSS] 01_Introduction to OSS.pdf", "page": 31}]}
+      ],
+      "required_answer_claims": ["MPL-2.0은 Larger Work에서 GPL 계열과의 배포 호환성을 개선한다.", "한쪽 모듈 제거·대체, 라이선스 예외 적용 여부, 분리된 저작물 구조를 검토할 수 있다."],
+      "required_limitations": []
+    }
+  ]
+}

@@ -10,6 +10,16 @@ from app.observability import LLM_DURATION, LLM_REQUESTS, LLM_TIME_TO_FIRST_TOKE
 
 logger = logging.getLogger(__name__)
 
+MAX_TOKENS_BY_OPERATION = {
+    "query_rewrite": 512,
+    "query_rewrite_repair": 512,
+    "evidence_coverage": 256,
+    "citation_validation": 1400,
+    "answer": 900,
+    "answer_retry": 900,
+}
+DEFAULT_MAX_TOKENS = 1024
+
 
 class VLLMClient:
     def __init__(
@@ -36,6 +46,8 @@ class VLLMClient:
                 model=self.model,
                 messages=messages,
                 temperature=temperature,
+                max_tokens=MAX_TOKENS_BY_OPERATION.get(operation, DEFAULT_MAX_TOKENS),
+                extra_body={"repetition_penalty": 1.15},
             )
             content = response.choices[0].message.content or ""
         except Exception:
@@ -64,6 +76,8 @@ class VLLMClient:
                 model=self.model,
                 messages=messages,
                 temperature=temperature,
+                max_tokens=MAX_TOKENS_BY_OPERATION.get(operation, DEFAULT_MAX_TOKENS),
+                extra_body={"repetition_penalty": 1.15},
                 stream=True,
             ) as stream:
                 for chunk in stream:

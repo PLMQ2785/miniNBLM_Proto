@@ -4,8 +4,10 @@ from app.clients.vllm_client import VLLMClient
 from app.services import evidence_coverage
 from app.services.evidence_coverage import (
     assess_evidence_coverage,
+    build_evidence_matrix,
     complete_evidence_coverage,
 )
+from app.services.retrieval_trace import RetrievalTrace
 from app.services.retriever import RetrievedChunk
 
 
@@ -73,6 +75,29 @@ def test_coverage_assessment_accepts_markdown_formatting(
     assert assessment.retry_queries == ("git revert shared history",)
 
 
+def test_coverage_assessment_parses_json_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        VLLMClient,
+        "chat_completion",
+        lambda *args, **kwargs: (
+            '{"status":"INSUFFICIENT","missing":[2],'
+            '"retry_queries":{"2":"project report late penalty per day"}}'
+        ),
+    )
+
+    assessment = assess_evidence_coverage(
+        "감점은?",
+        ("모델 일치성", "지연 감점"),
+        [_chunk(1, "부분 근거", 8)],
+    )
+
+    assert assessment is not None
+    assert assessment.missing_queries == ("지연 감점",)
+    assert assessment.retry_queries == ("project report late penalty per day",)
+
+
 def test_coverage_assessment_treats_malformed_mixed_status_as_insufficient(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -129,7 +154,7 @@ def test_coverage_retry_merges_recovered_evidence(
         chunks=[initial],
     )
 
-    assert [chunk.chunk_id for chunk in chunks] == [2, 1]
+    assert [chunk.chunk_id for chunk in chunks] == [1, 2]
     assert retry_call["owner_id"] == 7
     assert retry_call["queries"] == ("DVCS 공유 이력 충돌",)
 
@@ -161,7 +186,7 @@ def test_coverage_retry_preserves_merged_context_when_judge_remains_incomplete(
         chunks=[_chunk(1, "부분 근거", 6)],
     )
 
-    assert [chunk.chunk_id for chunk in chunks] == [2, 1]
+    assert [chunk.chunk_id for chunk in chunks] == [1, 2]
 
 
 def test_empty_retry_preserves_initial_context(
@@ -258,7 +283,7 @@ def test_unresolved_evidence_uses_exactly_two_retrieval_retries(
     )
 
     assert calls == ["targeted", "hierarchical"]
-    assert [chunk.chunk_id for chunk in chunks] == [3, 2, 1]
+    assert [chunk.chunk_id for chunk in chunks] == [1, 2, 3]
 
 
 def test_coverage_failure_preserves_initial_context(
@@ -285,3 +310,36 @@ def test_coverage_failure_preserves_initial_context(
     )
 
     assert chunks == [initial]
+
+
+def test_evidence_matrix_distinguishes_supported_and_missing_goals() -> None:
+    trace = RetrievalTrace(request_id="request-1")
+    trace.record_coverage(
+        attempt=2,
+        status="insufficient",
+        missing_queries=("모델 불일치 정량 감점",),
+    )
+
+    matrix = build_evidence_matrix(
+        ("3일 지연 감점률", "모델 불일치 정량 감점"),
+        trace,
+    )
+
+    assert matrix.status == "partial"
+    assert matrix.supported_goals == ("3일 지연 감점률",)
+    assert matrix.missing_goals == ("모델 불일치 정량 감점",)
+
+
+def test_evidence_matrix_does_not_reuse_stale_missing_state_after_unchecked_retry() -> None:
+    trace = RetrievalTrace(request_id="request-2")
+    trace.record_coverage(
+        attempt=0,
+        status="insufficient",
+        missing_queries=("DVCS 협업 영향",),
+    )
+    trace.record_coverage(attempt=1, status="unchecked")
+
+    matrix = build_evidence_matrix(("DVCS 협업 영향",), trace)
+
+    assert matrix.status == "unchecked"
+    assert matrix.missing_goals == ()

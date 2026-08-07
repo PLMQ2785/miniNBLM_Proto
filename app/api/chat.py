@@ -22,7 +22,7 @@ from app.schemas.chat import (
 from app.services.conversation_service import MAX_CONTEXT_MESSAGES, build_conversation_context
 from app.observability import CHAT_STREAMS, request_id_context
 from app.services.generator import StreamingAnswer, cited_source_indexes, generate_answer
-from app.services.evidence_coverage import complete_evidence_coverage
+from app.services.evidence_coverage import build_evidence_matrix, complete_evidence_coverage
 from app.services.query_rewriter import plan_retrieval_queries
 from app.services.retriever import retrieve_chunks
 from app.services.retrieval_trace import RetrievalTrace
@@ -140,6 +140,7 @@ def _chat_event_stream(
     chunks,
     history: list[dict[str, str]],
     trace: RetrievalTrace,
+    evidence_matrix,
 ):
     try:
         with SessionLocal() as db:
@@ -148,7 +149,12 @@ def _chat_event_stream(
                 raise RuntimeError("Chat session disappeared before streaming started")
             yield _sse("session", _session_summary(session).model_dump(mode="json"))
 
-        streamed = StreamingAnswer(question=question, chunks=chunks, history=history)
+        streamed = StreamingAnswer(
+            question=question,
+            chunks=chunks,
+            history=history,
+            evidence_matrix=evidence_matrix,
+        )
         for delta in streamed:
             yield _sse("delta", {"text": delta})
         if streamed.generated is None:
@@ -280,7 +286,12 @@ def chat(
 
     retrieval_plan = plan_retrieval_queries(request.question, history)
     trace = RetrievalTrace(request_id=request_id_context.get())
-    trace.set_query_plan(retrieval_plan.standalone_query, retrieval_plan.queries)
+    evidence_goals = retrieval_plan.evidence_goals or retrieval_plan.queries
+    trace.set_query_plan(
+        retrieval_plan.standalone_query,
+        retrieval_plan.queries,
+        evidence_goals,
+    )
     chunks = retrieve_chunks(
         db=db,
         owner_id=user.id,
@@ -292,11 +303,17 @@ def chat(
         db=db,
         owner_id=user.id,
         question=request.question,
-        queries=retrieval_plan.queries,
+        queries=evidence_goals,
         chunks=chunks,
         trace=trace,
     )
-    generated = generate_answer(question=request.question, chunks=chunks, history=history)
+    evidence_matrix = build_evidence_matrix(evidence_goals, trace)
+    generated = generate_answer(
+        question=request.question,
+        chunks=chunks,
+        history=history,
+        evidence_matrix=evidence_matrix,
+    )
 
     _persist_exchange(
         db,
@@ -342,7 +359,12 @@ def chat_stream(
 
     retrieval_plan = plan_retrieval_queries(request.question, history)
     trace = RetrievalTrace(request_id=request_id_context.get())
-    trace.set_query_plan(retrieval_plan.standalone_query, retrieval_plan.queries)
+    evidence_goals = retrieval_plan.evidence_goals or retrieval_plan.queries
+    trace.set_query_plan(
+        retrieval_plan.standalone_query,
+        retrieval_plan.queries,
+        evidence_goals,
+    )
     chunks = retrieve_chunks(
         db=db,
         owner_id=owner_id,
@@ -354,10 +376,11 @@ def chat_stream(
         db=db,
         owner_id=owner_id,
         question=request.question,
-        queries=retrieval_plan.queries,
+        queries=evidence_goals,
         chunks=chunks,
         trace=trace,
     )
+    evidence_matrix = build_evidence_matrix(evidence_goals, trace)
 
     if session is None:
         session = chat_repository.create_session(
@@ -379,6 +402,7 @@ def chat_stream(
             chunks=chunks,
             history=history,
             trace=trace,
+            evidence_matrix=evidence_matrix,
         ),
         media_type="text/event-stream",
         headers={

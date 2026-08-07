@@ -41,10 +41,15 @@ def chunk_pages(
                         source_refs={
                             "document_id": document_id,
                             "pages": [page.page_number],
+                            "page_metadata": page.metadata,
                         },
                         metadata={
                             "char_start": start,
                             "char_end": end,
+                            "language_hint": page.metadata.get("language_hint", "unknown"),
+                            "visual_evidence_risk": page.metadata.get(
+                                "visual_evidence_risk", "unknown"
+                            ),
                         },
                     )
                 )

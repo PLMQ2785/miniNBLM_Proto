@@ -226,14 +226,13 @@ def _search(
         return search_chunks_by_substring(db, owner_id, question, top_k)
     if algorithm == SearchAlgorithmKey.HYBRID:
         candidate_limit = top_k * 3
-        return _reciprocal_rank_fusion(
-            (
-                _dense_search(db, owner_id, question, candidate_limit),
-                search_chunks_by_keyword(db, owner_id, question, candidate_limit),
-                search_chunks_by_substring(db, owner_id, question, candidate_limit),
-            ),
-            top_k,
+        result_sets = (
+            _dense_search(db, owner_id, question, candidate_limit),
+            search_chunks_by_keyword(db, owner_id, question, candidate_limit),
+            search_chunks_by_substring(db, owner_id, question, candidate_limit),
         )
+        fused_rows = _reciprocal_rank_fusion(result_sets, top_k)
+        return _merge_query_anchors(result_sets, fused_rows, top_k)
     raise RuntimeError(f"Unsupported search algorithm: {algorithm}")
 
 

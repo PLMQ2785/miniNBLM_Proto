@@ -3,6 +3,7 @@ from app.services.prompt_builder import (
     build_system_message,
     build_user_message,
 )
+from app.services.evidence_coverage import EvidenceMatrix
 from app.services.retriever import RetrievedChunk
 
 
@@ -37,9 +38,11 @@ def test_system_prompt_allows_only_fully_supported_multi_source_inference() -> N
     assert "여러 Context에 모두 명시" in content
     assert "결론이 직접 도출" in content
     assert "자료에 없는 중간 전제" in content
-    assert "필요한 전제가 하나라도 Context에 없어서" in content
+    assert "확인 가능한 사실이 Context에 하나도 없을 때만" in content
     assert "각 사실이나 비교 항목 바로 뒤" in content
     assert "비교 대상 양쪽의 근거" in content
+    assert "관련 사실까지 버리라는 뜻이 아니다" in content
+    assert "각 SUPPORTED 항목을 빠짐없이" in content
 
 
 def test_build_rag_messages_places_history_before_current_question() -> None:
@@ -56,3 +59,19 @@ def test_build_rag_messages_places_history_before_current_question() -> None:
     assert messages[1]["content"] == "먼저 무엇을 하나요?"
     assert "[Context]" in messages[-1]["content"]
     assert "그 다음은?" in messages[-1]["content"]
+
+
+def test_user_message_includes_partial_evidence_matrix() -> None:
+    message = build_user_message(
+        "감점을 구분해 주세요.",
+        [_chunk()],
+        EvidenceMatrix(
+            status="partial",
+            supported_goals=("지연 감점률",),
+            missing_goals=("모델 불일치 정량 감점",),
+        ),
+    )
+
+    assert "[Evidence Matrix]" in message["content"]
+    assert "SUPPORTED: 지연 감점률" in message["content"]
+    assert "MISSING: 모델 불일치 정량 감점" in message["content"]
