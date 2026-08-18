@@ -1,4 +1,4 @@
-from app.clients.vllm_client import VLLMClient
+from app.clients.llm_client import LLMClient
 from app.services.pdf_parser import ParsedPage
 from app.services import vision_captioner
 from app.services.vision_captioner import (
@@ -76,7 +76,7 @@ def test_enrich_page_stores_caption_without_image_data(
         lambda *args: "data:image/png;base64,AAAA",
     )
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: (
             '{"summary":"Terminal response","visible_text":["LB05-01 NLNNN"],'
@@ -102,7 +102,7 @@ def test_caption_failure_preserves_page_for_text_only_indexing(monkeypatch) -> N
         lambda *args: "data:image/png;base64,AAAA",
     )
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("vision unavailable")),
     )
@@ -135,7 +135,7 @@ def test_invalid_caption_is_repaired_once(monkeypatch) -> None:
         assert kwargs["response_format"]["type"] == "json_schema"
         return next(responses)
 
-    monkeypatch.setattr(VLLMClient, "chat_completion", respond)
+    monkeypatch.setattr(LLMClient, "chat_completion", respond)
 
     result = enrich_pages_with_vision_captions("manual.pdf", [_page()], mode="risk_only")
 

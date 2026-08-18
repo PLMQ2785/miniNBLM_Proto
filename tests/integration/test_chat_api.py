@@ -8,7 +8,7 @@ from app.models.chat import ChatMessage, ChatSession
 from app.repositories import user_repository
 from app.schemas.chat import SourceRef
 from app.services.generator import GeneratedAnswer
-from app.clients.vllm_client import VLLMClient
+from app.clients.llm_client import LLMClient
 from app.services.query_rewriter import RetrievalQueryPlan
 from app.services.retriever import RetrievedChunk
 
@@ -290,7 +290,7 @@ def test_chat_streams_answer_and_persists_only_after_completion(
     )
     monkeypatch.setattr(chat_api, "retrieve_chunks", lambda **kwargs: [retrieved])
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "stream_chat_completion",
         lambda self, messages, **kwargs: iter(
             ["손상 여부를 ", "확인합니다. [Source 1, Page 7]"]
@@ -337,7 +337,7 @@ def test_chat_stream_hides_fragmented_no_source_marker(
     )
     monkeypatch.setattr(chat_api, "retrieve_chunks", lambda **kwargs: [retrieved])
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "stream_chat_completion",
         lambda self, messages, **kwargs: iter(
             ["[[NO_", "SOURCE]] 업로드된 자료에서 확인되지 않습니다."]
@@ -385,12 +385,12 @@ def test_chat_stream_revises_and_persists_citation_repair(
     )
     monkeypatch.setattr(chat_api, "retrieve_chunks", lambda **kwargs: [retrieved])
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "stream_chat_completion",
         lambda self, messages, **kwargs: iter(["낙상 후 손상 여부를 확인합니다."]),
     )
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda self, messages, **kwargs: (
             "낙상 후 손상 여부를 확인합니다. [Source 1, Page 7]"
@@ -434,7 +434,7 @@ def test_failed_new_chat_stream_removes_empty_session(
     def fail_stream(*args, **kwargs):
         raise RuntimeError("vLLM failed")
 
-    monkeypatch.setattr(VLLMClient, "stream_chat_completion", fail_stream)
+    monkeypatch.setattr(LLMClient, "stream_chat_completion", fail_stream)
 
     with client.stream("POST", "/chat/stream", json={"question": "실패 질문"}) as response:
         body = "".join(response.iter_text())

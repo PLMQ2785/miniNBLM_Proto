@@ -1,12 +1,12 @@
 import pytest
 
-from app.clients.vllm_client import VLLMClient
+from app.clients.llm_client import LLMClient
 from app.services.query_rewriter import plan_retrieval_queries, rewrite_retrieval_query
 
 
 def test_single_hop_question_produces_one_query(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: (
             '{"standalone_query":"낙상 예방 방법은?",'
@@ -22,7 +22,7 @@ def test_single_hop_question_produces_one_query(monkeypatch: pytest.MonkeyPatch)
 
 def test_tagged_multi_hop_plan_is_parsed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: """STANDALONE: push된 커밋에서 revert를 사용하는 이유
 QUERY: git reset hard 이력 변경 특성
@@ -45,7 +45,7 @@ def test_multi_hop_question_is_decomposed_and_deduplicated(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: """```json
         {
@@ -84,7 +84,7 @@ def test_follow_up_is_rewritten_from_the_latest_exchange(monkeypatch: pytest.Mon
             '"queries":["낙상 후 손상 여부 확인 다음 조치"]}'
         )
 
-    monkeypatch.setattr(VLLMClient, "chat_completion", rewrite)
+    monkeypatch.setattr(LLMClient, "chat_completion", rewrite)
     history = [
         {"role": "user", "content": "이전 주제"},
         {"role": "assistant", "content": "이전 답변"},
@@ -108,7 +108,7 @@ def test_query_plan_requests_json_object_output(monkeypatch: pytest.MonkeyPatch)
         call.update(kwargs)
         return '{"standalone_query":"독립 질문","queries":["독립 질문"]}'
 
-    monkeypatch.setattr(VLLMClient, "chat_completion", rewrite)
+    monkeypatch.setattr(LLMClient, "chat_completion", rewrite)
 
     plan_retrieval_queries("질문", [])
 
@@ -128,7 +128,7 @@ def test_query_plan_repair_keeps_previous_exchange(monkeypatch: pytest.MonkeyPat
             '"queries":["git stash","hotfix branch","git stash pop git merge"]}'
         )
 
-    monkeypatch.setattr(VLLMClient, "chat_completion", rewrite)
+    monkeypatch.setattr(LLMClient, "chat_completion", rewrite)
     history = [
         {"role": "user", "content": "기능 작업 중 긴급 수정 요청을 받았습니다."},
         {"role": "assistant", "content": "hotfix 브랜치를 사용할 수 있습니다."},
@@ -155,7 +155,7 @@ def test_rewrite_uses_bounded_previous_exchange(monkeypatch: pytest.MonkeyPatch)
         call["messages"] = messages
         return '{"standalone_query":"독립 질문","queries":["독립 질문"]}'
 
-    monkeypatch.setattr(VLLMClient, "chat_completion", rewrite)
+    monkeypatch.setattr(LLMClient, "chat_completion", rewrite)
     history = [
         {"role": "user", "content": "가" * 700},
         {"role": "assistant", "content": "나" * 1300},
@@ -171,7 +171,7 @@ def test_rewrite_failure_falls_back_to_original_question(monkeypatch: pytest.Mon
     def fail(*args, **kwargs):
         raise RuntimeError("LLM unavailable")
 
-    monkeypatch.setattr(VLLMClient, "chat_completion", fail)
+    monkeypatch.setattr(LLMClient, "chat_completion", fail)
 
     assert rewrite_retrieval_query(
         "  그 다음에는?  ",
@@ -183,7 +183,7 @@ def test_invalid_json_falls_back_to_a_single_normalized_query(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: "검색 질의: git revert 협업 특성",
     )
@@ -198,7 +198,7 @@ def test_multiple_json_objects_select_the_plan_with_more_queries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: """
         {"standalone_query":"전체 질문","queries":[]}
@@ -217,7 +217,7 @@ def test_malformed_structured_response_falls_back_to_original_question(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: '{"standalone_query":"잘린 응답", "queries":[',
     )
@@ -232,7 +232,7 @@ def test_cross_language_query_is_preserved_without_becoming_evidence_goal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: (
             '{"standalone_query":"분석 보고서 지연 감점과 모델 불일치 영향",'
@@ -251,3 +251,26 @@ def test_cross_language_query_is_preserved_without_becoming_evidence_goal(
         "implementation design model consistency",
     )
     assert all(query not in plan.evidence_goals for query in plan.queries[-2:])
+
+
+def test_query_plan_discards_structured_field_fragments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        LLMClient,
+        "chat_completion",
+        lambda *args, **kwargs: (
+            '{"standalone_query":"RS485 응답 해석",'
+            '"evidence_goals":["채널 상태","프레임 조건"],'
+            '"queries":["RS485 채널 상태","cross_language_queries$: ["],'
+            '"cross_language_queries":["RS485 channel state"]}'
+        ),
+    )
+
+    plan = plan_retrieval_queries("복합 질문", [])
+
+    assert plan.queries == (
+        "RS485 응답 해석",
+        "RS485 채널 상태",
+        "RS485 channel state",
+    )

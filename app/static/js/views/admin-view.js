@@ -30,6 +30,12 @@ export class AdminView {
     maintenance,
     jobStatus,
     retryButton,
+    passwordResetForm,
+    resetUsername,
+    temporaryPassword,
+    temporaryPasswordConfirmation,
+    passwordResetMessage,
+    passwordResetButton,
   }) {
     this.root = root;
     this.presetList = presetList;
@@ -45,12 +51,19 @@ export class AdminView {
     this.maintenance = maintenance;
     this.jobStatus = jobStatus;
     this.retryButton = retryButton;
+    this.passwordResetForm = passwordResetForm;
+    this.resetUsername = resetUsername;
+    this.temporaryPassword = temporaryPassword;
+    this.temporaryPasswordConfirmation = temporaryPasswordConfirmation;
+    this.passwordResetMessage = passwordResetMessage;
+    this.passwordResetButton = passwordResetButton;
     this.state = null;
     this.selectedKey = null;
     this.selectedAlgorithmKey = null;
     this.activateHandler = null;
     this.activateAlgorithmHandler = null;
     this.retryHandler = null;
+    this.passwordResetHandler = null;
 
     this.form.addEventListener("change", () => {
       this.selectedKey = new FormData(this.form).get("preset");
@@ -73,6 +86,18 @@ export class AdminView {
     this.retryButton.addEventListener("click", () => {
       if (this.retryHandler && this.state?.latest_job) this.retryHandler(this.state.latest_job.job_id);
     });
+    this.passwordResetForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      this.showPasswordResetMessage("");
+      if (this.temporaryPassword.value !== this.temporaryPasswordConfirmation.value) {
+        this.showPasswordResetMessage("임시 비밀번호 확인이 일치하지 않습니다.", true);
+        this.temporaryPasswordConfirmation.focus();
+        return;
+      }
+      if (this.passwordResetHandler) {
+        this.passwordResetHandler(this.resetUsername.value.trim(), this.temporaryPassword.value);
+      }
+    });
   }
 
   onActivate(handler) {
@@ -85,6 +110,10 @@ export class AdminView {
 
   onActivateAlgorithm(handler) {
     this.activateAlgorithmHandler = handler;
+  }
+
+  onPasswordReset(handler) {
+    this.passwordResetHandler = handler;
   }
 
   show() {
@@ -171,6 +200,7 @@ export class AdminView {
     }
   }
 
+
   renderJob(job) {
     this.jobStatus.removeAttribute("title");
     this.retryButton.hidden = !job || !["failed", "completed_with_errors"].includes(job.status);
@@ -203,9 +233,26 @@ export class AdminView {
     }
   }
 
+  setPasswordResetBusy(isBusy) {
+    this.resetUsername.disabled = isBusy;
+    this.temporaryPassword.disabled = isBusy;
+    this.temporaryPasswordConfirmation.disabled = isBusy;
+    this.passwordResetButton.disabled = isBusy;
+  }
+
+  showPasswordResetMessage(message, isError = false) {
+    this.passwordResetMessage.textContent = message;
+    this.passwordResetMessage.dataset.state = isError ? "error" : "success";
+  }
+
+  resetPasswordResetForm() {
+    this.passwordResetForm.reset();
+  }
+
   showError(message) {
     this.error.textContent = message;
   }
+
 
   syncActivateButton() {
     this.activateButton.disabled = !this.state

@@ -1,6 +1,6 @@
 import pytest
 
-from app.clients.vllm_client import VLLMClient
+from app.clients.llm_client import LLMClient
 from app.services.evidence_coverage import EvidenceMatrix
 from app.services.generator import INSUFFICIENT_EVIDENCE_ANSWER, StreamingAnswer
 from app.services.retriever import RetrievedChunk
@@ -25,7 +25,7 @@ def test_grounded_answer_streams_deltas_and_keeps_sources(
     retrieved_chunk: RetrievedChunk,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "stream_chat_completion",
         lambda self, messages, **kwargs: iter(
             ["자료에서는 ", "낙상 예방 교육을 시행합니다. [Source 1, Page 3]"]
@@ -57,7 +57,7 @@ def test_grounded_stream_returns_only_the_cited_candidate(
         source_refs={"page": 9},
     )
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "stream_chat_completion",
         lambda self, messages, **kwargs: iter(
             ["Git은 변경 이력을 추적합니다. ", "[Source 2, Page 9]"]
@@ -84,7 +84,7 @@ def test_no_source_marker_is_buffered_and_never_streamed(
     deltas: list[str],
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "stream_chat_completion",
         lambda self, messages, **kwargs: iter(deltas),
     )
@@ -102,7 +102,7 @@ def test_empty_retrieval_streams_local_fallback_without_llm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "stream_chat_completion",
         lambda *args, **kwargs: pytest.fail("LLM must not be called without chunks"),
     )
@@ -120,7 +120,7 @@ def test_insufficient_evidence_streams_clarification_without_revision(
     retrieved_chunk: RetrievedChunk,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "stream_chat_completion",
         lambda *args, **kwargs: pytest.fail("Insufficient evidence must not stream an LLM draft"),
     )
@@ -144,12 +144,12 @@ def test_stream_exposes_final_citation_revision(
     retrieved_chunk: RetrievedChunk,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "stream_chat_completion",
         lambda self, messages, **kwargs: iter(["자료에서는 낙상 예방 교육을 시행합니다."]),
     )
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda self, messages, **kwargs: (
             "자료에서는 낙상 예방 교육을 시행합니다. [Source 1, Page 3]"
@@ -175,12 +175,12 @@ def test_stream_no_source_repair_keeps_grounded_subset(
         "근거가 없는 추가 절차도 반드시 수행해야 합니다."
     )
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "stream_chat_completion",
         lambda self, messages, **kwargs: iter([draft]),
     )
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda self, messages, **kwargs: (
             "[[NO_SOURCE]] 업로드된 자료에서 확인되지 않습니다."

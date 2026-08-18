@@ -8,10 +8,15 @@ wheels/
 
 # Virtual environments
 .venv
+.venv-native
+.venv-vllm
 
 # Local environment and runtime data
 .env
+.env.all-in-one
+.env.all-in-one-31b
 data/
+.native/
 backups/
 benchmark_results/
 /sample/

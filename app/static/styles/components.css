@@ -141,6 +141,29 @@
   line-height: 20px;
 }
 
+.language-model-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.language-model-control select {
+  max-width: 180px;
+  min-height: 32px;
+  padding: 0 28px 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text-strong);
+  font-size: 11px;
+}
+
+.language-model-control select:disabled {
+  opacity: 0.7;
+}
+
 .account-block button,
 .admin-header-actions button,
 .job-heading-row button {
@@ -264,7 +287,8 @@
   line-height: 17px;
 }
 
-.preset-actions button {
+.preset-actions button,
+.admin-password-reset-form button {
   min-height: 40px;
   padding: 0 16px;
   border: 1px solid var(--accent);
@@ -276,7 +300,8 @@
   font-weight: 700;
 }
 
-.preset-actions button:disabled {
+.preset-actions button:disabled,
+.admin-password-reset-form button:disabled {
   border-color: var(--border);
   background: var(--border);
   color: var(--text-muted);
@@ -288,6 +313,10 @@
   margin: 0;
   color: var(--danger);
   font-size: 12px;
+}
+
+.admin-error[data-state="success"] {
+  color: var(--accent-strong);
 }
 
 .job-status {

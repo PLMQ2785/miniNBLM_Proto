@@ -49,6 +49,12 @@ const adminView = new AdminView({
   maintenance: byId("maintenance-status"),
   jobStatus: byId("job-status"),
   retryButton: byId("retry-job-button"),
+  passwordResetForm: byId("admin-password-reset-form"),
+  resetUsername: byId("reset-username"),
+  temporaryPassword: byId("reset-temporary-password"),
+  temporaryPasswordConfirmation: byId("reset-temporary-password-confirmation"),
+  passwordResetMessage: byId("admin-password-reset-message"),
+  passwordResetButton: byId("admin-password-reset-button"),
 });
 
 const passwordChangeView = new PasswordChangeView({
@@ -107,6 +113,9 @@ const sourcePanel = new SourcePanel({
   mobileToggle: byId("source-mobile-toggle"),
 });
 
+const notificationView = new NotificationView(byId("notification-region"));
+const languageModelSelect = byId("language-model-select");
+
 const controller = new AppController({
   state: createInitialState(),
   apiClient,
@@ -114,7 +123,7 @@ const controller = new AppController({
   documentPanel,
   chatPanel,
   sourcePanel,
-  notificationView: new NotificationView(byId("notification-region")),
+  notificationView,
 });
 
 function syncBackdrop() {
@@ -194,6 +203,22 @@ function closeAdmin() {
   appRoot.hidden = false;
 }
 
+async function loadLanguageModels() {
+  languageModelSelect.disabled = true;
+  const state = await apiClient.getLanguageModelState();
+  languageModelSelect.replaceChildren();
+  for (const endpoint of state.endpoints) {
+    const option = document.createElement("option");
+    option.value = endpoint.key;
+    option.textContent = endpoint.display_name;
+    option.title = `${endpoint.model} · ${endpoint.supports_vision ? "Vision 지원" : "텍스트 전용"}`;
+    option.selected = endpoint.key === state.active_endpoint_key;
+    languageModelSelect.append(option);
+  }
+  languageModelSelect.dataset.activeKey = state.active_endpoint_key;
+  languageModelSelect.disabled = state.endpoints.length < 2;
+}
+
 async function enterWorkspace(user) {
   currentUser = user;
   authView.hide();
@@ -204,6 +229,11 @@ async function enterWorkspace(user) {
   byId("admin-username").textContent = user.username;
   byId("admin-button").hidden = user.role !== "admin";
   appRoot.hidden = false;
+  try {
+    await loadLanguageModels();
+  } catch (error) {
+    notificationView.showError(`언어모델 설정을 불러오지 못했습니다: ${error.message}`);
+  }
   if (!controllerStarted) {
     controllerStarted = true;
     await controller.start();
@@ -354,6 +384,23 @@ adminView.onActivateAlgorithm(async (algorithmKey) => {
   }
 });
 
+
+adminView.onPasswordReset(async (username, temporaryPassword) => {
+  adminView.setPasswordResetBusy(true);
+  adminView.showPasswordResetMessage("");
+  try {
+    const user = await apiClient.resetUserPassword(username, temporaryPassword);
+    adminView.resetPasswordResetForm();
+    adminView.showPasswordResetMessage(
+      `${user.username} 사용자의 임시 비밀번호를 설정하고 기존 세션을 종료했습니다.`,
+    );
+  } catch (error) {
+    adminView.showPasswordResetMessage(error.message, true);
+  } finally {
+    adminView.setPasswordResetBusy(false);
+  }
+});
+
 byId("admin-button").addEventListener("click", openAdmin);
 byId("admin-close").addEventListener("click", closeAdmin);
 byId("account-button").addEventListener("click", () => openAccount("workspace"));
@@ -362,6 +409,22 @@ byId("logout-button").addEventListener("click", logout);
 byId("admin-logout-button").addEventListener("click", logout);
 
 window.addEventListener("authrequired", () => window.location.reload());
+
+languageModelSelect.addEventListener("change", async () => {
+  const previousKey = languageModelSelect.dataset.activeKey || "";
+  const endpointKey = languageModelSelect.value;
+  languageModelSelect.disabled = true;
+  try {
+    const state = await apiClient.activateLanguageModel(endpointKey);
+    languageModelSelect.dataset.activeKey = state.active_endpoint_key;
+    await loadLanguageModels();
+    notificationView.showStatus("언어모델을 변경했습니다.");
+  } catch (error) {
+    if (previousKey) languageModelSelect.value = previousKey;
+    languageModelSelect.disabled = false;
+    notificationView.showError(`언어모델을 변경하지 못했습니다: ${error.message}`);
+  }
+});
 
 async function bootstrap() {
   try {

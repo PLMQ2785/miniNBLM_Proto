@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.dependencies import ensure_retrieval_writes_available, get_current_user, get_db
+from app.dependencies import ensure_retrieval_writes_available, get_current_user, get_current_user_with_language_model, get_db
 from app.models.chat import ChatMessage, ChatSession
 from app.models.user import User
 from app.repositories import chat_repository
@@ -26,6 +26,7 @@ from app.services.evidence_coverage import build_evidence_matrix, complete_evide
 from app.services.query_rewriter import plan_retrieval_queries
 from app.services.retriever import retrieve_chunks
 from app.services.retrieval_trace import RetrievalTrace
+from app.services import language_model_service
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
@@ -141,6 +142,7 @@ def _chat_event_stream(
     history: list[dict[str, str]],
     trace: RetrievalTrace,
     evidence_matrix,
+    endpoint_key: str,
 ):
     try:
         with SessionLocal() as db:
@@ -155,7 +157,13 @@ def _chat_event_stream(
             history=history,
             evidence_matrix=evidence_matrix,
         )
-        for delta in streamed:
+        stream_iterator = iter(streamed)
+        while True:
+            try:
+                with language_model_service.use_endpoint(endpoint_key):
+                    delta = next(stream_iterator)
+            except StopIteration:
+                break
             yield _sse("delta", {"text": delta})
         if streamed.generated is None:
             raise RuntimeError("Streaming answer completed without a final result")
@@ -263,7 +271,7 @@ def delete_chat_session(
 def chat(
     request: ChatRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user_with_language_model),
     _: None = Depends(ensure_retrieval_writes_available),
 ) -> ChatResponse:
     if request.session_id is None:
@@ -338,7 +346,7 @@ def chat(
 def chat_stream(
     request: ChatRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user_with_language_model),
     _: None = Depends(ensure_retrieval_writes_available),
 ) -> StreamingResponse:
     owner_id = user.id
@@ -392,6 +400,7 @@ def chat_stream(
         db.refresh(session)
 
     stream_session_id = session.id
+    endpoint_key = language_model_service.get_user_endpoint_key(user)
     db.close()
     return StreamingResponse(
         _chat_event_stream(
@@ -403,6 +412,7 @@ def chat_stream(
             history=history,
             trace=trace,
             evidence_matrix=evidence_matrix,
+            endpoint_key=endpoint_key,
         ),
         media_type="text/event-stream",
         headers={

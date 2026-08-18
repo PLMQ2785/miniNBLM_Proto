@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     embedding_model: str = "BAAI/bge-m3"
+    embedding_device: str | None = None
 
 
 class QueryEmbeddingRequest(BaseModel):
@@ -36,7 +37,11 @@ def get_settings() -> Settings:
 
 @lru_cache
 def get_model() -> SentenceTransformer:
-    return SentenceTransformer(get_settings().embedding_model)
+    settings = get_settings()
+    return SentenceTransformer(
+        settings.embedding_model,
+        device=settings.embedding_device or None,
+    )
 
 
 app = FastAPI(title="BGE-M3 Embedding Service")

@@ -18,6 +18,7 @@ ARG UV_DEPENDENCY_GROUP=api
 RUN uv sync --frozen --only-group "${UV_DEPENDENCY_GROUP}"
 
 COPY app ./app
+COPY config ./config
 COPY alembic ./alembic
 COPY alembic.ini .
 COPY docker/api-entrypoint.sh /usr/local/bin/api-entrypoint

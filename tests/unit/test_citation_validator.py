@@ -1,6 +1,6 @@
 import pytest
 
-from app.clients.vllm_client import VLLMClient
+from app.clients.llm_client import LLMClient
 from app.services.citation_validator import (
     answer_needs_citation_repair,
     valid_cited_source_indexes,
@@ -40,7 +40,7 @@ def test_complete_citations_skip_llm(
     chunks: list[RetrievedChunk],
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: pytest.fail("Citation repair must be skipped"),
     )
@@ -58,7 +58,7 @@ def test_complete_citations_remove_revised_answer_heading_without_llm(
     chunks: list[RetrievedChunk],
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: pytest.fail("Citation repair must be skipped"),
     )
@@ -77,7 +77,7 @@ def test_bare_source_reference_is_completed_from_chunk_page(
     chunks: list[RetrievedChunk],
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: pytest.fail("Structural normalization needs no LLM"),
     )
@@ -101,7 +101,7 @@ def test_uncited_conclusion_is_repaired(
         "[Source 1, Page 6; Source 2, Page 7]"
     )
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: repaired,
     )
@@ -132,7 +132,7 @@ def test_wrong_page_triggers_repair(
     chunks: list[RetrievedChunk],
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: pytest.fail("Known source pages need no LLM repair"),
     )
@@ -151,7 +151,7 @@ def test_grouped_citation_pages_are_normalized_from_source_chunks(
     chunks: list[RetrievedChunk],
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: pytest.fail("Known source pages need no LLM repair"),
     )
@@ -181,7 +181,7 @@ def test_parenthesized_source_is_not_treated_as_a_valid_citation(
     chunks: list[RetrievedChunk],
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: "reset은 이력을 삭제합니다. [Source 1, Page 6]",
     )
@@ -200,7 +200,7 @@ def test_invalid_repair_preserves_original_answer(
     chunks: list[RetrievedChunk],
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: "근거가 있다고 주장합니다. [Source 99, Page 1]",
     )
@@ -214,7 +214,7 @@ def test_repair_can_reject_all_unsupported_claims(
     chunks: list[RetrievedChunk],
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: (
             "[[NO_SOURCE]] 업로드된 자료에서 확인되지 않습니다."
@@ -231,7 +231,7 @@ def test_no_source_repair_preserves_only_validly_cited_claims(
     chunks: list[RetrievedChunk],
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: (
             "[[NO_SOURCE]] 업로드된 자료에서 확인되지 않습니다."
@@ -260,7 +260,7 @@ def test_repair_removes_bracketed_revised_answer_heading(
     chunks: list[RetrievedChunk],
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: (
             "### [Revised answer]\nreset은 이후 이력을 삭제합니다. [Source 1, Page 6]"

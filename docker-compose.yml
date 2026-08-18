@@ -29,9 +29,8 @@ services:
       UPLOAD_DIR: /app/data/uploads
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-52428800}
       EMBEDDING_BASE_URL: http://127.0.0.1:8070
-      VLLM_BASE_URL: http://127.0.0.1:8010/v1
-      VLLM_API_KEY: EMPTY
-      VLLM_MODEL: gemma4
+      LLM_ENDPOINTS_FILE: /app/config/llm-endpoints.json
+      XAI_API_KEY: ${XAI_API_KEY:-}
       VISION_CAPTION_MODE: ${VISION_CAPTION_MODE:-disabled}
       VISION_CAPTION_DPI: ${VISION_CAPTION_DPI:-144}
       VISION_CAPTION_VERSION: ${VISION_CAPTION_VERSION:-gemma4-page-caption-v1}
@@ -46,6 +45,7 @@ services:
     network_mode: host
     volumes:
       - ./data:/app/data
+      - ./config/llm-endpoints.json:/app/config/llm-endpoints.json:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/ready >/dev/null"]
       interval: 10s
@@ -101,7 +101,7 @@ services:
       - "8010"
     volumes:
       - hf_cache:/root/.cache/huggingface
-      - ${VLLM_MODEL_PATH:-./google/google-gemma-4-12B-it-W4A16}:/models/gemma4:ro
+      - ${VLLM_MODEL_PATH:-./google/gemma-4-12B-it-W4A16}:/models/gemma4:ro
     profiles:
       - llm
 

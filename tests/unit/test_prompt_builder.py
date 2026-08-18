@@ -88,3 +88,36 @@ def test_user_message_includes_partial_evidence_matrix() -> None:
     assert "[Evidence Matrix]" in message["content"]
     assert "SUPPORTED: 지연 감점률" in message["content"]
     assert "MISSING: 모델 불일치 정량 감점" in message["content"]
+
+
+def test_user_message_preserves_positionally_interpreted_literals() -> None:
+    message = build_user_message(
+        "응답 `LB05 03 NLNNB`를 위치별로 해석해 주세요.",
+        [_chunk()],
+    )
+
+    assert "[Literal Fidelity]" in message["content"]
+    assert "PRESERVE EXACTLY: `LB05 03 NLNNB`" in message["content"]
+    assert "copy each character from left to right" in message["content"]
+
+
+def test_user_message_requires_exclusion_removal_before_workflow_commands() -> None:
+    message = build_user_message(
+        "secret.txt를 .gitignore에 넣었는데 stash하려면 어떻게 하나요?",
+        [_chunk()],
+    )
+
+    assert "[Workflow Preconditions]" in message["content"]
+    assert "state how that exclusion is removed" in message["content"]
+    assert "execution order" in message["content"]
+
+
+def test_user_message_includes_insufficient_matrix_for_qualified_answers() -> None:
+    message = build_user_message(
+        "자료가 뒷받침하는 내용과 확정할 수 없는 부분을 구분해 주세요.",
+        [_chunk()],
+        EvidenceMatrix(status="insufficient", missing_goals=("구체 적용 조건",)),
+    )
+
+    assert "Coverage: INSUFFICIENT" in message["content"]
+    assert "MISSING: 구체 적용 조건" in message["content"]

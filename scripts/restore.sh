@@ -6,15 +6,72 @@ PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_DIR"
 
 COMPOSE=(docker compose --profile llm)
-UPLOADS_DIR="${UPLOADS_DIR:-$PROJECT_DIR/data/uploads}"
+UPLOADS_DIR="${UPLOADS_DIR:-}"
 DB_SERVICE="${DB_SERVICE:-db}"
-DB_NAME="${DB_NAME:-rag_db}"
-DB_USER="${DB_USER:-rag_user}"
-DB_PORT="${DB_PORT:-}"
+DB_NAME="${DB_NAME:-${NATIVE_DB_NAME:-rag_db}}"
+DB_USER="${DB_USER:-${NATIVE_DB_USER:-rag_user}}"
+DB_PORT="${DB_PORT:-${MININBLM_DB_PORT:-}}"
 if [[ -z "$DB_PORT" && -f .env ]]; then
   DB_PORT="$(sed -n 's/^MININBLM_DB_PORT=//p' .env | tail -n 1)"
 fi
 DB_PORT="${DB_PORT:-5433}"
+RUNTIME_MODE="${RUNTIME_MODE:-docker}"
+if [[ -z "$UPLOADS_DIR" ]]; then
+  if [[ "$RUNTIME_MODE" == "native" ]]; then
+    UPLOADS_DIR="$PROJECT_DIR/.native/uploads"
+  else
+    UPLOADS_DIR="$PROJECT_DIR/data/uploads"
+  fi
+fi
+DB_HOST="${DB_HOST:-127.0.0.1}"
+DB_PASSWORD="${DB_PASSWORD:-${NATIVE_DB_PASSWORD:-}}"
+if [[ -z "$DB_PASSWORD" && -f .env ]]; then
+  DB_PASSWORD="$(sed -n 's/^NATIVE_DB_PASSWORD=//p' .env | tail -n 1)"
+fi
+DB_PASSWORD="${DB_PASSWORD:-rag_password}"
+
+stop_api() {
+  if [[ "$RUNTIME_MODE" == "native" ]]; then
+    "$PROJECT_DIR/run-native.sh" stop-api >/dev/null
+  else
+    "${COMPOSE[@]}" stop api >/dev/null
+  fi
+}
+
+start_api() {
+  if [[ "$RUNTIME_MODE" == "native" ]]; then
+    "$PROJECT_DIR/run-native.sh" start-api >/dev/null
+  else
+    "${COMPOSE[@]}" start api >/dev/null
+  fi
+}
+
+dump_database() {
+  if [[ "$RUNTIME_MODE" == "native" ]]; then
+    PGPASSWORD="$DB_PASSWORD" pg_dump \
+      --format=custom --no-owner --no-privileges \
+      --host "$DB_HOST" --port "$DB_PORT" --username "$DB_USER" "$DB_NAME"
+  else
+    "${COMPOSE[@]}" exec -T "$DB_SERVICE" \
+      pg_dump --format=custom --no-owner --no-privileges \
+      --host 127.0.0.1 --port "$DB_PORT" --username "$DB_USER" "$DB_NAME"
+  fi
+}
+
+restore_database() {
+  local dump_file="$1"
+  if [[ "$RUNTIME_MODE" == "native" ]]; then
+    PGPASSWORD="$DB_PASSWORD" pg_restore \
+      --clean --if-exists --no-owner --no-privileges --exit-on-error \
+      --host "$DB_HOST" --port "$DB_PORT" --username "$DB_USER" --dbname "$DB_NAME" \
+      <"$dump_file"
+  else
+    "${COMPOSE[@]}" exec -T "$DB_SERVICE" \
+      pg_restore --clean --if-exists --no-owner --no-privileges --exit-on-error \
+      --host 127.0.0.1 --port "$DB_PORT" --username "$DB_USER" --dbname "$DB_NAME" \
+      <"$dump_file"
+  fi
+}
 
 usage() {
   cat <<'EOF'
@@ -24,9 +81,9 @@ Usage:
 
 --verify-only validates the archive without changing data.
 --yes replaces the current database and uploaded PDFs.
+Set RUNTIME_MODE=native to use host PostgreSQL and run-native.sh.
 EOF
 }
-
 mode="${1:-}"
 archive="${2:-}"
 if [[ "$mode" == "--help" || "$mode" == "-h" ]]; then
@@ -37,6 +94,13 @@ if [[ "$mode" != "--verify-only" && "$mode" != "--yes" ]] || [[ -z "$archive" ]]
   usage >&2
   exit 2
 fi
+
+for command in tar sha256sum mktemp realpath; do
+  command -v "$command" >/dev/null 2>&1 || {
+    echo "오류: '$command' 명령을 찾을 수 없습니다." >&2
+    exit 1
+  }
+done
 archive="$(realpath "$archive")"
 [[ -f "$archive" ]] || {
   echo "오류: 백업 파일을 찾을 수 없습니다: $archive" >&2
@@ -46,13 +110,6 @@ archive="$(realpath "$archive")"
   echo "오류: 안전하지 않은 UPLOADS_DIR입니다." >&2
   exit 1
 }
-
-for command in docker tar sha256sum mktemp realpath; do
-  command -v "$command" >/dev/null 2>&1 || {
-    echo "오류: '$command' 명령을 찾을 수 없습니다." >&2
-    exit 1
-  }
-done
 
 staging_dir="$(mktemp -d "${TMPDIR:-/tmp}/mininblm-restore.XXXXXX")"
 rollback_dir="$staging_dir/rollback"
@@ -64,10 +121,17 @@ restore_succeeded=false
 
 replace_uploads() {
   local uploads_archive="$1"
-  "${COMPOSE[@]}" run --rm --no-deps -T \
-    -v "$uploads_archive:/restore/uploads.tar.gz:ro" \
-    --entrypoint sh api -c \
-    'set -eu; rm -rf /app/data/uploads; mkdir -p /app/data; tar --no-same-owner --no-same-permissions -xzf /restore/uploads.tar.gz -C /app/data'
+  if [[ "$RUNTIME_MODE" == "native" ]]; then
+    rm -rf -- "$UPLOADS_DIR"
+    mkdir -p "$(dirname "$UPLOADS_DIR")"
+    tar --no-same-owner --no-same-permissions \
+      -xzf "$uploads_archive" -C "$(dirname "$UPLOADS_DIR")"
+  else
+    "${COMPOSE[@]}" run --rm --no-deps -T \
+      -v "$uploads_archive:/restore/uploads.tar.gz:ro" \
+      --entrypoint sh api -c \
+      'set -eu; rm -rf /app/data/uploads; mkdir -p /app/data; tar --no-same-owner --no-same-permissions -xzf /restore/uploads.tar.gz -C /app/data'
+  fi
 }
 
 cleanup() {
@@ -75,15 +139,11 @@ cleanup() {
   trap - EXIT INT TERM
   if [[ "$restore_started" == true && "$restore_succeeded" != true ]]; then
     echo "복원에 실패하여 기존 데이터로 rollback합니다." >&2
-    "${COMPOSE[@]}" exec -T "$DB_SERVICE" \
-      pg_restore --clean --if-exists --no-owner --no-privileges --exit-on-error \
-      --host 127.0.0.1 --port "$DB_PORT" --username "$DB_USER" --dbname "$DB_NAME" \
-      <"$rollback_dir/database.dump" || true
+    restore_database "$rollback_dir/database.dump" || true
     replace_uploads "$rollback_dir/uploads.tar.gz" || true
   fi
   if [[ "$api_was_stopped" == true ]]; then
-    echo "API 서비스를 다시 시작합니다."
-    "${COMPOSE[@]}" start api >/dev/null || true
+    start_api || true
   fi
   rm -rf -- "$staging_dir"
   exit "$exit_code"
@@ -164,23 +224,45 @@ if [[ "$mode" == "--verify-only" ]]; then
   exit 0
 fi
 
-"${COMPOSE[@]}" ps --status running "$DB_SERVICE" | grep -q "$DB_SERVICE" || {
-  echo "오류: DB 컨테이너가 실행 중이 아닙니다." >&2
-  exit 1
-}
-
-api_container="$("${COMPOSE[@]}" ps -q api)"
-if [[ -n "$api_container" && "$(docker inspect --format '{{.State.Running}}' "$api_container")" == "true" ]]; then
-  echo "복원을 위해 API 서비스를 정지합니다."
-  "${COMPOSE[@]}" stop api >/dev/null
-  api_was_stopped=true
+case "$RUNTIME_MODE" in
+  docker) require=(docker) ;;
+  native) require=(pg_dump pg_restore pg_isready) ;;
+  *)
+    echo "오류: RUNTIME_MODE는 docker 또는 native여야 합니다." >&2
+    exit 2
+    ;;
+esac
+for command in "${require[@]}"; do
+  command -v "$command" >/dev/null 2>&1 || {
+    echo "오류: '$command' 명령을 찾을 수 없습니다." >&2
+    exit 1
+  }
+done
+if [[ "$RUNTIME_MODE" == "docker" ]]; then
+  "${COMPOSE[@]}" ps --status running "$DB_SERVICE" | grep "$DB_SERVICE" >/dev/null || {
+    echo "오류: DB 컨테이너가 실행 중이 아닙니다." >&2
+    exit 1
+  }
+  api_container="$("${COMPOSE[@]}" ps -q api)"
+  if [[ -n "$api_container" && "$(docker inspect --format '{{.State.Running}}' "$api_container")" == "true" ]]; then
+    echo "복원을 위해 API 서비스를 정지합니다."
+    stop_api
+    api_was_stopped=true
+  fi
+else
+  pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null || {
+    echo "오류: native PostgreSQL이 준비되지 않았습니다." >&2
+    exit 1
+  }
+  if "$PROJECT_DIR/run-native.sh" status | grep -E '^api[[:space:]]+running' >/dev/null; then
+    echo "복원을 위해 API 서비스를 정지합니다."
+    stop_api
+    api_was_stopped=true
+  fi
 fi
 
 echo "복원 전 rollback snapshot을 생성합니다."
-"${COMPOSE[@]}" exec -T "$DB_SERVICE" \
-  pg_dump --format=custom --no-owner --no-privileges \
-  --host 127.0.0.1 --port "$DB_PORT" --username "$DB_USER" "$DB_NAME" \
-  >"$rollback_dir/database.dump"
+dump_database >"$rollback_dir/database.dump"
 if [[ -d "$UPLOADS_DIR" ]]; then
   tar -czf "$rollback_dir/uploads.tar.gz" \
     -C "$(dirname "$UPLOADS_DIR")" "$(basename "$UPLOADS_DIR")"
@@ -192,17 +274,13 @@ fi
 restore_started=true
 
 echo "PostgreSQL을 복원합니다."
-"${COMPOSE[@]}" exec -T "$DB_SERVICE" \
-  pg_restore --clean --if-exists --no-owner --no-privileges --exit-on-error \
-  --host 127.0.0.1 --port "$DB_PORT" --username "$DB_USER" --dbname "$DB_NAME" \
-  <"$staging_dir/database.dump"
+restore_database "$staging_dir/database.dump"
 
 replace_uploads "$staging_dir/uploads.tar.gz"
 restore_succeeded=true
 
 if [[ "$api_was_stopped" == true ]]; then
-  echo "API 서비스를 다시 시작합니다."
-  "${COMPOSE[@]}" start api >/dev/null
+  start_api
   api_was_stopped=false
 fi
 

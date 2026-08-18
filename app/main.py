@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import admin_retrieval, auth, chat, documents, health, metrics
+from app.api import admin_retrieval, admin_users, auth, chat, documents, health, language_models, metrics
 from app.config import settings
 from app.observability import RequestObservabilityMiddleware, configure_logging
 from app.services.runtime_service import initialize_runtime
@@ -29,7 +29,9 @@ async def prevent_stale_web_assets(request, call_next):
         response.headers["Cache-Control"] = "no-cache"
     return response
 
+app.include_router(language_models.router)
 app.include_router(admin_retrieval.router)
+app.include_router(admin_users.router)
 app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(documents.router)

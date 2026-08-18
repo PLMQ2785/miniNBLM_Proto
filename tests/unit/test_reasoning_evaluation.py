@@ -3,15 +3,16 @@ from pathlib import Path
 import fitz
 
 from app.evaluation.pdf_text_audit import audit_root
-from app.evaluation.reasoning_benchmark import _automatic_gate
-from app.evaluation.reasoning_fixture import load_reasoning_fixture
+from app.evaluation.reasoning_benchmark import _automatic_gate, _citation_metrics, _failure_reason
+from app.evaluation.reasoning_fixture import ReasoningCase, load_reasoning_fixture
+from app.services.generator import INSUFFICIENT_EVIDENCE_ANSWER
 
 
 def test_sample_reasoning_fixture_covers_groups_and_expected_behaviors() -> None:
     fixture = load_reasoning_fixture(Path("evaluation/sample_multilayer_reasoning.json"))
 
     assert len(fixture.documents) == 19
-    assert len(fixture.cases) == 10
+    assert len(fixture.cases) == 11
     assert {case.group for case in fixture.cases} == {
         "Manual",
         "OpenSWDesign",
@@ -57,3 +58,57 @@ def test_reasoning_automatic_gate_requires_grounding_or_abstention() -> None:
     assert _automatic_gate("qualified_answer", "no_source") == "fail"
     assert _automatic_gate("abstain", "no_source") == "pass"
     assert _automatic_gate("abstain", "grounded") == "fail"
+    assert (
+        _automatic_gate("abstain", "uncited_answer", INSUFFICIENT_EVIDENCE_ANSWER)
+        == "pass"
+    )
+
+
+def test_reasoning_metrics_detect_retrieval_and_source_interference() -> None:
+    case = ReasoningCase.model_validate(
+        {
+            "case_id": "metric-case",
+            "group": "group",
+            "question": "question",
+            "reasoning_depth": 1,
+            "answerability": "full",
+            "expected_behavior": "grounded_answer",
+            "evidence_modality": "text",
+            "reference_queries": ["query"],
+            "relevant_sources": [{"document": "expected.pdf", "page": 3}],
+            "evidence_facets": [
+                {
+                    "facet_id": "fact",
+                    "description": "fact",
+                    "relevant_sources": [{"document": "expected.pdf", "page": 3}],
+                }
+            ],
+            "required_answer_claims": ["expected claim"],
+        }
+    )
+
+    class Source:
+        def __init__(self, document_title: str, page: int) -> None:
+            self.document_title = document_title
+            self.page = page
+
+    citation = _citation_metrics(
+        case,
+        [Source("expected.pdf", 3), Source("distractor.pdf", 9)],
+    )
+
+    assert citation["status"] == "review"
+    assert citation["expected_source_precision"] == 0.5
+    assert citation["unexpected_sources"] == [{"document": "distractor.pdf", "page": 9}]
+    assert _failure_reason(
+        case,
+        final_source_recall=1.0,
+        outcome_status="grounded",
+        citation_accuracy=citation,
+    ) is None
+    assert _failure_reason(
+        case,
+        final_source_recall=0.0,
+        outcome_status="grounded",
+        citation_accuracy=citation,
+    ) == "retrieval_gap"

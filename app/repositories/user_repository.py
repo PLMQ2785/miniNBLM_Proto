@@ -27,9 +27,16 @@ def create_user(
     db.flush()
     return user
 
+def get_user_by_id(db: Session, user_id: int) -> User | None:
+    return db.get(User, user_id)
+
 
 def get_user_by_username(db: Session, username: str) -> User | None:
     return db.scalar(select(User).where(User.username == username))
+
+
+def delete_auth_sessions_for_user(db: Session, user_id: int) -> None:
+    db.execute(delete(AuthSession).where(AuthSession.user_id == user_id))
 
 
 def set_user_role(db: Session, user: User, role: str) -> User:

@@ -1,6 +1,6 @@
 import pytest
 
-from app.clients.vllm_client import VLLMClient
+from app.clients.llm_client import LLMClient
 from app.services import evidence_coverage
 from app.services.evidence_coverage import (
     assess_evidence_coverage,
@@ -28,7 +28,7 @@ def test_coverage_assessment_parses_missing_facets_and_retry_queries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: (
             "STATUS: INSUFFICIENT\n"
@@ -53,7 +53,7 @@ def test_coverage_assessment_accepts_markdown_formatting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: (
             "```text\n"
@@ -79,7 +79,7 @@ def test_coverage_assessment_parses_json_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: (
             '{"status":"INSUFFICIENT","missing":[2],'
@@ -107,7 +107,7 @@ def test_coverage_assessment_requests_json_object_output(
         call.update(kwargs)
         return '{"status":"SUFFICIENT","missing":[],"retry_queries":{}}'
 
-    monkeypatch.setattr(VLLMClient, "chat_completion", assess)
+    monkeypatch.setattr(LLMClient, "chat_completion", assess)
 
     assessment = assess_evidence_coverage(
         "질문",
@@ -124,7 +124,7 @@ def test_coverage_assessment_treats_malformed_mixed_status_as_insufficient(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: (
             "STATUS: SUFFICE_INSUFFICIENT\n"
@@ -154,7 +154,7 @@ def test_coverage_retry_merges_recovered_evidence(
         ]
     )
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: next(responses),
     )
@@ -185,7 +185,7 @@ def test_coverage_retry_preserves_merged_context_when_judge_remains_incomplete(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: "STATUS: INSUFFICIENT\nMISSING: 1\nRETRY 1: missing",
     )
@@ -215,7 +215,7 @@ def test_empty_retry_preserves_initial_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: (
             "STATUS: INSUFFICIENT\nMISSING: 1\nRETRY 1: missing evidence"
@@ -255,7 +255,7 @@ def test_empty_initial_context_uses_hierarchical_fallback(
         lambda **kwargs: pytest.fail("Targeted retry is unnecessary after sufficient fallback"),
     )
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: "STATUS: SUFFICIENT",
     )
@@ -276,7 +276,7 @@ def test_unresolved_evidence_uses_exactly_two_retrieval_retries(
 ) -> None:
     calls = []
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: "STATUS: INSUFFICIENT\nMISSING: 1\nRETRY 1: missing",
     )
@@ -316,7 +316,7 @@ def test_coverage_failure_preserves_initial_context(
     def fail(*args, **kwargs):
         raise RuntimeError("vLLM unavailable")
 
-    monkeypatch.setattr(VLLMClient, "chat_completion", fail)
+    monkeypatch.setattr(LLMClient, "chat_completion", fail)
     monkeypatch.setattr(
         evidence_coverage,
         "retrieve_chunks",

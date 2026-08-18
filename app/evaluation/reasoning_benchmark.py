@@ -28,7 +28,12 @@ from app.retrieval_presets import BUILT_IN_PRESETS
 from app.search_algorithms import SearchAlgorithmKey
 from app.services.document_processor import process_document
 from app.services.evidence_coverage import build_evidence_matrix, complete_evidence_coverage
-from app.services.generator import generate_answer
+from app.services.generator import (
+    EMPTY_CONTEXT_ANSWER,
+    INSUFFICIENT_EVIDENCE_ANSWER,
+    VISUAL_EVIDENCE_LIMIT_ANSWER,
+    generate_answer,
+)
 from app.services.query_rewriter import plan_retrieval_queries
 from app.services.retrieval_trace import RetrievalTrace
 from app.services.retriever import RetrievedChunk, retrieve_chunks
@@ -106,6 +111,34 @@ def _source_recall(case: ReasoningCase, chunks: list[RetrievedChunk]) -> float:
     return len(expected & retrieved) / len(expected)
 
 
+def _citation_metrics(case: ReasoningCase, sources: list[Any]) -> dict[str, Any]:
+    expected = {(source.document, source.page) for source in case.relevant_sources}
+    cited = {
+        (source.document_title, source.page)
+        for source in sources
+        if source.page is not None
+    }
+    if not cited:
+        return {
+            "status": "not_applicable" if case.expected_behavior == "abstain" else "missing",
+            "expected_source_precision": None,
+            "expected_source_recall": 0.0,
+            "unexpected_sources": [],
+        }
+    matching = cited & expected
+    precision = len(matching) / len(cited)
+    recall = len(matching) / len(expected)
+    return {
+        "status": "aligned" if precision == 1.0 else "review",
+        "expected_source_precision": precision,
+        "expected_source_recall": recall,
+        "unexpected_sources": [
+            {"document": document, "page": page}
+            for document, page in sorted(cited - expected)
+        ],
+    }
+
+
 def _facet_recall(case: ReasoningCase, chunks: list[RetrievedChunk]) -> dict[str, bool]:
     retrieved = _chunk_source_keys(chunks)
     return {
@@ -124,28 +157,79 @@ def _relevant_page_audit(
 ) -> list[dict[str, Any]]:
     requested = {(source.document, source.page) for source in case.relevant_sources}
     rows = db.execute(
-        select(Document.title, DocumentPage.page_number, DocumentPage.text)
+        select(
+            Document.title,
+            DocumentPage.page_number,
+            DocumentPage.text,
+            DocumentPage.page_metadata,
+        )
         .join(Document, Document.id == DocumentPage.document_id)
         .where(Document.owner_id == owner_id)
     )
-    return [
-        {
-            "document": title,
-            "page": page_number,
-            "text_chars": len(text or ""),
-            "text_preview": " ".join((text or "").split())[:240],
-        }
-        for title, page_number, text in rows
-        if (title, page_number) in requested
-    ]
+    audit = []
+    for title, page_number, text, page_metadata in rows:
+        if (title, page_number) not in requested:
+            continue
+        caption = (page_metadata or {}).get("vision_caption") or {}
+        audit.append(
+            {
+                "document": title,
+                "page": page_number,
+                "text_chars": len(text or ""),
+                "text_preview": " ".join((text or "").split())[:240],
+                "visual_dependency": (page_metadata or {}).get("visual_dependency"),
+                "vision_caption": {
+                    key: caption[key]
+                    for key in ("status", "version", "model", "confidence", "error_type")
+                    if key in caption
+                },
+            }
+        )
+    return audit
 
 
-def _automatic_gate(expected_behavior: str, outcome_status: str) -> str:
+def _automatic_gate(
+    expected_behavior: str,
+    outcome_status: str,
+    answer: str = "",
+) -> str:
     if expected_behavior == "grounded_answer":
         return "review" if outcome_status == "grounded" else "fail"
     if expected_behavior == "qualified_answer":
         return "review" if outcome_status == "grounded" else "fail"
-    return "pass" if outcome_status in {"no_context", "no_source"} else "fail"
+    accepted_abstentions = {
+        EMPTY_CONTEXT_ANSWER,
+        INSUFFICIENT_EVIDENCE_ANSWER,
+        VISUAL_EVIDENCE_LIMIT_ANSWER,
+    }
+    return (
+        "pass"
+        if outcome_status in {"no_context", "no_source"} or answer in accepted_abstentions
+        else "fail"
+    )
+
+def _failure_reason(
+    case: ReasoningCase,
+    *,
+    final_source_recall: float,
+    outcome_status: str,
+    citation_accuracy: dict[str, Any],
+    answer: str = "",
+) -> str | None:
+    if (
+        case.expected_behavior == "abstain"
+        and _automatic_gate(case.expected_behavior, outcome_status, answer) == "pass"
+    ):
+        return None
+    if final_source_recall < 1.0:
+        return "retrieval_gap"
+    if case.expected_behavior == "abstain" and outcome_status == "grounded":
+        return "grounding_gap"
+    if case.expected_behavior != "abstain" and outcome_status != "grounded":
+        return "reasoning_gap"
+    if citation_accuracy["status"] in {"fail", "missing"}:
+        return "citation_gap"
+    return None
 
 
 def _evaluate_case(
@@ -153,9 +237,14 @@ def _evaluate_case(
     owner_id: int,
     case: ReasoningCase,
     top_k: int,
+    *,
+    iteration: int,
+    corpus_mode: str,
 ) -> dict[str, Any]:
     started = time.perf_counter()
-    trace = RetrievalTrace(request_id=f"reasoning-{case.case_id}-{uuid.uuid4().hex[:8]}")
+    trace = RetrievalTrace(
+        request_id=f"reasoning-{corpus_mode}-{case.case_id}-{iteration}-{uuid.uuid4().hex[:8]}"
+    )
     try:
         plan = plan_retrieval_queries(case.question, [])
         evidence_goals = plan.evidence_goals or plan.queries
@@ -189,8 +278,15 @@ def _evaluate_case(
             sources=generated.sources,
         )
         outcome_status = trace_payload["outcome"]["status"]
+        initial_source_recall = _source_recall(case, initial_chunks)
+        final_source_recall = _source_recall(case, final_chunks)
+        initial_facet_recall = _facet_recall(case, initial_chunks)
+        final_facet_recall = _facet_recall(case, final_chunks)
+        citation_accuracy = _citation_metrics(case, generated.sources)
         return {
             "case_id": case.case_id,
+            "iteration": iteration,
+            "corpus_mode": corpus_mode,
             "group": case.group,
             "question": case.question,
             "reasoning_depth": case.reasoning_depth,
@@ -203,12 +299,26 @@ def _evaluate_case(
             "notes": case.notes,
             "answer": generated.answer,
             "sources": [source.model_dump() for source in generated.sources],
-            "initial_source_recall": _source_recall(case, initial_chunks),
-            "final_source_recall": _source_recall(case, final_chunks),
-            "initial_facet_recall": _facet_recall(case, initial_chunks),
-            "final_facet_recall": _facet_recall(case, final_chunks),
+            "initial_source_recall": initial_source_recall,
+            "final_source_recall": final_source_recall,
+            "initial_facet_recall": initial_facet_recall,
+            "final_facet_recall": final_facet_recall,
             "relevant_page_audit": _relevant_page_audit(db, owner_id, case),
-            "automatic_gate": _automatic_gate(case.expected_behavior, outcome_status),
+            "search_success": final_source_recall == 1.0
+            and all(final_facet_recall.values()),
+            "citation_accuracy": citation_accuracy,
+            "failure_reason": _failure_reason(
+                case,
+                final_source_recall=final_source_recall,
+                outcome_status=outcome_status,
+                citation_accuracy=citation_accuracy,
+                answer=generated.answer,
+            ),
+            "automatic_gate": _automatic_gate(
+                case.expected_behavior,
+                outcome_status,
+                generated.answer,
+            ),
             "manual_review": {
                 "classification": None,
                 "claim_correctness": None,
@@ -223,6 +333,8 @@ def _evaluate_case(
     except Exception as exc:
         return {
             "case_id": case.case_id,
+            "iteration": iteration,
+            "corpus_mode": corpus_mode,
             "group": case.group,
             "question": case.question,
             "expected_behavior": case.expected_behavior,
@@ -253,6 +365,8 @@ def run_benchmark(
     case_ids: list[str] | None = None,
     preset_key: str = "balanced",
     algorithm_key: str = "hybrid",
+    iterations: int = 1,
+    corpus_mode: str = "isolated",
 ) -> dict[str, Any]:
     fixture_path = fixture_path.resolve()
     fixture = load_reasoning_fixture(fixture_path)
@@ -262,6 +376,10 @@ def run_benchmark(
         unknown_cases = sorted(set(case_ids) - known_case_ids)
         if unknown_cases:
             raise ValueError(f"Unknown reasoning cases: {', '.join(unknown_cases)}")
+    if not 1 <= iterations <= 10:
+        raise ValueError("Iterations must be between 1 and 10")
+    if corpus_mode not in {"isolated", "combined"}:
+        raise ValueError("Corpus mode must be isolated or combined")
 
     preset_keys = {preset.key for preset in BUILT_IN_PRESETS}
     if preset_key not in preset_keys:
@@ -269,6 +387,11 @@ def run_benchmark(
     if algorithm_key not in {algorithm.value for algorithm in SearchAlgorithmKey}:
         raise ValueError(f"Unknown algorithm: {algorithm_key}")
 
+    selected_cases = [
+        case
+        for case in fixture.cases
+        if case.group in selected_groups and (not case_ids or case.case_id in case_ids)
+    ]
     started_at = datetime.now(UTC)
     db = SessionLocal()
     configuration = retrieval_config_repository.get_configuration(db)
@@ -277,7 +400,48 @@ def run_benchmark(
         configuration.active_search_algorithm_key,
         configuration.index_version,
     )
-    group_results = []
+    group_results: list[dict[str, Any]] = []
+
+    def evaluate_cases(owner_id: int, cases: list[ReasoningCase], top_k: int) -> list[dict[str, Any]]:
+        return [
+            _evaluate_case(
+                db,
+                owner_id,
+                case,
+                top_k,
+                iteration=iteration,
+                corpus_mode=corpus_mode,
+            )
+            for case in cases
+            for iteration in range(1, iterations + 1)
+        ]
+
+    def document_report(
+        documents: list[ReasoningDocument],
+        paths: dict[str, Path],
+    ) -> list[dict[str, str]]:
+        return [
+            {
+                "title": document.title,
+                "path": str(paths[document.title]),
+                "sha256": hashlib.sha256(paths[document.title].read_bytes()).hexdigest(),
+            }
+            for document in documents
+        ]
+
+    def index_documents(
+        documents: list[Document],
+        *,
+        target_index_version: int,
+    ) -> None:
+        for document in documents:
+            if not process_document(
+                document.id,
+                preset_key=preset_key,
+                index_version=target_index_version,
+            ):
+                raise RuntimeError(f"Reasoning document indexing failed: {document.title}")
+
     try:
         preset = retrieval_config_repository.get_preset(db, preset_key)
         if preset is None:
@@ -286,56 +450,71 @@ def run_benchmark(
         configuration.active_search_algorithm_key = algorithm_key
         db.commit()
 
-        for group_index, group in enumerate(selected_groups, start=1):
-            documents = [document for document in fixture.documents if document.group == group]
-            cases = [
-                case
-                for case in fixture.cases
-                if case.group == group and (not case_ids or case.case_id in case_ids)
-            ]
-            if not cases:
-                continue
-
+        if corpus_mode == "combined":
             user: User | None = None
             indexing_started = time.perf_counter()
             try:
+                documents = fixture.documents
                 user, corpus_documents, paths = _create_corpus(db, fixture_path, documents)
-                target_index_version = original_configuration[2] + group_index
-                for document in corpus_documents:
-                    if not process_document(
-                        document.id,
-                        preset_key=preset_key,
-                        index_version=target_index_version,
-                    ):
-                        raise RuntimeError(
-                            f"Reasoning document indexing failed: {document.title}"
-                        )
-                group_results.append(
-                    {
-                        "group": group,
-                        "document_count": len(documents),
-                        "indexing_ms": round(
-                            (time.perf_counter() - indexing_started) * 1000, 2
-                        ),
-                        "documents": [
-                            {
-                                "title": document.title,
-                                "path": str(paths[document.title]),
-                                "sha256": hashlib.sha256(
-                                    paths[document.title].read_bytes()
-                                ).hexdigest(),
-                            }
-                            for document in documents
-                        ],
-                        "cases": [
-                            _evaluate_case(db, user.id, case, preset.top_k)
-                            for case in cases
-                        ],
-                    }
+                index_documents(
+                    corpus_documents,
+                    target_index_version=original_configuration[2] + 1,
                 )
+                indexing_ms = round((time.perf_counter() - indexing_started) * 1000, 2)
+                documents_payload = document_report(documents, paths)
+                for group in selected_groups:
+                    cases = [case for case in selected_cases if case.group == group]
+                    if cases:
+                        group_results.append(
+                            {
+                                "group": group,
+                                "corpus_mode": corpus_mode,
+                                "document_count": len(documents),
+                                "indexing_ms": indexing_ms,
+                                "documents": documents_payload,
+                                "cases": evaluate_cases(user.id, cases, preset.top_k),
+                            }
+                        )
             finally:
                 if user is not None:
                     _delete_corpus(db, user.id)
+        else:
+            for group_index, group in enumerate(selected_groups, start=1):
+                documents = [
+                    document for document in fixture.documents if document.group == group
+                ]
+                cases = [case for case in selected_cases if case.group == group]
+                if not cases:
+                    continue
+
+                user = None
+                indexing_started = time.perf_counter()
+                try:
+                    user, corpus_documents, paths = _create_corpus(
+                        db,
+                        fixture_path,
+                        documents,
+                    )
+                    index_documents(
+                        corpus_documents,
+                        target_index_version=original_configuration[2] + group_index,
+                    )
+                    group_results.append(
+                        {
+                            "group": group,
+                            "corpus_mode": corpus_mode,
+                            "document_count": len(documents),
+                            "indexing_ms": round(
+                                (time.perf_counter() - indexing_started) * 1000,
+                                2,
+                            ),
+                            "documents": document_report(documents, paths),
+                            "cases": evaluate_cases(user.id, cases, preset.top_k),
+                        }
+                    )
+                finally:
+                    if user is not None:
+                        _delete_corpus(db, user.id)
     finally:
         try:
             configuration = retrieval_config_repository.get_configuration(db)
@@ -348,7 +527,7 @@ def run_benchmark(
 
     completed_at = datetime.now(UTC)
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "fixture": {
             "name": fixture.name,
             "path": str(fixture_path),
@@ -361,6 +540,8 @@ def run_benchmark(
             "preset": preset_key,
             "algorithm": algorithm_key,
             "groups": selected_groups,
+            "iterations": iterations,
+            "corpus_mode": corpus_mode,
         },
         "groups": group_results,
     }
@@ -373,21 +554,23 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Completed: `{report['run']['completed_at']}`",
         f"- Preset / algorithm: `{report['run']['preset']} / {report['run']['algorithm']}`",
         f"- Duration: `{report['run']['duration_seconds']:.2f}s`",
+        f"- Corpus mode / iterations: `{report['run']['corpus_mode']} / {report['run']['iterations']}`",
         "- Automatic gates do not replace manual semantic review.",
         "",
-        "| Group | Case | Expected | Modality | Initial recall | Final recall | Outcome | Gate |",
-        "|---|---|---|---|---:|---:|---|---|",
+        "| Group | Case | Run | Capability | Search | Final recall | Citation | Outcome | Gate |",
+        "|---|---|---:|---|---|---:|---|---|---|",
     ]
     for group in report["groups"]:
         for case in group["cases"]:
             trace = case.get("trace", {})
             outcome = trace.get("outcome", {}).get("status", "error")
             lines.append(
-                f"| {group['group']} | {case['case_id']} | {case['expected_behavior']} | "
-                f"{case.get('evidence_modality', '-')} | "
-                f"{case.get('initial_source_recall', 0):.3f} | "
-                f"{case.get('final_source_recall', 0):.3f} | {outcome} | "
-                f"{case['automatic_gate']} |"
+                f"| {group['group']} | {case['case_id']} | {case.get('iteration', 1)} | "
+                f"{case.get('answerability', '-')} | "
+                f"{'pass' if case.get('search_success') else 'fail'} | "
+                f"{case.get('final_source_recall', 0):.3f} | "
+                f"{case.get('citation_accuracy', {}).get('status', 'error')} | "
+                f"{outcome} | {case['automatic_gate']} |"
             )
 
     for group in report["groups"]:
@@ -395,7 +578,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         for case in group["cases"]:
             lines.extend(
                 [
-                    f"### {case['case_id']}",
+                    f"### {case['case_id']} · run {case.get('iteration', 1)}",
                     "",
                     f"- Expected: `{case['expected_behavior']}`",
                     f"- Automatic gate: `{case['automatic_gate']}`",
@@ -409,6 +592,9 @@ def render_markdown(report: dict[str, Any]) -> str:
                 [
                     f"- Initial/final source recall: "
                     f"`{case['initial_source_recall']:.3f} / {case['final_source_recall']:.3f}`",
+                    f"- Search success: `{case['search_success']}`",
+                    f"- Citation accuracy: `{case['citation_accuracy']}`",
+                    f"- Failure reason: `{case['failure_reason']}`",
                     f"- Planned queries: `{case['trace']['query_plan'].get('queries', [])}`",
                     f"- Required claims: `{case['required_answer_claims']}`",
                     f"- Required limitations: `{case['required_limitations']}`",
@@ -436,6 +622,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--case", action="append", dest="case_ids")
     parser.add_argument("--preset", default="balanced")
     parser.add_argument("--algorithm", default="hybrid")
+    parser.add_argument("--iterations", type=int, default=1)
+    parser.add_argument(
+        "--corpus-mode",
+        choices=("isolated", "combined"),
+        default="isolated",
+    )
     return parser.parse_args()
 
 
@@ -447,6 +639,8 @@ def main() -> int:
         case_ids=args.case_ids,
         preset_key=args.preset,
         algorithm_key=args.algorithm,
+        iterations=args.iterations,
+        corpus_mode=args.corpus_mode,
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")

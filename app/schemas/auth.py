@@ -24,6 +24,17 @@ class PasswordChangeRequest(BaseModel):
     new_password: str = Field(min_length=MIN_SECURE_PASSWORD_LENGTH, max_length=128)
 
 
+
+class AdminPasswordResetRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=32, pattern=r"^[A-Za-z0-9_.-]+$")
+    temporary_password: str = Field(min_length=MIN_SECURE_PASSWORD_LENGTH, max_length=128)
+
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, value: str) -> str:
+        return value.strip().casefold()
+
+
 class AccountDeleteRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
     username_confirmation: str = Field(min_length=3, max_length=32)

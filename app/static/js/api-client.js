@@ -62,6 +62,27 @@ export class ApiClient {
     });
   }
 
+  async resetUserPassword(username, temporaryPassword) {
+    return this.request("/admin/users/password-reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username,
+        temporary_password: temporaryPassword,
+      }),
+    });
+  }
+  async getLanguageModelState() {
+    return this.request("/language-models");
+  }
+
+  async activateLanguageModel(endpointKey) {
+    return this.request(`/language-models/${encodeURIComponent(endpointKey)}/activate`, {
+      method: "POST",
+    });
+  }
+
+
   async getRetrievalAdminState() {
     return this.request("/admin/retrieval");
   }
@@ -277,6 +298,22 @@ export class ApiClient {
         return "사용자명이 일치하지 않습니다.";
       }
       if (status === 409) return "문서 인덱싱이 끝난 후 회원탈퇴를 진행해 주세요.";
+    }
+    if (path === "/admin/users/password-reset") {
+      if (status === 404) return "사용자를 찾을 수 없습니다.";
+      if (status === 409 && detail === "Use the account password change flow for your own account") {
+        return "현재 관리자 계정은 계정 화면에서 비밀번호를 변경해 주세요.";
+      }
+      if (status === 409) return "기존 비밀번호와 다른 임시 비밀번호를 사용해 주세요.";
+      if (status === 400 && detail === "Password must not contain the username") {
+        return "임시 비밀번호에 사용자명을 포함할 수 없습니다.";
+      }
+      if (status === 400 && detail === "Password is too common") {
+        return "추측하기 어려운 임시 비밀번호를 사용해 주세요.";
+      }
+      if (status === 400) {
+        return "영문 대·소문자, 숫자, 기호 중 3종 이상을 사용해 주세요.";
+      }
     }
     if (status === 400) return detail || "요청한 파일을 확인해 주세요.";
     if (status === 401) return "사용자명 또는 비밀번호를 확인해 주세요.";

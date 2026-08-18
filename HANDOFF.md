@@ -2,24 +2,43 @@
 
 ## 1. 현재 상태
 
-- 기준일: 2026-08-07 (Asia/Seoul)
+- 기준일: 2026-08-11 (Asia/Seoul)
 - 프로젝트: 사용자 PDF 기반 범용 RAG Assistant
-- 현재 단계: 1차 MVP, 선택적 Vision caption 인덱싱 prototype과 후속 질의 안정화 완료
-- Git 상태: `feature/vision-caption-indexing`의 검증된 변경을 로컬 `main`에 병합
+- 현재 단계: 1차 MVP, Vision caption, native 실행과 원샷 통합 이미지 지원 완료
 - 패키지 관리: `uv`
-- 런타임: Docker Compose의 `api`, `db`, `embedding`, `llm` 4개 서비스
+- 런타임: 4-container Compose, 단일 all-in-one container, 또는 `run-native.sh`
 - Web UI: React 없이 FastAPI가 Vanilla HTML/CSS/JavaScript 정적 파일 제공
-- 현재 컨테이너 상태: 4개 서비스 모두 실행 중이며 `api`, `db`는 healthy
-- 별도 PostgreSQL이 5432를 사용하므로 운영 DB 기본 포트를 5433으로 분리함
+- PostgreSQL 기본 포트는 다른 로컬 DB와 충돌하지 않도록 5433을 사용
 
 최근 검증 결과:
 
-- 빠른 단위/API 통합 테스트: `171 passed`, 실제 모델 E2E `1 skipped`
+- 빠른 단위/API 통합 테스트: `202 passed`, 실제 모델 E2E `1 skipped`
 - 실제 BGE-M3/Gemma 4 E2E: `1 passed`
 - 실제 Gemma 4 SSE에서 다중 delta, 출처, 완료 event와 대화 저장 확인
 - JSON 구조화 로그, `X-Request-ID`, Prometheus HTTP·검색·LLM 지표 확인
 - 자료 밖 질문 E2E에서 거부 응답의 source가 빈 배열인지 확인
 - 실제 `GET /health/ready`: DB, embedding, LLM 모두 `ok`, HTTP 200
+- native API·BGE-M3 process와 외부 PostgreSQL·vLLM 조합에서 `/health/ready`
+  3개 component `ok`, foreground 종료 시 native process 역순 정리 확인
+- Docker/native 백업 생성, checksum 검증, 동일 bundle 복원 smoke 통과
+- all-in-one 이미지에서 PostgreSQL·embedding·vLLM·API 4개 process 실행,
+  `/health/ready` 3개 component `ok`, 내부 백업·checksum·실제 복원과 exit 0 종료 확인
+- 12B·31B all-in-one image에서 모델 weight를 제거하고 외부 archive 또는 commit
+  SHA로 고정한 공개 Hugging Face snapshot을 `/data/models/gemma4`에 검증 후
+  원자적으로 설치·재사용하는 경로로 전환
+- 12B archive SHA-256, HF snapshot, 잘못된 checksum 거부, 불완전 설치 방지와 cache 재사용 확인
+- `run_aio.sh --no-build` 실제 기동, status·down·재기동, 기본 비밀번호 거부 확인
+- `chown`이 제한된 RunPod Network Volume의 실제 UID로 PostgreSQL을 실행하고
+  DB·embedding·LLM readiness가 모두 `ok`인 startup smoke 확인
+- 원샷 Web UI에서 회원가입, Manual 19페이지 업로드·인덱싱, 실제 Gemma 답변과
+  5·18페이지 source 표시 확인
+- Gemma 4 31B 직접 양자화 W4A16 checkpoint와
+  `cpsu/mininblm:0.1.3-gemma4-31b-w4a16` 배포 image 추가
+- 31B image에도 Hugging Face snapshot downloader와 제한된 volume UID fallback을
+  적용하고 실제 snapshot·권한 smoke 및 runtime 계약을 검증
+- H200 1장 기준 BGE-M3 CUDA, vLLM GPU memory `0.70`, 활성 sequence `8`,
+  tensor parallel `1`로 31B 배포 profile 갱신 및 image build 성공
+- 31B H200 실제 readiness와 생성 요청은 원격 검증 대상으로 남음
 - API 이미지: `6,555,721,208` bytes에서 `206,676,250` bytes로 약 96.8% 감소
 - API 이미지의 Torch/Sentence Transformers/Transformers 제거 및 embedding 이미지의
   Torch/Sentence Transformers 유지 확인
@@ -41,6 +60,8 @@
 - 후속 질문 retrieval query rewriting 단위/API 통합 테스트 완료
 - 일반 사용자 비밀번호 변경과 다른 로그인 세션 폐기 API/UI 적용
 - 비밀번호·사용자명 재확인 회원탈퇴와 문서·대화·PDF 원본 일괄 삭제 적용
+- 관리자 지원 임시 비밀번호 재설정, 대상 사용자 전체 세션 폐기와 다음 로그인 변경 강제
+- OpenAI 호환 모델 endpoint 목록과 기본 endpoint key를 분리해 여러 주소 선택 기반 마련
 - DB dump와 uploads, manifest, SHA-256을 묶는 백업 bundle 생성·검증 완료
 - Playwright 계정 smoke: 일반 사용자 비밀번호 변경, 390px overflow 없음,
   회원탈퇴 후 세션·재로그인 차단 확인
@@ -68,9 +89,15 @@
   재검색 시 최초 Context 우선 보존과 근거 매트릭스 기반 부분 답변 적용
 - embedding query 5개 batch 계약 준수, 생성 토큰 제한·반복 퇴행 감지 후 1회 재생성,
   불완전한 Source/Page 구조 보정 적용
-- 최종 10개 실제 모델 실행(`20260807T060016Z`)에서 source recall은 8건 1.0,
-  2건 0.75/0.667이며 시각 전용 2건은 모두 source 없이 거부됨. 잠정 수동 평가는
-  `pass 7 / partial 2 / fail 1`; RS485 `L` 오독과 stash의 ignore 해제 누락은 잔여 회귀
+- 2026-08-07 10개 기준선(`20260807T060016Z`)은 source recall 8건 `1.0`,
+  2건 `0.75/0.667`, 잠정 수동 평가 `pass 7 / partial 2 / fail 1`이었다.
+- 2026-08-10 집중 회귀(`20260810T040614Z`)에서 RS485, SRUP, stash 선행 조건,
+  MPL/GPL 해결책, 모호 rollback을 각 3회 검증했다. 답변 가능 12회는 최종 recall
+  `1.0`, 모호 rollback 3회는 source 없는 구체화 요청으로 종료했다. MPL/GPL 해결
+  선택지도 3/3 모두 포함했다.
+- RS485 리터럴·위치 의미를 Context의 채널 정의로 결정적으로 정규화한 최종
+  3회 실행(`20260810T042126Z`)은 `NLNNB`, Normal/Leak/Normal/Normal/Broken,
+  CR(0x0d), 50ms를 3/3 모두 보존했다.
 - Gemma 4 W4A16의 실제 `image_url` 입력으로 PDF 화면 문자열
   `LB05-01 NLNNN`을 정확히 읽고, 직후 텍스트 요청과 네 컨테이너 정상 상태 확인
 - 양자화 projection에서 vLLM 0.25.0이 `weight.dtype`를 조회해 종료되던 문제를
@@ -128,6 +155,11 @@ Browser
 | `embedding` | `127.0.0.1:8070` | BGE-M3 embedding HTTP API | 예 |
 | `llm` | `127.0.0.1:8010` | vLLM OpenAI-compatible API | 예 |
 
+배포 단위를 줄여야 할 때는 `Dockerfile.all-in-one`이 네 논리 서비스를 컨테이너
+하나의 process로 실행한다. 모델 없는 runtime image를 pull한 뒤 외부 archive를
+검증하여 `/data/models/gemma4`에 설치한다. PostgreSQL·uploads·모델·cache·로그는
+`/data`에 보존되어 image 교체와 재시작에서 재사용된다.
+
 WSL mirrored networking에서 Docker bridge port가 Windows localhost로 전달되지
 않는 문제가 있어 모든 런타임 서비스가 `network_mode: host`를 사용한다. API만
 외부에 bind하고 DB, embedding, LLM은 loopback에만 bind한다.
@@ -137,19 +169,18 @@ WSL mirrored networking에서 Docker bridge port가 Windows localhost로 전달�
 - Embedding model: `BAAI/bge-m3`
 - Embedding dimension: `1024`
 - LLM: Gemma 4 12B instruction model, W4A16 compressed-tensors 양자화
-- 기본 모델 경로: `./google/google-gemma-4-12B-it-W4A16`
-- vLLM image tag: `mininblm-vllm:0.25.0-gemma4-unified-quant` (legacy tag)
-- 2026-08-06 재빌드에서 확인한 실제 vLLM: `0.26.0`
+- 기본 모델 경로: `./google/gemma-4-12B-it-W4A16`
+- vLLM Docker/native version: `0.25.0`
 - 기본 max model length: `8192`
 - 기본 GPU memory utilization: `0.65`
 - 기본 max sequences: `4`
 - readiness 구성요소별 timeout: `3초`
 
-`Dockerfile.llm`은 Gemma 4 unified quantization을 읽도록 로컬 patch를 적용한다.
-현재 base image가 `vllm/vllm-openai:latest`라 custom image tag와 실제 vLLM
-버전이 일치하지 않을 수 있다. WSL에서 Model Runner V2의 UVA를 사용하기 위해
-`VLLM_WSL2_ENABLE_PIN_MEMORY=1`과 `ipc: host`가 필요하다. vLLM 또는 모델
-구조를 변경하면 실제 completion E2E를 반드시 다시 실행한다.
+`Dockerfile.llm`과 native 환경은 vLLM `0.25.0`으로 고정하고 Gemma 4 unified
+quantization patch를 적용한다. `latest` 재빌드에서 model config 호환성 오류가
+확인되어 floating base image를 사용하지 않는다. WSL에서 Model Runner V2의 UVA를
+사용하기 위해 `VLLM_WSL2_ENABLE_PIN_MEMORY=1`과 `ipc: host`가 필요하다. vLLM
+또는 모델 구조를 변경하면 실제 completion E2E를 반드시 다시 실행한다.
 
 ## 4. 구현 완료 기능
 
@@ -167,6 +198,7 @@ WSL mirrored networking에서 Docker bridge port가 Windows localhost로 전달�
 - 비밀번호 변경 전 문서·채팅·관리 API 차단 및 다른 로그인 세션 폐기
 - 일반 사용자 계정 화면에서 비밀번호 변경
 - 회원탈퇴 시 인증 세션, 문서/page/chunk, 대화와 PDF 원본 hard delete
+- 관리자 화면에서 일반 사용자 임시 비밀번호 재설정과 전체 세션 폐기
 - 재인덱싱 감사 이력은 요청자만 `NULL`로 전환해 보존
 
 ### PDF 문서 처리
@@ -242,6 +274,10 @@ WSL mirrored networking에서 Docker bridge port가 Windows localhost로 전달�
 - 검색 알고리즘 4개 독립 선택
 - 알고리즘 변경은 재인덱싱 없이 즉시 적용
 - 청크 크기/오버랩 변경은 전체 문서 재청킹 및 재임베딩
+- `LLM_ENDPOINTS_FILE` JSON 허용 목록 중 모든 로그인 사용자가 자신의 언어모델을
+  즉시 전환하며 사용자별 선택값을 DB에 보존
+- endpoint 등록정보는 운영자가 JSON으로 수동 관리하고 변경 후 API를 재시작
+- 전환 전 OpenAI 호환 `/models`와 model ID를 검증하고 답변·caption에 공통 적용
 - 재인덱싱 중 질문과 문서 변경을 유지보수 모드로 차단
 - 작업 상태 및 진행률 조회
 - 실패 작업 재시도 API
@@ -315,6 +351,8 @@ WSL mirrored networking에서 Docker bridge port가 Windows localhost로 전달�
 | `GET` | `/admin/retrieval/traces` | 최근 답변 retrieval trace 조회 |
 | `POST` | `/admin/retrieval/presets/{key}/activate` | preset 변경/재인덱싱 |
 | `POST` | `/admin/retrieval/algorithms/{key}/activate` | 알고리즘 즉시 변경 |
+| `GET` | `/language-models` | 로그인 사용자의 등록 언어모델과 선택 조회 |
+| `POST` | `/language-models/{key}/activate` | endpoint 검증 후 사용자별 언어모델 전환 |
 | `GET` | `/admin/retrieval/jobs/{id}` | 재인덱싱 작업 조회 |
 | `POST` | `/admin/retrieval/jobs/{id}/retry` | 실패 작업 재시도 |
 
@@ -443,6 +481,8 @@ Alembic migration:
 - 업로드 PDF: 호스트 `./data`, 컨테이너 `/app/data`
 - Hugging Face cache: Docker volume `hf_cache`
 - 양자화 모델: 호스트 경로를 `/models/gemma4:ro`로 mount
+- native 실행: `.native/postgres`, `.native/huggingface`, `.native/logs`,
+  `.native/uploads`, 호스트 모델 디렉터리
 
 `docker compose down`과 `./down.sh`는 위 데이터를 보존한다. `docker compose
 down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없으면 실행하지
@@ -456,8 +496,9 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 ./restore.sh --yes backups/mininblm-backup-<timestamp>.tar.gz
 ```
 
-`--yes` 복원은 현재 데이터를 교체한다. checksum 포함 bundle 생성과 검증 모드는
-실데이터로 확인했으며, 실제 복원은 격리 환경에서 추가 리허설해야 한다.
+Docker 실행이 기본이며, native 실행은 `RUNTIME_MODE=native`를 지정한다.
+`--yes` 복원은 현재 데이터를 교체한다. checksum 검증과 실제 복원 smoke를
+Docker 경로에서 확인했다.
 
 ## 9. 주요 파일
 
@@ -471,13 +512,16 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 | `docs/retrieval-evaluation.md` | retrieval 평가 fixture, 지표와 benchmark 결과 |
 | `docs/reasoning-evaluation.md` | 실제 수업자료 복합 추론, 수동 rubric과 text-only 한계 평가 |
 | `docker-compose.yml` | 운영 4개 서비스 |
+| `Dockerfile.all-in-one` | PostgreSQL·BGE-M3·vLLM·API 통합 배포 이미지 |
+| `docker-compose.all-in-one.yml` | GPU·volume·환경을 포함한 원샷 통합 실행 |
 | `docker-compose.test.yml` | 빠른 테스트용 임시 DB |
 | `docker-compose.e2e.yml` | 실제 모델 E2E용 API/DB |
 | `docker-compose.benchmark.yml` | retrieval benchmark용 격리 DB/runner |
 | `run.sh`, `down.sh` | 전체 서비스 시작/종료 |
+| `run-native.sh` | Docker 없는 서버의 설치·진단·4개 process 시작/종료 |
 | `scripts/test.sh` | 단위/API 통합 테스트 진입점 |
 | `scripts/e2e.sh` | 실제 모델 E2E 진입점 |
-| `backup.sh`, `restore.sh` | PostgreSQL·uploads 백업 bundle 생성 및 복원 |
+| `backup.sh`, `restore.sh` | Docker/native PostgreSQL·uploads 백업 bundle 생성 및 복원 |
 | `scripts/benchmark-retrieval.sh` | preset/알고리즘 품질·지연 benchmark 진입점 |
 | `scripts/benchmark-reasoning.sh` | 문서군별 실제 LLM 복합 추론 benchmark 진입점 |
 | `evaluation/` | 버전 관리되는 질문/source fixture와 혼동 문서 |
@@ -515,8 +559,7 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
   반복 benchmark와 vision connector BF16 재양자화 비교가 필요하다.
 - 새 layout/시각 위험 메타데이터는 재인덱싱 이후 기존 업로드 문서에 적용된다.
 - Prometheus 수집 서버, 대시보드와 경보 규칙은 아직 배포하지 않는다.
-- vLLM base image가 `latest`라 재빌드 시 버전이 변할 수 있다.
-- 이메일 확인, 비밀번호 재설정, 계정 잠금, rate limit이 없다.
+- 이메일 기반 셀프서비스 비밀번호 재설정, 계정 잠금과 rate limit은 없다.
 - 기본 HTTP/LAN 설정은 `AUTH_COOKIE_SECURE=false`다.
 - 업로드 파일 자체는 50MB로 제한하지만 reverse proxy 수준의 전체 request body
   제한은 별도로 구성하지 않았다.
@@ -526,11 +569,12 @@ down -v`는 DB와 cache volume을 제거하므로 데이터 삭제 의도가 없
 ### 1순위: 운영 전 필수 보강
 
 - HTTPS reverse proxy와 `AUTH_COOKIE_SECURE=true` 운영 구성
-- 회원가입/로그인 rate limit, 계정 잠금, 비밀번호 재설정
+- 회원가입/로그인 rate limit, 계정 잠금과 이메일 기반 셀프서비스 비밀번호 재설정
 - PostgreSQL 및 업로드 원본 bundle의 격리 환경 복원 리허설
 - Prometheus 수집·대시보드·경보 규칙 구성
 - 검증된 vLLM base digest/version 고정과 custom image tag 정합성 확보
 - reverse proxy request body 제한을 애플리케이션의 50MB 제한과 일치시킴
+- 환경변수 선택을 넘어선 관리자 런타임 모델 전환 API/UI
 
 ### 2순위: 처리 안정성과 RAG 품질 확장
 

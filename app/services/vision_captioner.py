@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 from typing import Any
 
-from app.clients.vllm_client import VLLMClient
+from app.clients.llm_client import LLMClient
 from app.config import settings
 from app.services.page_renderer import render_pdf_page_data_url
 from app.services.pdf_parser import ParsedPage
@@ -56,7 +56,9 @@ def enrich_pages_with_vision_captions(
         return pages
 
     enriched: list[ParsedPage] = []
-    client = VLLMClient()
+    client = LLMClient()
+    if not client.supports_vision:
+        raise ValueError(f"LLM endpoint {client.endpoint_key!r} does not support vision")
     system_prompt = PROMPT_PATH.read_text(encoding="utf-8")
     for page in pages:
         if not should_caption_page(page, selected_mode):
@@ -85,14 +87,14 @@ def enrich_pages_with_vision_captions(
             metadata["vision_caption"] = {
                 "status": "failed",
                 "version": settings.vision_caption_version,
-                "model": settings.vllm_model,
+                "model": client.model,
                 "error_type": type(exc).__name__,
             }
         else:
             metadata["vision_caption"] = {
                 "status": "completed",
                 "version": settings.vision_caption_version,
-                "model": settings.vllm_model,
+                "model": client.model,
                 "confidence": caption["confidence"],
                 "repaired": repaired,
                 "data": caption,
@@ -122,7 +124,7 @@ def should_caption_page(page: ParsedPage, mode: str) -> bool:
 
 
 def _request_vision_caption(
-    client: VLLMClient,
+    client: LLMClient,
     system_prompt: str,
     image_url: str,
     page_number: int,

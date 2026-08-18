@@ -39,6 +39,14 @@ class AccountDeletionConflictError(Exception):
     pass
 
 
+class UserNotFoundError(Exception):
+    pass
+
+
+class SelfPasswordResetError(Exception):
+    pass
+
+
 @dataclass(frozen=True)
 class AuthenticatedSession:
     user: User
@@ -127,6 +135,34 @@ def change_password(
     user_repository.set_user_password_hash(db, user, password_hash.hash(new_password))
     user_repository.set_password_change_required(db, user, False)
     user_repository.delete_other_auth_sessions(db, user.id, _hash_session_token(session_token))
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def reset_password(
+    db: Session,
+    admin: User,
+    username: str,
+    temporary_password: str,
+) -> User:
+    user = user_repository.get_user_by_username(db, username)
+    if user is None or not user.is_active:
+        raise UserNotFoundError
+    if user.id == admin.id:
+        raise SelfPasswordResetError
+
+    validate_secure_password(temporary_password, user.username)
+    try:
+        password_reused = password_hash.verify(temporary_password, user.password_hash)
+    except Exception:
+        password_reused = False
+    if password_reused:
+        raise PasswordReuseError
+
+    user_repository.set_user_password_hash(db, user, password_hash.hash(temporary_password))
+    user_repository.set_password_change_required(db, user, True)
+    user_repository.delete_auth_sessions_for_user(db, user.id)
     db.commit()
     db.refresh(user)
     return user

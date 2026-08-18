@@ -88,7 +88,7 @@ ensure_environment() {
 
   local model_path
   model_path="$(sed -n 's/^VLLM_MODEL_PATH=//p' .env | tail -n 1)"
-  model_path="${model_path:-./google/google-gemma-4-12B-it-W4A16}"
+  model_path="${model_path:-./google/gemma-4-12B-it-W4A16}"
   model_path="${model_path%\"}"
   model_path="${model_path#\"}"
 

@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 from app.services.evidence_coverage import EvidenceMatrix
 from app.services.retriever import RetrievedChunk
@@ -6,6 +7,11 @@ from app.services.retriever import RetrievedChunk
 
 RAG_SYSTEM_PROMPT_PATH = (
     Path(__file__).resolve().parents[1] / "prompts" / "rag_system_prompt.txt"
+)
+BACKTICK_LITERAL_PATTERN = re.compile(r"`([^`\n]{1,120})`")
+EXCLUDED_STATE_PATTERN = re.compile(
+    r"(?:\.gitignore|\bignored?\b|\bexcluded?\b|무시|제외)",
+    re.IGNORECASE,
 )
 
 
@@ -46,7 +52,12 @@ def build_user_message(
 ) -> dict[str, str]:
     context = build_retrieval_context(chunks)
     matrix = _format_evidence_matrix(evidence_matrix)
-    content = f"[Context]\n{context}\n\n{matrix}[Question]\n{question}\n\n[Answer]"
+    literals = _format_literal_constraints(question)
+    workflow = _format_workflow_constraints(question)
+    content = (
+        f"[Context]\n{context}\n\n{matrix}{literals}{workflow}"
+        f"[Question]\n{question}\n\n[Answer]"
+    )
     return {"role": "user", "content": content}
 
 
@@ -85,10 +96,34 @@ def _format_evidence_quality(chunk: RetrievedChunk) -> str:
     return str(risk)
 
 
+def _format_literal_constraints(question: str) -> str:
+    literals = tuple(dict.fromkeys(BACKTICK_LITERAL_PATTERN.findall(question)))
+    if not literals:
+        return ""
+    rendered = ", ".join(f"`{literal}`" for literal in literals)
+    return (
+        "[Literal Fidelity]\n"
+        f"PRESERVE EXACTLY: {rendered}\n"
+        "If a literal is interpreted by character or field position, copy each character "
+        "from left to right before mapping its meaning. Never substitute a Context example.\n\n"
+    )
+
+
 def _format_evidence_matrix(matrix: EvidenceMatrix | None) -> str:
-    if matrix is None or matrix.status in {"unchecked", "insufficient"}:
+    if matrix is None or matrix.status == "unchecked":
         return ""
     lines = [f"Coverage: {matrix.status.upper()}"]
     lines.extend(f"SUPPORTED: {goal}" for goal in matrix.supported_goals)
     lines.extend(f"MISSING: {goal}" for goal in matrix.missing_goals)
     return "[Evidence Matrix]\n" + "\n".join(lines) + "\n\n"
+
+
+def _format_workflow_constraints(question: str) -> str:
+    if not EXCLUDED_STATE_PATTERN.search(question):
+        return ""
+    return (
+        "[Workflow Preconditions]\n"
+        "The question starts with an ignored or excluded item. Before any command that "
+        "requires inclusion, tracking, or processing, state how that exclusion is removed. "
+        "Then list later state transitions and commands in execution order.\n\n"
+    )

@@ -7,7 +7,7 @@ import time
 
 from sqlalchemy.orm import Session
 
-from app.clients.vllm_client import VLLMClient
+from app.clients.llm_client import LLMClient
 from app.observability import (
     EVIDENCE_COVERAGE_DURATION,
     EVIDENCE_COVERAGE_REQUESTS,
@@ -279,7 +279,7 @@ def assess_evidence_coverage(
     ]
     started_at = time.perf_counter()
     try:
-        response = VLLMClient().chat_completion(
+        response = LLMClient().chat_completion(
             messages,
             temperature=0.0,
             operation="evidence_coverage",

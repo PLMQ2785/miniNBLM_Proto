@@ -6,6 +6,7 @@ from openai import OpenAI
 
 from app.config import settings
 from app.observability import LLM_DURATION, LLM_REQUESTS, LLM_TIME_TO_FIRST_TOKEN
+from app.services.language_model_service import get_active_endpoint
 
 
 logger = logging.getLogger(__name__)
@@ -22,17 +23,15 @@ MAX_TOKENS_BY_OPERATION = {
 DEFAULT_MAX_TOKENS = 1024
 
 
-class VLLMClient:
-    def __init__(
-        self,
-        base_url: str | None = None,
-        api_key: str | None = None,
-        model: str | None = None,
-    ) -> None:
-        self.model = model or settings.vllm_model
+class LLMClient:
+    def __init__(self, endpoint_key: str | None = None) -> None:
+        endpoint = settings.get_llm_endpoint(endpoint_key) if endpoint_key else get_active_endpoint()
+        self.endpoint_key = endpoint.key
+        self.model = endpoint.model
+        self.supports_vision = endpoint.supports_vision
         self.client = OpenAI(
-            base_url=base_url or settings.vllm_base_url,
-            api_key=api_key or settings.vllm_api_key,
+            base_url=endpoint.base_url,
+            api_key=endpoint.api_key,
         )
 
     def chat_completion(

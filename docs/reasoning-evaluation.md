@@ -230,8 +230,8 @@ Vision을 도입하기 전까지 visual-only 사례의 올바른 결과는 정�
   fail이다. 검색 recall은 1.0이므로 생성 정확도 회귀로 분류한다.
 - MPL/GPL 사례는 제거·대체 선택지를 생략해 partial이다.
 
-단일 생성 실행은 확률적 안정성을 보장하지 않는다. 위 세 잔여 사례와 직전 pass
-사례를 각각 최소 3회 반복한 뒤 Vision 실험의 비교 기준선을 확정한다.
+이 항목들은 당시 단일 실행의 잠정 결과다. 반복 검증과 후속 수정 결과는 아래
+`2026-08-10 통합 문서군 반복 평가` 절에 기록한다.
 
 ## 2026-08-07 Gemma 4 Vision 기술 검증
 
@@ -297,3 +297,54 @@ fixture를 text-only와 text+vision으로 각 3회 재실행해 확정해야 한
 계산 답을 직접 삽입하는 문제는 줄었지만, 한국어 OCR과 표·관계 전사는 여전히
 노이즈가 있었다. diagram fixture 반복 평가와 별도 OCR 또는 더 강한 VLM 비교가
 끝나기 전에는 `risk_only`를 명시적으로 활성화한 실험 범위로 제한한다.
+
+## 2026-08-10 통합 문서군 반복 평가
+
+`balanced + hybrid`, 전체 19개 PDF를 함께 인덱싱한 `combined` 모드에서 11개
+복합 질의를 각각 3회 실행했다. 원본 결과는
+`benchmark_results/reasoning/reasoning-benchmark-20260810T031441Z.json`이다.
+집중 회귀 5개 사례의 최종 묶음은
+`reasoning-benchmark-20260810T040614Z.json`, RS485 결정적 정규화의 최종
+3회 결과는 `reasoning-benchmark-20260810T042126Z.json`에 저장했다.
+
+| 분류 | 대표 사례 | 3회 결과 | 판정 |
+|---|---|---:|---|
+| 답변 가능 | RS485 `LB05 03 NLNNB` 해석 | 핵심 주장·source recall 3/3 | 채널 1~5, CR, 50ms를 모두 복원 |
+| 답변 가능 | SRUP 산출물·추적성 | source recall 3/3 | page 10을 필수 근거로 보던 과잉 ground truth를 제거 |
+| 부분 답변 | AGPL SaaS 공개 의무 | 한계 구분 3/3 | strong copyleft 분류만 답하고 네트워크 조항은 확정하지 않음 |
+| 답변 불가 | 모호한 rollback 장애 | 구체화 요청 3/3 | 명령, 오류, 현재 상태, 되돌릴 대상을 요청 |
+| 답변 가능 | MPL/GPL 충돌 해결책 | 필수 선택지 3/3 | MPL-2.0, 제거·대체, 예외, 분리 구조를 모두 제시 |
+
+평가 지표는 의미를 분리했다. `expected_source_precision/recall`은 fixture가 지정한
+페이지와의 정렬도이며 사실 정확성 자체가 아니다. fixture 밖 페이지를 인용해도
+Context가 실제 주장을 뒷받침하면 `review`로 남기며 자동 실패시키지 않는다.
+abstain 사례는 유효한 구체화 요청이면 검색 recall과 별도로 통과한다. SRUP page 10과
+원격 push page는 질문에 이미 주어진 전제이거나 다른 페이지로 충분히 답할 수 있어
+필수 source에서 제외했다.
+
+회귀 수정은 질문의 backtick 코드 리터럴 보존과 혼동 문자 교정, 구조화 JSON field
+조각의 검색 질의 제거, 제외·무시 상태 해제 선행 단계 보장, 부분 근거 답변 허용,
+해결책 열거와 외부 지식 금지를 포함한다. RS485처럼 위치별 기호와 의미가 Context에
+명시된 사례는 최종 답변의 필드와 채널별 의미를 Context 정의로 결정적으로
+정규화한다. 최종 RS485 실행은 3/3, MPL/GPL 선택지 완전성도 3/3이었다.
+
+## 2026-08-10 Vision caption 3회 품질 평가
+
+144 DPI에서 현재 Gemma 4 endpoint로 각 사례를 3회 실행했다. 원본 caption과
+실패 기록은
+`benchmark_results/reasoning/vision-caption-benchmark-20260810T032700Z.json`에
+저장했다.
+
+| 사례 | text-only | Vision 3회 | 결론 |
+|---|---|---|---|
+| Manual 19 화면 문자열 | 응답 문자열 누락 | `LB05 01 NLNNN` 3/3, 주변 한글 오독 3/3 | 코드 표적에는 유효, 전체 OCR에는 불충분 |
+| Manual 18 ASCII 표 | 행·열·hex가 정확히 추출됨 | 정확 0/3, 잘못된 값 1회, JSON 실패 2회 | Vision이 오히려 정확한 text 근거를 오염시킬 수 있음 |
+| Behavior Modeling II 20 상태도 | 전이·연산 누락 | 정확 0/3, JSON 실패 1회, 모순된 전사 2회 | 계산 근거로 사용 불가 |
+| Use case diagram II 19 관계도 | 노드명만 추출 | JSON 3/3이나 guard 방향 오류 3/3 | 구조화 성공과 관계 정확도는 별개 |
+
+완료된 모든 caption의 자체 confidence는 `1.0`이어서 품질 gate로 사용할 수 없다.
+따라서 `VISION_CAPTION_MODE=disabled`를 기본값으로 유지한다. `risk_only`는 실험용으로
+제한한다. 화면·스캔 문자의 별도 OCR 비교는 필요하지만 native text 표에는 적용하지
+않는다. 상태도·복합 관계는 OCR만으로 해결되지 않으므로 vision connector를 BF16로
+보존한 모델이나 별도 고성능 VLM을 같은 fixture로 3회 비교하기 전에는 답변 근거로
+승격하지 않는다.

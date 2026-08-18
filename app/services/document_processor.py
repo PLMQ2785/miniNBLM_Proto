@@ -9,10 +9,12 @@ from app.repositories import (
     document_repository,
     page_repository,
     retrieval_config_repository,
+    user_repository,
 )
 from app.services.chunker import chunk_pages
 from app.services.pdf_parser import extract_pages
 from app.services.vision_captioner import enrich_pages_with_vision_captions
+from app.services import language_model_service
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +60,12 @@ def process_document(
         db.commit()
 
         pages = extract_pages(document.file_path)
-        pages = enrich_pages_with_vision_captions(document.file_path, pages)
+        owner = user_repository.get_user_by_id(db, document.owner_id)
+        if owner is None:
+            raise ValueError("Document owner not found")
+        endpoint_key = language_model_service.get_user_endpoint_key(owner)
+        with language_model_service.use_endpoint(endpoint_key):
+            pages = enrich_pages_with_vision_captions(document.file_path, pages)
         if not pages:
             raise ValueError("No pages found in PDF")
 

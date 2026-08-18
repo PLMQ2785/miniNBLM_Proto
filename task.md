@@ -694,9 +694,7 @@ UPLOAD_DIR=./data/uploads
 
 EMBEDDING_MODEL=BAAI/bge-m3
 
-VLLM_BASE_URL=http://localhost:8010/v1
-VLLM_API_KEY=EMPTY
-VLLM_MODEL=gemma4
+LLM_ENDPOINTS_FILE=./config/llm-endpoints.json
 
 TOP_K=5
 ```
@@ -724,9 +722,7 @@ services:
       DATABASE_URL: postgresql+psycopg://rag_user:rag_password@postgres:5432/rag_db
       UPLOAD_DIR: /app/data/uploads
       EMBEDDING_MODEL: BAAI/bge-m3
-      VLLM_BASE_URL: http://host.docker.internal:8010/v1
-      VLLM_API_KEY: EMPTY
-      VLLM_MODEL: gemma4
+      LLM_ENDPOINTS_FILE: /app/config/llm-endpoints.json
     ports:
       - "8080:8080"
     volumes:
@@ -847,7 +843,7 @@ app/
     generator.py
 
   clients/
-    vllm_client.py
+    llm_client.py
 
   storage/
     local_storage.py
@@ -1226,7 +1222,7 @@ def generate_answer(
 
 ---
 
-## 21.11 clients/vllm_client.py
+## 21.11 clients/llm_client.py
 
 역할:
 
@@ -1237,7 +1233,7 @@ def generate_answer(
 권장 인터페이스:
 
 ```python
-class VLLMClient:
+class LLMClient:
     def chat_completion(
         self,
         messages: list[dict],
@@ -1430,7 +1426,7 @@ Codex는 다음 규칙을 따른다.
 2. API handler는 얇게 유지한다.
 3. 문서 처리는 `process_document(document_id)`에서 시작한다.
 4. PDF parsing, chunking, embedding, retrieval, generation은 각각 별도 모듈로 분리한다.
-5. vLLM 호출은 `clients/vllm_client.py`로 감싼다.
+5. OpenAI 호환 LLM 호출은 `clients/llm_client.py`로 감싼다.
 6. storage는 `LocalStorage` 클래스로 감싼다.
 7. 모든 chunk에는 `source_refs`를 넣는다.
 8. 의료/간호 안전 prompt를 반드시 적용한다.
@@ -1630,7 +1626,7 @@ retrieve top 30
 
 # 29. 현재 구현 및 검증 상태
 
-2026-08-07 기준으로 1차 MVP 기능을 구현했다. 초기 후속 범위였던 PostgreSQL
+2026-08-11 기준으로 1차 MVP 기능을 구현했다. 초기 후속 범위였던 PostgreSQL
 FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 네 검색
 알고리즘을 청킹 preset과 독립적으로 선택할 수 있다.
 
@@ -1649,6 +1645,10 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
 - 격리된 PostgreSQL을 사용하는 단위·API 통합 테스트
 - 실제 BGE-M3와 Gemma 4를 사용하는 PDF RAG E2E smoke 테스트
 - DB, embedding, vLLM 통합 readiness와 Docker/run.sh 시작 판정 연동
+- Docker 없는 서버에서 PostgreSQL, embedding, vLLM, API를 순서대로 관리하는
+  native 설치·진단·시작·종료 스크립트
+- PostgreSQL 17+pgvector, BGE-M3, vLLM, API를 한 이미지에서 실행하고 `/data`와
+  모델 volume만 영속화하는 all-in-one 배포
 - 로그인 사용자별 여러 작업공간 대화 세션 저장·조회·삭제
 - 최근 대화 자동 복원, 메시지 pagination과 제한된 이전 문맥 기반 후속 질문
 - 삭제된 PDF의 과거 source label 보존 및 원본 열기 비활성화
@@ -1668,14 +1668,14 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
   메시지 구성을 분리
 - 일반 사용자 비밀번호 변경 UI와 다른 로그인 세션 폐기
 - 비밀번호·사용자명 재확인 후 계정 소유 문서·대화·PDF 원본 회원탈퇴
-- PostgreSQL dump와 uploads, manifest, SHA-256을 묶는 백업·복원 스크립트
+- Docker/native PostgreSQL dump와 uploads, manifest, SHA-256을 묶는 백업·복원 스크립트
 - 복합 질문 최대 4개 근거 질의와 최대 2개 교차언어 질의, RRF, 인접 chunk와
   BGE-M3 semantic reranker
 - 근거 충족도 기반 표적 검색과 page FTS·trigram 계층 fallback 최대 2회
 - 빈 재검색 시 기존 Context 보존과 답변별 retrieval trace 관리자 조회
 - 문장별 Source/Page 검증, 조건부 인용 보정과 SSE `revision`
 - 7개 복합 Git/라이선스 fixture의 balanced+hybrid Recall@3·MRR@3 `1.0`
-- 빠른 단위/API 통합 테스트 `171 passed`, 실제 모델 E2E `1 skipped`
+- 빠른 단위/API 통합 테스트 `202 passed`, 실제 모델 E2E `1 skipped`
 - 최초 Context를 비운 실제 Gemma 4 강제 테스트에서 최대 2회 검색과 유효 인용 확인
 - API·DB·embedding·LLM 4개 컨테이너 및 `/health/ready` 정상 확인
 - `sample/`의 3개 문서군을 위한 복합·다층 추론 10개 fixture와 격리 benchmark runner
@@ -1698,6 +1698,24 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
   절차 질문의 표준 명령어 검색 확장과 chunk metadata 기반 Source/Page 정규화 적용
 - 모든 근거 목표가 부족한 모호 질의는 LLM 초안을 스트리밍하지 않고 구체화를 요청하며,
   citation repair의 전면 거부 시에는 유효하게 인용된 문장만 보존하는 fallback 적용
+- 관리자 지원 임시 비밀번호 재설정, 대상 사용자 전체 세션 폐기와 다음 로그인 변경 강제
+- 여러 OpenAI 호환 LLM endpoint 등록, 기본 endpoint key 선택과 Vision capability 검증
+- 통합 문서군의 RS485, SRUP, stash 선행 조건, MPL/GPL 해결책, 모호 rollback을
+  각 3회 집중 회귀하고, 답변 가능 사례 최종 recall `1.0`과 안전 구체화 요청 확인
+- backtick 리터럴의 문자·위치별 감사와 Context 기반 채널 의미 정규화로
+  `NLNNB` 해석, CR(0x0d), 50ms 조건을 최종 3/3 보존
+- `run_aio.sh`로 원샷 이미지 build/pull/up/readiness/status/logs/down 경로를 통합하고,
+  실제 Web UI 회원가입·Manual 업로드·인덱싱·Gemma 답변과 page source를 확인
+- all-in-one image에서 Gemma 4 weight를 제거하고 12B·31B W4A16 archive를 외부
+  storage에서 이어받아 SHA-256 검증 후 `/data/models/gemma4`에 원자적으로 설치
+- 설치된 모델을 `/data`에서 재사용하고 기본적으로 검증 완료 archive를 삭제해
+  Docker Hub pull과 재시작 비용을 분리
+- 공개 Hugging Face repository의 commit SHA로 고정한 모델 snapshot 이어받기·설치·재사용
+- `chown`이 제한된 volume의 실제 UID로 PostgreSQL을 실행하는 fallback을 12B·31B
+  `0.1.3` image에 공통 적용하고 image별 실제 downloader·권한 smoke 검증
+- H200 단일 GPU용 BGE-M3 CUDA·vLLM 동시 sequence 8개 31B 배포 환경 유지
+- `LLM_ENDPOINTS_FILE` JSON을 endpoint 허용 목록으로 사용하고 모든 로그인 사용자가
+  작업공간에서 자신의 언어모델을 검증·전환하며 DB에 보존해 세 실행 방식에 공통 적용
 
 빠른 테스트는 `./scripts/test.sh -q`, 실제 모델 E2E는 네 서비스 실행 후
 `./scripts/e2e.sh -q`로 수행한다. E2E API와 DB는 운영 데이터와 분리된다.

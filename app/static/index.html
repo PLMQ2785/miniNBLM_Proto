@@ -108,7 +108,7 @@
         <div class="brand-block">
           <span class="brand-mark" aria-hidden="true">R</span>
           <div>
-            <strong>검색 설정 관리</strong>
+            <strong>서비스 관리</strong>
             <span id="admin-username" class="service-status"></span>
           </div>
         </div>
@@ -155,6 +155,33 @@
           </form>
         </section>
 
+
+        <section class="algorithm-section" aria-labelledby="password-reset-heading">
+          <div class="admin-section-heading">
+            <p class="panel-eyebrow">USER SECURITY</p>
+            <h2 id="password-reset-heading">사용자 비밀번호 재설정</h2>
+          </div>
+          <p class="admin-section-note">
+            임시 비밀번호를 설정하면 해당 사용자의 모든 로그인 세션이 종료되며, 다음 로그인에서 비밀번호 변경이 강제됩니다.
+          </p>
+          <form id="admin-password-reset-form" class="admin-password-reset-form">
+            <label for="reset-username">
+              <span>사용자명</span>
+              <input id="reset-username" name="username" type="text" minlength="3" maxlength="32" pattern="[A-Za-z0-9_.\-]+" autocomplete="off" required>
+            </label>
+            <label for="reset-temporary-password">
+              <span>임시 비밀번호</span>
+              <input id="reset-temporary-password" name="temporary-password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required>
+            </label>
+            <label for="reset-temporary-password-confirmation">
+              <span>임시 비밀번호 확인</span>
+              <input id="reset-temporary-password-confirmation" name="temporary-password-confirmation" type="password" minlength="8" maxlength="128" autocomplete="new-password" required>
+            </label>
+            <button id="admin-password-reset-button" type="submit">임시 비밀번호 적용</button>
+            <p id="admin-password-reset-message" class="admin-error" role="status"></p>
+          </form>
+        </section>
+
         <section class="job-section" aria-labelledby="job-heading">
           <div class="job-heading-row">
             <div>
@@ -182,6 +209,10 @@
         </div>
         <p class="safety-notice">업로드한 문서에 근거해 답변합니다.</p>
         <div class="account-block">
+          <label class="language-model-control" for="language-model-select">
+            <span>언어모델</span>
+            <select id="language-model-select" aria-label="언어모델" disabled></select>
+          </label>
           <span id="current-username"></span>
           <button id="admin-button" type="button" hidden>관리</button>
           <button id="account-button" type="button">계정</button>

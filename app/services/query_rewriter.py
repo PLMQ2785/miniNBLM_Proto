@@ -4,7 +4,7 @@ import logging
 import re
 from pathlib import Path
 
-from app.clients.vllm_client import VLLMClient
+from app.clients.llm_client import LLMClient
 
 
 logger = logging.getLogger(__name__)
@@ -20,6 +20,9 @@ JSON_OBJECT_RESPONSE_FORMAT = {"type": "json_object"}
 QUERY_LABEL_PATTERN = re.compile(
     r"^(?:검색\s*질의|독립형\s*(?:검색\s*)?질의|standalone\s+(?:retrieval\s+)?query)\s*:\s*",
     re.IGNORECASE,
+)
+STRUCTURED_FRAGMENT_PATTERN = re.compile(
+    r"^[A-Za-z_][A-Za-z0-9_]*\$?\s*:\s*[\[\{]\s*$"
 )
 
 
@@ -46,7 +49,7 @@ def plan_retrieval_queries(question: str, history: list[dict[str, str]]) -> Retr
             "content": f"[현재 질문]\n{original_question}\n\n[검색 계획]",
         },
     ]
-    client = VLLMClient()
+    client = LLMClient()
     rewritten = ""
     try:
         rewritten = client.chat_completion(
@@ -266,7 +269,10 @@ def _query_plan_payload_score(payload: dict) -> tuple[int, int]:
 def _normalize_query_value(value) -> str:
     if not isinstance(value, str):
         return ""
-    return " ".join(value.strip().split())[:MAX_RETRIEVAL_QUERY_CHARS].rstrip()
+    normalized = " ".join(value.strip().split())
+    if STRUCTURED_FRAGMENT_PATTERN.fullmatch(normalized):
+        return ""
+    return normalized[:MAX_RETRIEVAL_QUERY_CHARS].rstrip()
 
 
 def _deduplicate_queries(queries) -> list[str]:

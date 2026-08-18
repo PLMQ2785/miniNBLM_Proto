@@ -64,15 +64,173 @@ docker compose up -d db embedding api
 
 이 경우 문서 인덱싱은 가능하지만 `/chat`은 별도로 실행 중인 vLLM endpoint가 없으면 실패합니다.
 
+### 2.1 원샷 통합 컨테이너
+
+배포 단위를 하나로 줄일 때는 `Dockerfile.all-in-one`과
+`docker-compose.all-in-one.yml`을 사용한다. 이미지 하나가 PostgreSQL,
+embedding, vLLM, API를 일반 process로 실행하고 `run-native.sh foreground`가
+PID와 SIGTERM 종료 순서를 관리한다.
+
+```bash
+cp .env.all-in-one.example .env.all-in-one
+# DB 비밀번호와 모델 source 설정을 확인
+./run_aio.sh
+./run_aio.sh status
+./run_aio.sh logs
+./run_aio.sh down
+```
+
+`mininblm_data` volume에는 PostgreSQL, uploads, BGE-M3 cache, 로그, 백업과
+`/data/models/gemma4`의 모델을 보존한다. 모델 weight는 image에 포함하지 않는다.
+Entrypoint는 모델이 없을 때 commit SHA로 고정한 Hugging Face snapshot을 이어받거나
+`MODEL_ARCHIVE_URL`을 이어받아 `MODEL_ARCHIVE_SHA256`을 검증한다. `config.json`과
+Safetensors가 모두 확인된 뒤에만 모델 경로로 원자적으로 이동하므로 중단된
+다운로드나 잘못된 archive를 vLLM이 읽지 않는다.
+
+Hugging Face와 archive 방식은 동시에 설정할 수 없다. archive 방식에서
+`MODEL_KEEP_ARCHIVE=false`이면 성공 후 archive를 삭제한다. 모델 설치본은 `/data`
+volume에 남으므로 재시작과 image 교체 시 다시 다운로드하지 않는다. 다른 모델로
+교체하려면 container를 중지하고 `/data/models/gemma4`를 비운 뒤 새 source로
+시작한다.
+
+원샷 컨테이너가 root로 실행되더라도 Network Volume은 `chown`을 거부할 수 있다.
+runtime은 data 경로 UID와 container 사용자를 대응시키지만, UID가 고정된 root이면
+PostgreSQL을 안전하게 실행할 수 없다. 임시 smoke에서는
+`NATIVE_DB_DATA_DIR=/var/lib/mininblm/postgres`와
+`NATIVE_LOG_DIR=/var/log/mininblm`을 사용한다. 이 경로는 container disk라
+stop/restart 시 초기화되므로 영속 운영에서는 외부 PostgreSQL을 사용해야 한다.
+
+`NATIVE_DB_PASSWORD` 기본값은 entrypoint가 거부한다. `run_aio.sh`는
+`--no-build`, `pull`, `status`, `logs`, `down` 명령과 readiness 대기를 제공한다.
+환경 파일 경로는 `AIO_ENV_FILE`로 바꿀 수 있다.
+
+모델 archive를 외부 storage에 게시하기 전에 모델 재배포 조건과 접근 범위를
+확인한다. Google Drive를 사용하면 일반 공유 페이지가 아니라 curl로 파일 본문을
+받을 수 있는 직접 다운로드 URL을 설정해야 한다. 대용량 파일의 quota와 throttling을
+피하려면 S3/R2 같은 object storage를 우선한다.
+
+```bash
+docker compose --env-file .env.all-in-one \
+  -f docker-compose.all-in-one.yml build mininblm
+docker tag mininblm/all-in-one:0.1.0 <account>/mininblm:0.1.0
+docker login
+docker push <account>/mininblm:0.1.0
+```
+
+#### Gemma 4 31B W4A16 variant
+
+31B 배포는 `.env.all-in-one-31b.example`을 기준으로 한다. 직접 양자화한
+compressed-tensors `pack-quantized` W4A16 모델 디렉터리를 archive로 만들고
+직접 다운로드 URL과 SHA-256을 설정한다. 기존 checkpoint의 10개 Safetensors
+weight 합은 `19,073,960,528` bytes다.
+현재 Google Drive의 `gemma-4-31B-it-W4A16.tar` archive SHA-256은
+`1a28093ac67542780473b4c74f659fb3988d7c69e1fbf974772b2ab94c0f6ebf`다.
+
+```bash
+cp .env.all-in-one-31b.example .env.all-in-one-31b
+# NATIVE_DB_PASSWORD, MODEL_ARCHIVE_URL, MODEL_ARCHIVE_SHA256, GPU 설정을 변경
+docker compose --env-file .env.all-in-one-31b \
+  -f docker-compose.all-in-one.yml build mininblm
+docker push <account>/mininblm:0.1.0-gemma4-31b-w4a16
+
+# 원격 서버
+AIO_ENV_FILE=.env.all-in-one-31b ./run_aio.sh pull
+AIO_ENV_FILE=.env.all-in-one-31b ./run_aio.sh --no-build
+```
+
+기본 배포 대상은 NVIDIA H200 1장이다. BGE-M3를 GPU에서 실행하고, 단일 vLLM
+인스턴스에 GPU 메모리의 70%를 할당하며 최대 8개 활성 sequence를 continuous
+batching으로 처리한다. CPU offload와 tensor parallel은 사용하지 않는다.
+
+### 2.2 Docker 없이 네 서비스 실행
+
+대여 서버가 이미 컨테이너여서 nested container를 만들 수 없으면
+`run-native.sh`를 사용한다. 이 경로는 Docker daemon, Docker CLI, systemd를
+요구하지 않는다. API와 embedding은 `.venv-native`, vLLM은 dependency 충돌을
+피하기 위해 `.venv-vllm`에 분리한다.
+
+필수 시스템 구성:
+
+- Python 3.12와 `uv`
+- `curl`, `patch`
+- 로컬 DB 사용 시 PostgreSQL 17 server/client와 PostgreSQL 17용 pgvector
+- 로컬 GPU 서비스 사용 시 컨테이너 안에서 동작하는 `nvidia-smi`
+- `VLLM_MODEL_PATH`의 Gemma 4 W4A16 모델
+
+PGDG 저장소를 사용하는 Ubuntu/Debian의 PostgreSQL 패키지명은 일반적으로
+`postgresql-17`, `postgresql-client-17`, `postgresql-17-pgvector`다.
+`pg_trgm`은 PostgreSQL contrib extension이며 Alembic이 `vector`와 함께 생성한다.
+root로 실행하는 외부 컨테이너에서는 로컬 PostgreSQL만
+`NATIVE_DB_OS_USER=postgres` 사용자로 내린다.
+
+```bash
+cp .env.example .env
+./run-native.sh setup
+./run-native.sh setup-llm
+./run-native.sh doctor
+```
+
+`setup-llm`은 vLLM `0.25.0`을 별도 환경에 설치하고 Docker 이미지에도 사용한
+Gemma 4 W4A16 vision quantization 및 projection dtype patch를 같은 source에
+적용한다. 설치가 끝나면 background 또는 foreground 중 하나로 시작한다.
+
+```bash
+# SSH 세션에서 background 프로세스로 실행
+./run-native.sh up
+./run-native.sh status
+./run-native.sh logs api
+./run-native.sh down
+
+# 대여 서버 컨테이너의 command/entrypoint
+./run-native.sh foreground
+```
+
+`foreground`는 API process를 감시하며 SIGINT/SIGTERM에서 로컬로 관리하는
+API, vLLM, embedding, PostgreSQL을 역순으로 종료한다. PostgreSQL data,
+Hugging Face cache, PID, 로그, 업로드 원본은 `.native/`에 둔다. 대여 서버
+재생성 후에도 필요한 경우 `.native/`와 모델 디렉터리를 영속 volume에 연결한다.
+
+사업자가 제공하는 외부 서비스를 조합할 수도 있다.
+
+```dotenv
+NATIVE_MANAGE_DB=false
+NATIVE_START_EMBEDDING=false
+NATIVE_START_LLM=false
+DATABASE_URL=postgresql+psycopg://user:password@db.example:5432/rag_db
+EMBEDDING_BASE_URL=https://embedding.example
+LLM_ENDPOINTS_FILE=./config/llm-endpoints.remote.json
+NATIVE_LLM_HEALTH_URL=https://llm.example/v1/models
+```
+
+외부 DB 사용자는 `vector`, `pg_trgm` extension을 생성할 권한이 있어야 한다.
+권한이 없으면 DB 관리자가 extension을 먼저 생성해야 Alembic migration이
+성공한다. GPU device나 driver library가 외부 컨테이너에 전달되지 않은 경우에는
+로컬 vLLM/embedding을 시작할 수 없으므로 두 endpoint를 외부로 구성한다.
+
 ## 3. 주요 환경변수
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `MININBLM_DB_PORT` | `5433` | host network에서 PostgreSQL이 bind할 loopback 포트 |
-| `VLLM_MODEL_PATH` | `./google/google-gemma-4-12B-it-W4A16` | 호스트의 양자화 모델 경로 |
+| `NATIVE_MANAGE_DB` | `true` | 비컨테이너 실행에서 로컬 PostgreSQL을 직접 관리할지 여부 |
+| `NATIVE_START_EMBEDDING` | `true` | 비컨테이너 실행에서 BGE-M3 process를 시작할지 여부 |
+| `NATIVE_START_LLM` | `true` | 비컨테이너 실행에서 vLLM process를 시작할지 여부 |
+| `NATIVE_DB_OS_USER` | `postgres` | root container에서 PostgreSQL process 권한을 내릴 OS 사용자 |
+| `NATIVE_DB_DATA_DIR` | `./.native/postgres` | 로컬 PostgreSQL data directory |
+| `NATIVE_UPLOAD_DIR` | `./.native/uploads` | 비컨테이너 API의 업로드 PDF 저장 경로 |
+| `NATIVE_ENV_DIR` | `.venv-native` | API와 embedding Python 환경 |
+| `NATIVE_VLLM_ENV_DIR` | `.venv-vllm` | 충돌을 분리한 vLLM Python 환경 |
+| `NATIVE_VLLM_VERSION` | `0.25.0` | native 설치와 호환 patch의 기준 vLLM version |
+| `VLLM_MODEL_PATH` | `./google/gemma-4-12B-it-W4A16` | 호스트의 양자화 모델 경로 |
+| `MODEL_HF_REPO_ID` | 없음 | 원샷 컨테이너가 최초 기동 시 받을 공개 Hugging Face `owner/repository` |
+| `MODEL_HF_REVISION` | 없음 | Hugging Face 모델을 고정하는 필수 40자리 commit SHA |
+| `MODEL_ARCHIVE_URL` | 없음 | 원샷 컨테이너가 최초 기동 시 받을 모델 archive 직접 URL |
+| `MODEL_ARCHIVE_SHA256` | 없음 | 모델 archive의 필수 SHA-256 checksum |
+| `MODEL_KEEP_ARCHIVE` | `false` | 설치 성공 후 다운로드 archive를 `/data/model-cache`에 유지할지 여부 |
 | `VLLM_MAX_MODEL_LEN` | `8192` | 최대 sequence length |
 | `VLLM_GPU_MEMORY_UTILIZATION` | `0.65` | vLLM이 사용할 GPU 메모리 비율 |
-| `VLLM_MAX_NUM_SEQS` | `4` | 동시에 처리할 최대 sequence 수 |
+| `VLLM_MAX_NUM_SEQS` | `4` | vLLM scheduler가 동시에 처리할 최대 활성 sequence 수 |
+| `LLM_ENDPOINTS_FILE` | `config/llm-endpoints.json` | OpenAI 호환 endpoint 허용 목록 JSON 경로 |
 | `MAX_UPLOAD_BYTES` | `52428800` | 서버가 허용하는 PDF 파일 최대 바이트 수 |
 | `READINESS_TIMEOUT_SECONDS` | `3` | readiness 구성요소별 최대 점검 시간(초) |
 | `LOG_LEVEL` | `INFO` | API JSON 구조화 로그 수준 |
@@ -86,11 +244,82 @@ Bootstrap 관리자 변수는 둘 다 설정하거나 둘 다 비워야 합니�
 이상이며 영문 대·소문자, 숫자, 기호 중 3종 이상이어야 하고 사용자명을 포함할 수
 없습니다. 계정 생성 후에는 두 변수를 제거해도 됩니다.
 
-`embedding`과 `llm`은 같은 GPU를 사용할 수 있습니다. `VLLM_GPU_MEMORY_UTILIZATION`은 전체 GPU 용량에 대한 목표치이며, 모델 weight, 실행 workspace, CUDA context와 KV cache가 함께 VRAM을 사용합니다.
+언어모델 등록정보는 `LLM_ENDPOINTS_FILE`이 가리키는 JSON 파일에서 수동 관리합니다.
+최상위 `default_endpoint`와 `endpoints` 배열이 필요하며 각 endpoint는 `key`,
+`display_name`, `base_url`, `model`, `supports_vision`을 포함합니다. 인증값은
+`api_key`와 `api_key_env` 중 정확히 하나를 사용합니다. 실제 secret은 JSON에
+기록하지 않고 환경변수를 참조하는 `api_key_env`를 권장합니다.
 
-호스트의 `5433`도 다른 PostgreSQL이 사용 중이면 `.env`에서
-`MININBLM_DB_PORT`를 사용 가능한 포트로 변경합니다. API의 DB 연결 주소와 DB
-healthcheck에도 같은 값이 자동 적용됩니다.
+| 필드 | 값의 의미 | 권장 사용처 |
+|---|---|---|
+| `api_key` | HTTP 인증에 사용할 값 자체 | 인증 없는 vLLM의 `"EMPTY"` placeholder |
+| `api_key_env` | 실제 인증값이 들어 있는 환경변수 이름 | 상용 API와 인증이 설정된 외부 vLLM |
+
+두 필드는 최종적으로 같은 `Authorization: Bearer ...` 인증값을 만들지만 secret의
+저장 위치가 다릅니다. `api_key`에 실제 secret을 기록하면 JSON·백업·Git 이력에
+평문이 남을 수 있으므로 사용하지 않습니다. 인증 없는 로컬 또는 외부 vLLM은
+OpenAI client가 요구하는 placeholder로 `"api_key": "EMPTY"`를 사용합니다.
+
+```json
+{
+  "key": "external-vllm",
+  "display_name": "External vLLM",
+  "base_url": "http://192.168.0.100:8000/v1",
+  "api_key": "EMPTY",
+  "model": "served-model-name",
+  "supports_vision": false
+}
+```
+
+상용 API나 `vllm serve --api-key ...`로 보호한 endpoint는 실제 값을 환경변수에
+두고 JSON에서는 그 환경변수 이름만 참조합니다.
+
+```json
+{
+  "default_endpoint": "remote",
+  "endpoints": [
+    {
+      "key": "remote",
+      "display_name": "Remote LLM",
+      "base_url": "https://llm.example/v1",
+      "api_key_env": "REMOTE_LLM_API_KEY",
+      "model": "model-name",
+      "supports_vision": false
+    }
+  ]
+}
+```
+
+JSON은 API 시작 시 전체 검증되며 파일 오류, 중복 key, 존재하지 않는 기본 endpoint,
+누락된 secret 환경변수가 있으면 시작을 거부합니다. 변경 후 API를 재시작해야 합니다.
+개별 Docker Compose는 `config/llm-endpoints.json`을 read-only mount하고, native는
+`.env`의 `LLM_ENDPOINTS_FILE`을 사용합니다. all-in-one Compose는
+`MININBLM_LLM_CONFIG_FILE`의 호스트 파일을 `/data/config/llm-endpoints.json`으로
+mount합니다. 이미지를 Compose 없이 처음 실행하면 내장 variant 기본값을 해당
+`/data` 경로에 생성합니다.
+
+배열에 서로 다른 주소의 endpoint를 여러 개 등록하면 로그인한 각 사용자가 작업공간
+상단에서 자신의 활성 endpoint를 선택합니다. 사용자별 선택값은 DB에 보존되고 전환
+시 `/models` 응답의 model ID를 확인합니다. Vision caption을 활성화할 때는 선택한
+endpoint의 `supports_vision`이 `true`여야 합니다.
+
+`embedding`과 `llm`은 같은 GPU를 사용할 수 있습니다.
+`VLLM_GPU_MEMORY_UTILIZATION`은 vLLM 프로세스별 전체 GPU 용량 목표치이며, 모델
+weight, 실행 workspace, CUDA context와 KV cache가 함께 VRAM을 사용합니다. 한
+vLLM 인스턴스의 여러 요청은 이 메모리 풀을 공유하므로 `VLLM_MAX_NUM_SEQS`배의
+VRAM을 예약하지 않습니다. 반대로 같은 GPU에서 vLLM 인스턴스를 여러 개 실행하면
+각 인스턴스의 비율이 중첩되므로 합계와 embedding 등 외부 GPU 사용량을 함께
+제한해야 합니다.
+
+31B H200 환경 예시는 `EMBEDDING_DEVICE=cuda`,
+`VLLM_GPU_MEMORY_UTILIZATION=0.70`, `VLLM_MAX_NUM_SEQS=8`,
+`VLLM_TENSOR_PARALLEL_SIZE=1`을 사용합니다. `8`은 성능 최댓값이 아니라 초기
+동시성 상한이며, 실제 부하에서 대기 요청, TTFT, 생성 속도, KV cache 사용률과
+preemption을 확인한 뒤 `12`, `16`과 비교합니다.
+
+`5433`을 다른 PostgreSQL이 사용 중이면 `.env`에서 `MININBLM_DB_PORT`를 변경한다.
+Compose는 API 연결 주소에도 같은 포트를 적용한다. 비컨테이너 실행은
+`DATABASE_URL`의 포트도 함께 변경해야 한다.
 
 ## 4. API 계약
 
@@ -106,6 +335,7 @@ healthcheck에도 같은 값이 자동 적용됩니다.
 | `POST` | `/auth/password` | 현재 비밀번호 검증 후 새 비밀번호 설정 |
 | `DELETE` | `/auth/account` | 비밀번호·사용자명 재확인 후 계정과 소유 데이터 삭제 |
 | `GET` | `/auth/me` | 현재 로그인 사용자 |
+| `POST` | `/admin/users/password-reset` | 임시 비밀번호 설정, 기존 세션 폐기와 다음 로그인 변경 강제 |
 | `POST` | `/documents` | multipart PDF 업로드 |
 | `GET` | `/documents` | 문서 목록 |
 | `GET` | `/documents/{id}` | 문서와 인덱싱 상태 |
@@ -117,6 +347,8 @@ healthcheck에도 같은 값이 자동 적용됩니다.
 | `GET` | `/admin/retrieval/traces` | 최근 답변의 단계별 retrieval trace 조회 |
 | `POST` | `/admin/retrieval/presets/{key}/activate` | 프리셋 변경 작업 시작 |
 | `POST` | `/admin/retrieval/algorithms/{key}/activate` | 검색 알고리즘 즉시 변경 |
+| `GET` | `/language-models` | 로그인 사용자의 등록 언어모델과 선택 조회 |
+| `POST` | `/language-models/{key}/activate` | endpoint 검증 후 사용자별 언어모델 전환 |
 | `GET` | `/admin/retrieval/jobs/{id}` | 재인덱싱 작업 상태 조회 |
 | `POST` | `/admin/retrieval/jobs/{id}/retry` | 실패한 재인덱싱 작업 재시도 |
 
@@ -160,6 +392,10 @@ HTTP 403으로 차단됩니다. 변경 시 현재 세션을 제외한 기존 로
 ```bash
 docker compose exec api python -m app.cli.set_admin <username>
 docker compose exec api python -m app.cli.set_admin --revoke <username>
+
+# 비컨테이너 실행
+.venv-native/bin/python -m app.cli.set_admin <username>
+.venv-native/bin/python -m app.cli.set_admin --revoke <username>
 ```
 
 관리자 API는 `admin` 역할만 접근할 수 있습니다. 프리셋의 청크 크기 또는
@@ -363,7 +599,9 @@ docker compose exec llm nvidia-smi
 Free memory ... is less than desired GPU memory utilization
 ```
 
-다른 GPU 프로세스를 종료하거나 `.env`의 `VLLM_GPU_MEMORY_UTILIZATION`을 낮춥니다. 현재 기본값은 embedding service와의 공존을 고려한 `0.65`입니다.
+다른 GPU 프로세스를 종료하거나 `.env`의 `VLLM_GPU_MEMORY_UTILIZATION`을
+낮춥니다. 공통 12B 기본값은 embedding service와의 공존을 고려한 `0.65`이고,
+31B H200 환경 예시는 한 vLLM 인스턴스에 `0.70`을 할당합니다.
 
 ### KV cache 부족
 
@@ -373,7 +611,10 @@ Free memory ... is less than desired GPU memory utilization
 KV cache is needed, which is larger than the available KV cache memory
 ```
 
-`VLLM_MAX_MODEL_LEN`을 낮추거나, 여유 VRAM이 있다면 `VLLM_GPU_MEMORY_UTILIZATION`을 높입니다. 동시 요청 수가 중요하지 않은 개발 환경에서는 `VLLM_MAX_NUM_SEQS`도 낮출 수 있습니다.
+`VLLM_MAX_MODEL_LEN` 또는 `VLLM_MAX_NUM_SEQS`를 낮춥니다. 여유 VRAM이 있고
+같은 GPU의 다른 프로세스 예산과 충돌하지 않는다면
+`VLLM_GPU_MEMORY_UTILIZATION`을 높일 수 있습니다. preemption/recompute가
+발생하면 활성 sequence 상한부터 낮춥니다.
 
 ### Gemma 4 W4A16 적재 오류
 
@@ -390,11 +631,14 @@ KV cache is needed, which is larger than the available KV cache memory
 
 ### 백업과 복원
 
-`backup.sh`는 API를 잠시 정지하고 PostgreSQL custom dump와 `data/uploads`를
-동일 시점에 수집합니다. 기본 출력은 Git에서 제외되는 `./backups`입니다.
+`backup.sh`는 API를 잠시 정지하고 PostgreSQL custom dump와 업로드 PDF를 동일
+시점에 수집한다. Docker 기본 경로는 `data/uploads`, native 기본 경로는
+`.native/uploads`이며, 기본 출력은 Git에서 제외되는 `./backups`이다.
 
 ```bash
 ./backup.sh
+# 비컨테이너 PostgreSQL/API
+RUNTIME_MODE=native ./backup.sh
 ```
 
 bundle에는 다음 파일이 포함됩니다.
@@ -407,6 +651,7 @@ bundle에는 다음 파일이 포함됩니다.
 먼저 데이터를 변경하지 않는 검증 모드를 실행합니다.
 
 ```bash
+# 검증 모드는 실행 중인 DB와 runtime 종류에 무관하다.
 ./restore.sh --verify-only backups/mininblm-backup-<timestamp>.tar.gz
 ```
 
@@ -416,6 +661,8 @@ bundle에는 다음 파일이 포함됩니다.
 
 ```bash
 ./restore.sh --yes backups/mininblm-backup-<timestamp>.tar.gz
+# 비컨테이너 PostgreSQL/API
+RUNTIME_MODE=native ./restore.sh --yes backups/mininblm-backup-<timestamp>.tar.gz
 ```
 
 운영 배포 전에는 운영 복사본 또는 격리 환경에서 `--yes` 복원 리허설과 문서 원본

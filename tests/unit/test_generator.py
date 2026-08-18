@@ -1,6 +1,8 @@
+from dataclasses import replace
+
 import pytest
 
-from app.clients.vllm_client import VLLMClient
+from app.clients.llm_client import LLMClient
 from app.services.evidence_coverage import EvidenceMatrix
 from app.services.generator import INSUFFICIENT_EVIDENCE_ANSWER, generate_answer
 from app.services.retriever import RetrievedChunk
@@ -25,7 +27,7 @@ def test_generate_answer_removes_sources_and_marker_for_ungrounded_response(
     retrieved_chunk: RetrievedChunk,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda self, messages, **kwargs: "[[NO_SOURCE]] 업로드된 자료에서 확인되지 않습니다.",
     )
@@ -41,7 +43,7 @@ def test_generate_answer_supports_legacy_no_source_prefix(
     retrieved_chunk: RetrievedChunk,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda self, messages, **kwargs: "업로드된 자료에서 확인되지 않습니다. 질문을 바꿔주세요.",
     )
@@ -58,7 +60,7 @@ def test_generate_answer_accepts_malformed_no_source_marker(
     marker: str,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda self, messages, **kwargs: (
             f"{marker} 업로드된 자료에서 OS의 메모리 관리정책에 대한 내용은 "
@@ -78,7 +80,7 @@ def test_generate_answer_keeps_generic_detail_after_no_source_marker(
     retrieved_chunk: RetrievedChunk,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda self, messages, **kwargs: (
             "[[NO_SOURCE]] 업로드된 자료에서 확인되지 않습니다. "
@@ -98,7 +100,7 @@ def test_generate_answer_keeps_sources_for_grounded_response(
     retrieved_chunk: RetrievedChunk,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda self, messages, **kwargs: (
             "자료에서는 낙상 예방 교육을 시행합니다. [Source 1, Page 3]"
@@ -140,7 +142,7 @@ def test_generate_answer_returns_only_cited_unique_source_pages(
         ),
     ]
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda self, messages, **kwargs: (
             "Git은 변경 이력을 추적합니다. "
@@ -181,7 +183,7 @@ def test_generate_answer_keeps_all_sources_used_for_a_derived_conclusion(
         source_refs={"page": 11},
     )
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda self, messages, **kwargs: (
             "reset은 기존 이력을 변경하지만 revert는 취소 커밋을 추가해 이력을 보존하므로 "
@@ -203,7 +205,7 @@ def test_generate_answer_does_not_expose_uncited_candidates(
     retrieved_chunk: RetrievedChunk,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda self, messages, **kwargs: "자료에서는 낙상 예방 교육을 시행합니다.",
     )
@@ -232,7 +234,7 @@ def test_generate_answer_blocks_exact_visual_page_request_without_llm(
         },
     )
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: pytest.fail("Visual-only request must be blocked locally"),
     )
@@ -251,7 +253,7 @@ def test_generate_answer_requests_detail_when_all_evidence_goals_are_missing(
     retrieved_chunk: RetrievedChunk,
 ) -> None:
     monkeypatch.setattr(
-        VLLMClient,
+        LLMClient,
         "chat_completion",
         lambda *args, **kwargs: pytest.fail("Insufficient evidence must not call the answer LLM"),
     )
@@ -266,7 +268,147 @@ def test_generate_answer_requests_detail_when_all_evidence_goals_are_missing(
     )
 
     assert generated.answer == INSUFFICIENT_EVIDENCE_ANSWER
+    assert "사용한 명령" in generated.answer
+    assert "발생한 오류" in generated.answer
+    assert "현재 상태" in generated.answer
+    assert "되돌릴 대상" in generated.answer
     assert generated.sources == []
+
+
+def test_generate_answer_allows_explicitly_requested_qualified_answer(
+    monkeypatch: pytest.MonkeyPatch,
+    retrieved_chunk: RetrievedChunk,
+) -> None:
+    captured: list[list[dict[str, str]]] = []
+
+    def answer(_, messages, **kwargs):
+        captured.append(messages)
+        return "자료가 확인하는 일반 원칙만 설명합니다. [Source 1, Page 3]"
+
+    monkeypatch.setattr(LLMClient, "chat_completion", answer)
+
+    generated = generate_answer(
+        "자료가 뒷받침하는 내용과 확정할 수 없는 부분을 구분해 주세요.",
+        [retrieved_chunk],
+        evidence_matrix=EvidenceMatrix(
+            status="insufficient",
+            missing_goals=("구체 적용 조건",),
+        ),
+    )
+
+    assert "일반 원칙" in generated.answer
+    assert len(generated.sources) == 1
+    assert "Coverage: INSUFFICIENT" in captured[0][-1]["content"]
+    assert "MISSING: 구체 적용 조건" in captured[0][-1]["content"]
+
+
+def test_generate_answer_restores_confusable_question_literal_without_rewriting_other_codes(
+    monkeypatch: pytest.MonkeyPatch,
+    retrieved_chunk: RetrievedChunk,
+) -> None:
+    operations: list[str] = []
+
+    def complete(*args, **kwargs):
+        operation = kwargs["operation"]
+        operations.append(operation)
+        if operation == "answer":
+            return (
+                "IB05 03 NLNNB의 상태는 LBN입니다. 채널 2는 Normal입니다. "
+                "LB05 01 NLNNN은 비교 예시입니다. [Source 1, Page 3]"
+            )
+        if operations.count("literal_fidelity_repair") == 1:
+            return (
+                "LB05 03 NLNNB에서 LBN에서 각 위치를 설명합니다. "
+                "채널 2는 L (Leak)입니다. [Source 1, Page 3]"
+            )
+        return (
+            "LB05 03 NLNNB의 상태는 NLNNB입니다. 채널 2는 Leak입니다. "
+            "LB05 01 NLNNN은 비교 예시입니다. [Source 1, Page 3]"
+        )
+
+    monkeypatch.setattr(LLMClient, "chat_completion", complete)
+    monkeypatch.setattr(
+        "app.services.generator.validate_answer_citations",
+        lambda question, answer, chunks: answer,
+    )
+
+    generated = generate_answer(
+        "`LB05 03 NLNNB`의 채널 1~5를 위치별로 해석해 주세요.",
+        [retrieved_chunk],
+    )
+
+    assert "IB05 03 NLNNB" not in generated.answer
+    assert "LB05 03 NLNNB" in generated.answer
+    assert "LB05 01 NLNNN" in generated.answer
+    assert "상태는 NLNNB" in generated.answer
+    assert "채널 2는 Leak" in generated.answer
+    assert operations == ["answer", "literal_fidelity_repair", "literal_fidelity_repair"]
+
+
+def test_generate_answer_normalizes_positional_channel_mapping_from_context(
+    monkeypatch: pytest.MonkeyPatch,
+    retrieved_chunk: RetrievedChunk,
+) -> None:
+    retrieved_chunk = replace(
+        retrieved_chunk,
+        content=(
+            "1번 채널 정상-Normal, 2번 채널 감지-Leak, "
+            "3번 채널 정상-Normal, 4번 채널 정상-Normal, "
+            "5번 채널 단선-Broken 의미"
+        ),
+    )
+    wrong_answer = (
+        "**1. 채4널별 상태 해석**\n"
+        "`LBN`에서 각 위치를 해석합니다.\n"
+        "* **채널 1**: N (Normal) [Source 1, Page 3]\n"
+        "* **채널 2**: N (Normal) [Source 1, Page 3]\n"
+        "* **채널 3**: N (Normal) [Source 1, Page 3]\n"
+        "* **채널 4**: N (Normal) [Source 1, Page 3]\n"
+        "* **채널 5**: B (Broken) [Source 1, Page 3]\n"
+        "**2. 통신 조건**\nCR과 50ms가 필요합니다. [Source 1, Page 3]"
+    )
+    monkeypatch.setattr(
+        LLMClient,
+        "chat_completion",
+        lambda *args, **kwargs: wrong_answer,
+    )
+    monkeypatch.setattr(
+        "app.services.generator.validate_answer_citations",
+        lambda question, answer, chunks: answer,
+    )
+
+    generated = generate_answer(
+        "`LB05 03 NLNNB`의 채널 1~5를 위치별로 해석해 주세요.",
+        [retrieved_chunk],
+    )
+
+    assert "`NLNNB`에서 각 위치" in generated.answer
+    assert "**채널 2**: L (감지 / Leak)" in generated.answer
+    assert "**채널 5**: B (단선 / Broken)" in generated.answer
+    assert "`LBN`" not in generated.answer
+    assert "채4널" not in generated.answer
+    assert "**2. 통신 조건**" in generated.answer
+
+
+def test_generate_answer_prepends_missing_exclusion_release_step(
+    monkeypatch: pytest.MonkeyPatch,
+    retrieved_chunk: RetrievedChunk,
+) -> None:
+    monkeypatch.setattr(
+        LLMClient,
+        "chat_completion",
+        lambda *args, **kwargs: "파일을 git add한 뒤 stash합니다.",
+    )
+
+    generated = generate_answer(
+        "secret.txt를 .gitignore에 넣었는데 stash하려면 어떻게 하나요?",
+        [retrieved_chunk],
+    )
+
+    assert generated.answer.startswith(
+        "먼저 질문에 명시된 제외·무시 상태를 해제해야 합니다."
+    )
+    assert "git add한 뒤 stash" in generated.answer
 
 
 def test_generate_answer_retries_degenerate_repetition_once(
@@ -285,7 +427,7 @@ def test_generate_answer_retries_degenerate_repetition_once(
         operations.append(kwargs["operation"])
         return next(responses)
 
-    monkeypatch.setattr(VLLMClient, "chat_completion", complete)
+    monkeypatch.setattr(LLMClient, "chat_completion", complete)
 
     generated = generate_answer("낙상 예방은?", [retrieved_chunk])
 

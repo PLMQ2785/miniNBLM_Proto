@@ -3,7 +3,7 @@ from pathlib import Path
 import re
 import time
 
-from app.clients.vllm_client import VLLMClient
+from app.clients.llm_client import LLMClient
 from app.observability import CITATION_VALIDATION_DURATION, CITATION_VALIDATION_REQUESTS
 from app.services.prompt_builder import build_retrieval_context
 from app.services.retriever import RetrievedChunk
@@ -57,7 +57,7 @@ def validate_answer_citations(
     ]
     started_at = time.perf_counter()
     try:
-        response = VLLMClient().chat_completion(
+        response = LLMClient().chat_completion(
             messages,
             temperature=0.0,
             operation="citation_validation",

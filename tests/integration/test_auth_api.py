@@ -326,3 +326,76 @@ def test_documents_are_isolated_by_user(reset_database, db: Session, document_fa
         ]
         assert first.get(f"/documents/{second_document.id}").status_code == 404
         assert second.delete(f"/documents/{first_document.id}").status_code == 404
+
+
+def test_admin_password_reset_revokes_sessions_and_forces_password_change(
+    reset_database,
+) -> None:
+    temporary_password = "Temporary!Reset2026"
+    final_password = "Final!Member2026"
+    with (
+        TestClient(app) as admin,
+        TestClient(app) as member,
+        TestClient(app) as other_member_session,
+    ):
+        assert member.post(
+            "/auth/register",
+            json={"username": "reset-member", "password": "password123"},
+        ).status_code == 201
+        assert other_member_session.post(
+            "/auth/login",
+            json={"username": "reset-member", "password": "password123"},
+        ).status_code == 200
+
+        forbidden = member.post(
+            "/admin/users/password-reset",
+            json={"username": "reset-member", "temporary_password": temporary_password},
+        )
+        assert forbidden.status_code == 403
+
+        assert admin.post(
+            "/auth/login",
+            json={"username": "admin", "password": BOOTSTRAP_PASSWORD},
+        ).status_code == 200
+        assert admin.post(
+            "/auth/password",
+            json={
+                "current_password": BOOTSTRAP_PASSWORD,
+                "new_password": NEW_ADMIN_PASSWORD,
+            },
+        ).status_code == 200
+
+        reset = admin.post(
+            "/admin/users/password-reset",
+            json={"username": "reset-member", "temporary_password": temporary_password},
+        )
+        assert reset.status_code == 200
+        assert reset.json()["username"] == "reset-member"
+        assert reset.json()["must_change_password"] is True
+        assert member.get("/auth/me").status_code == 401
+        assert other_member_session.get("/auth/me").status_code == 401
+
+        assert member.post(
+            "/auth/login",
+            json={"username": "reset-member", "password": "password123"},
+        ).status_code == 401
+        temporary_login = member.post(
+            "/auth/login",
+            json={"username": "reset-member", "password": temporary_password},
+        )
+        assert temporary_login.status_code == 200
+        assert temporary_login.json()["user"]["must_change_password"] is True
+        assert member.get("/documents").status_code == 403
+        assert member.post(
+            "/auth/password",
+            json={
+                "current_password": temporary_password,
+                "new_password": final_password,
+            },
+        ).status_code == 200
+
+        self_reset = admin.post(
+            "/admin/users/password-reset",
+            json={"username": "admin", "temporary_password": "Other!Admin2026"},
+        )
+        assert self_reset.status_code == 409

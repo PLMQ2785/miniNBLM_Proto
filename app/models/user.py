@@ -28,6 +28,7 @@ class User(Base):
         default=False,
         server_default="false",
     )
+    active_llm_endpoint_key: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     auth_sessions = relationship("AuthSession", back_populates="user", cascade="all, delete-orphan")

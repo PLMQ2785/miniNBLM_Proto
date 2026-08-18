@@ -86,14 +86,15 @@ def _check_embedding(timeout: float) -> None:
 
 
 def _check_llm(timeout: float) -> None:
+    endpoint = settings.get_llm_endpoint()
     response = httpx.get(
-        f"{settings.vllm_base_url.rstrip('/')}/models",
-        headers={"Authorization": f"Bearer {settings.vllm_api_key}"},
+        f"{endpoint.base_url}/models",
+        headers={"Authorization": f"Bearer {endpoint.api_key}"},
         timeout=timeout,
     )
     response.raise_for_status()
     model_ids = {item.get("id") for item in response.json().get("data", [])}
-    if settings.vllm_model not in model_ids:
+    if endpoint.model not in model_ids:
         raise InvalidComponentResponseError("Configured model is not served")
 
 

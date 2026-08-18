@@ -1,0 +1,13 @@
+{
+  "default_endpoint": "gemma4",
+  "endpoints": [
+    {
+      "key": "gemma4",
+      "display_name": "Gemma 4 31B W4A16",
+      "base_url": "http://127.0.0.1:8010/v1",
+      "api_key": "EMPTY",
+      "model": "gemma4",
+      "supports_vision": true
+    }
+  ]
+}

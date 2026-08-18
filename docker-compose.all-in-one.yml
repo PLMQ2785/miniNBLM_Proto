@@ -1,0 +1,57 @@
+services:
+  mininblm:
+    build:
+      context: .
+      dockerfile: Dockerfile.all-in-one
+      args:
+        MININBLM_MODEL_VARIANT: ${MININBLM_MODEL_VARIANT:-gemma4-12b-w4a16}
+        MININBLM_MODEL_DISPLAY_NAME: ${MININBLM_MODEL_DISPLAY_NAME:-Gemma 4 12B W4A16}
+        MININBLM_LLM_CONFIG_SOURCE: ${MININBLM_LLM_CONFIG_FILE:-config/llm-endpoints.json}
+    image: ${MININBLM_ALL_IN_ONE_IMAGE:-mininblm/all-in-one:0.1.0}
+    gpus: all
+    ipc: host
+    network_mode: host
+    environment:
+      NATIVE_DB_NAME: ${NATIVE_DB_NAME:-rag_db}
+      NATIVE_DB_USER: ${NATIVE_DB_USER:-rag_user}
+      NATIVE_DB_PASSWORD: ${NATIVE_DB_PASSWORD:-rag_password}
+      MININBLM_DB_PORT: ${MININBLM_DB_PORT:-5433}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
+      EMBEDDING_DEVICE: ${EMBEDDING_DEVICE:-}
+      VLLM_MODEL_NAME: ${VLLM_MODEL_NAME:-gemma4}
+      VLLM_MAX_MODEL_LEN: ${VLLM_MAX_MODEL_LEN:-8192}
+      VLLM_MODEL_PATH: ${VLLM_MODEL_PATH:-/data/models/gemma4}
+      VLLM_GPU_MEMORY_UTILIZATION: ${VLLM_GPU_MEMORY_UTILIZATION:-0.65}
+      VLLM_CPU_OFFLOAD_GB: ${VLLM_CPU_OFFLOAD_GB:-0}
+      VLLM_MAX_NUM_SEQS: ${VLLM_MAX_NUM_SEQS:-4}
+      VLLM_TENSOR_PARALLEL_SIZE: ${VLLM_TENSOR_PARALLEL_SIZE:-1}
+      MODEL_ARCHIVE_URL: ${MODEL_ARCHIVE_URL:-}
+      MODEL_ARCHIVE_SHA256: ${MODEL_ARCHIVE_SHA256:-}
+      MODEL_HF_REPO_ID: ${MODEL_HF_REPO_ID:-}
+      MODEL_HF_REVISION: ${MODEL_HF_REVISION:-}
+      MODEL_KEEP_ARCHIVE: ${MODEL_KEEP_ARCHIVE:-false}
+      LLM_ENDPOINTS_FILE: /data/config/llm-endpoints.json
+      XAI_API_KEY: ${XAI_API_KEY:-}
+      VISION_CAPTION_MODE: ${VISION_CAPTION_MODE:-disabled}
+      VISION_CAPTION_DPI: ${VISION_CAPTION_DPI:-144}
+      VISION_CAPTION_VERSION: ${VISION_CAPTION_VERSION:-gemma4-page-caption-v1}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-52428800}
+      READINESS_TIMEOUT_SECONDS: ${READINESS_TIMEOUT_SECONDS:-3}
+      AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-168}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+    volumes:
+      - mininblm_data:/data
+      - ${MININBLM_LLM_CONFIG_FILE:-./config/llm-endpoints.json}:/data/config/llm-endpoints.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/ready >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 300s
+    stop_grace_period: 90s
+
+volumes:
+  mininblm_data:

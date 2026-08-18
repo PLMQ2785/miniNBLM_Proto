@@ -95,13 +95,12 @@
       "relevant_sources": [
         {"document": "[OSSDesign] Project plan.pdf", "page": 4},
         {"document": "[OSSDesign] Project plan.pdf", "page": 5},
-        {"document": "[OSSDesign] Project plan.pdf", "page": 7},
-        {"document": "[OSSDesign] Project plan.pdf", "page": 10}
+        {"document": "[OSSDesign] Project plan.pdf", "page": 7}
       ],
       "evidence_facets": [
         {"facet_id": "analysis-inputs", "description": "유스케이스·도메인·응용 분석 산출물", "relevant_sources": [{"document": "[OSSDesign] Project plan.pdf", "page": 4}, {"document": "[OSSDesign] Project plan.pdf", "page": 5}]},
         {"facet_id": "missing-design-artifacts", "description": "중요 클래스 상태 다이어그램과 유스케이스별 상호작용 다이어그램", "relevant_sources": [{"document": "[OSSDesign] Project plan.pdf", "page": 7}]},
-        {"facet_id": "traceability-quality", "description": "분석·설계·구현 모델 일관성과 평가 기준", "relevant_sources": [{"document": "[OSSDesign] Project plan.pdf", "page": 10}]}
+        {"facet_id": "traceability-quality", "description": "분석·설계·구현 모델 일관성과 평가 기준", "relevant_sources": [{"document": "[OSSDesign] Project plan.pdf", "page": 7}]}
       ],
       "required_answer_claims": ["각 유스케이스를 실현하는 sequence 또는 communication diagram이 필요하다.", "중요 설계 클래스의 state machine diagram이 필요하다.", "class, interaction, state model 사이와 분석·구현 모델 사이의 일관성과 추적성을 검토해야 한다."],
       "required_limitations": []
@@ -152,7 +151,11 @@
       "answerability": "full",
       "expected_behavior": "grounded_answer",
       "evidence_modality": "text",
-      "reference_queries": ["gitignore untracked file ignored", "git stash tracked staged files only", "untracked file stash prerequisite git add"],
+      "reference_queries": [
+        "gitignore untracked file ignored",
+        "git stash tracked staged files only",
+        "untracked file stash prerequisite git add"
+      ],
       "relevant_sources": [
         {"document": "[OSS] 03_Version management I.pdf", "page": 17},
         {"document": "[OSS] 04_Version management II.pdf", "page": 13},
@@ -177,13 +180,11 @@
       "relevant_sources": [
         {"document": "[OSS] 02_Outline of Git.pdf", "page": 16},
         {"document": "[OSS] 04_Version management II.pdf", "page": 6},
-        {"document": "[OSS] 04_Version management II.pdf", "page": 7},
-        {"document": "[OSS] 06_Collaboration with GitHub.pdf", "page": 28}
+        {"document": "[OSS] 04_Version management II.pdf", "page": 7}
       ],
       "evidence_facets": [
         {"facet_id": "dvcs-history", "description": "DVCS가 저장소와 이력을 로컬에 복제함", "relevant_sources": [{"document": "[OSS] 02_Outline of Git.pdf", "page": 16}]},
-        {"facet_id": "revert-reset", "description": "revert는 새 커밋을 만들고 reset은 이후 이력을 삭제함", "relevant_sources": [{"document": "[OSS] 04_Version management II.pdf", "page": 6}, {"document": "[OSS] 04_Version management II.pdf", "page": 7}]},
-        {"facet_id": "remote-sharing", "description": "push가 로컬 커밋을 원격 저장소에 공유함", "relevant_sources": [{"document": "[OSS] 06_Collaboration with GitHub.pdf", "page": 28}]}
+        {"facet_id": "revert-reset", "description": "revert는 새 커밋을 만들고 reset은 이후 이력을 삭제함", "relevant_sources": [{"document": "[OSS] 04_Version management II.pdf", "page": 6}, {"document": "[OSS] 04_Version management II.pdf", "page": 7}]}
       ],
       "required_answer_claims": ["revert는 기존 공유 이력을 삭제하지 않고 취소 내용을 새 커밋으로 남긴다.", "reset은 대상 이후 커밋을 제거하므로 이미 복제·공유된 이력과 충돌할 수 있다.", "DVCS 참여자는 전체 이력을 복제하므로 공개 이력을 보존하는 방식이 협업에 유리하다."],
       "required_limitations": []
@@ -224,6 +225,26 @@
       ],
       "required_answer_claims": ["MPL-2.0은 Larger Work에서 GPL 계열과의 배포 호환성을 개선한다.", "한쪽 모듈 제거·대체, 라이선스 예외 적용 여부, 분리된 저작물 구조를 검토할 수 있다."],
       "required_limitations": []
+    },
+    {
+      "case_id": "oss-ambiguous-rollback-clarification",
+      "group": "OpenSWUnderstand",
+      "question": "commit rollback 중 꼬이면 어떻게 하나요?",
+      "reasoning_depth": 2,
+      "answerability": "partial",
+      "expected_behavior": "abstain",
+      "evidence_modality": "text",
+      "reference_queries": ["git reset revert rollback difference", "rollback current state error target commit"],
+      "relevant_sources": [
+        {"document": "[OSS] 04_Version management II.pdf", "page": 6},
+        {"document": "[OSS] 04_Version management II.pdf", "page": 7}
+      ],
+      "evidence_facets": [
+        {"facet_id": "rollback-ambiguity", "description": "reset과 revert의 차이는 있으나 대상, 오류와 현재 상태가 없어 작업을 결정할 수 없음", "relevant_sources": [{"document": "[OSS] 04_Version management II.pdf", "page": 6}, {"document": "[OSS] 04_Version management II.pdf", "page": 7}]}
+      ],
+      "required_answer_claims": [],
+      "required_limitations": ["수행하려던 작업, 발생한 오류, 현재 상태와 되돌릴 대상을 구체적으로 요청해야 한다."],
+      "notes": "일반적인 rollback 명령을 추측해 제시하지 않고 구체화 질문으로 종료해야 한다."
     }
   ]
 }
