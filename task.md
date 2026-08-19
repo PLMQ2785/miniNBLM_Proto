@@ -1731,6 +1731,8 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
   통일하고 Vast.ai 등 외부 환경변수도 같은 값이 필요함을 명시
 - RTX 3090 12B에서 실제 16K vLLM readiness, KV cache `76,454` tokens와
   16,384-token 요청 기준 최대 동시성 `4.67x` 확인
+- Docker Hub의 0.1.3·0.1.4 12B/31B tag를 모두 16K image로 push하고 remote
+  manifest digest와 active 상태 확인
 - `LLM_ENDPOINTS_FILE` JSON을 endpoint 허용 목록으로 사용하고 모든 로그인 사용자가
   작업공간에서 자신의 언어모델을 검증·전환하며 DB에 보존해 세 실행 방식에 공통 적용
 

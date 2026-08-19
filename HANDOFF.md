@@ -48,6 +48,8 @@
   `0.1.4-gemma4-{12b,31b}-w4a16`이다.
 - RTX 3090 12B vLLM을 실제 `max_model_len=16384`로 기동해 `/v1/models`의
   `max_model_len=16384`, KV cache `76,454` tokens와 최대 동시성 `4.67x` 확인
+- Docker Hub 16K manifest: 0.1.3 12B `4ca5bd3d4582`, 0.1.3 31B
+  `52cae0012e87`, 0.1.4 12B `fcc72c6bd457`, 0.1.4 31B `1598ac16d723`
 - 31B H200 profile은 vLLM GPU memory `0.70`, 활성 sequence 8개를 사용한다.
   이번 변경에서는 31B를 기동·추론하지 않았으며 기존 image build/snapshot 계약
   검증 외 readiness와 생성 요청은 미검증이다.
