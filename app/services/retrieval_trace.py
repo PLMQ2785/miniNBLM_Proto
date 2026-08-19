@@ -3,6 +3,8 @@ from datetime import UTC, datetime
 import time
 from typing import Any
 
+from app.services.query_rewriter import EvidenceGoal
+
 
 MAX_TRACE_CANDIDATES = 20
 
@@ -20,13 +22,27 @@ class RetrievalTrace:
     def set_query_plan(
         self,
         standalone_query: str,
-        queries: tuple[str, ...],
-        evidence_goals: tuple[str, ...] = (),
+        goals: tuple[EvidenceGoal, ...],
     ) -> None:
+        queries = list(
+            dict.fromkeys(
+                [
+                    standalone_query,
+                    *(query for goal in goals for query in goal.queries),
+                ]
+            )
+        )
         self.query_plan = {
             "standalone_query": standalone_query,
-            "queries": list(queries),
-            "evidence_goals": list(evidence_goals),
+            "queries": queries,
+            "evidence_goals": [
+                {
+                    "goal_id": goal.goal_id,
+                    "description": goal.description,
+                    "queries": list(goal.queries),
+                }
+                for goal in goals
+            ],
         }
 
     def record_candidates(
@@ -36,6 +52,7 @@ class RetrievalTrace:
         query: str | None,
         algorithm: str,
         rows,
+        goal_ids: tuple[str | None, ...] = (),
     ) -> None:
         self.retrieval_events.append(
             {
@@ -44,6 +61,7 @@ class RetrievalTrace:
                 "algorithm": algorithm,
                 "result_count": len(rows),
                 "candidates": [_candidate_snapshot(row) for row in rows[:MAX_TRACE_CANDIDATES]],
+                "goal_ids": list(dict.fromkeys(goal_id for goal_id in goal_ids if goal_id)),
             }
         )
 
@@ -87,15 +105,13 @@ class RetrievalTrace:
         *,
         attempt: int,
         status: str,
-        missing_queries: tuple[str, ...] = (),
-        retry_queries: tuple[str, ...] = (),
+        goal_results: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
     ) -> None:
         self.coverage_events.append(
             {
                 "attempt": attempt,
                 "status": status,
-                "missing_queries": list(missing_queries),
-                "retry_queries": list(retry_queries),
+                "goals": [dict(result) for result in goal_results],
             }
         )
 
@@ -128,7 +144,7 @@ class RetrievalTrace:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": 3,
+            "schema_version": 4,
             "request_id": self.request_id,
             "created_at": self.created_at,
             "query_plan": self.query_plan,

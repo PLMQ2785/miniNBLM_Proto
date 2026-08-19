@@ -113,8 +113,20 @@ def _format_evidence_matrix(matrix: EvidenceMatrix | None) -> str:
     if matrix is None or matrix.status == "unchecked":
         return ""
     lines = [f"Coverage: {matrix.status.upper()}"]
-    lines.extend(f"SUPPORTED: {goal}" for goal in matrix.supported_goals)
-    lines.extend(f"MISSING: {goal}" for goal in matrix.missing_goals)
+    for goal in matrix.goals:
+        references = ", ".join(
+            (
+                f"document={evidence.document_title}; "
+                f"pages={evidence.page_start}-{evidence.page_end}; "
+                f"chunk={evidence.chunk_id}"
+            )
+            for evidence in goal.evidence
+        )
+        suffix = f" | evidence: {references}" if references else ""
+        lines.append(
+            f"GOAL {goal.goal_id} [{goal.status.upper()}]: "
+            f"{goal.description}{suffix}"
+        )
     return "[Evidence Matrix]\n" + "\n".join(lines) + "\n\n"
 
 

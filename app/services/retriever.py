@@ -16,6 +16,7 @@ from app.repositories.chunk_repository import (
 from app.search_algorithms import SearchAlgorithmKey
 from app.services.reranker import rerank_rows
 from app.services.retrieval_trace import RetrievalTrace
+from app.services.query_rewriter import EvidenceGoal
 
 
 ADJACENT_CHUNK_WINDOW = 1
@@ -43,6 +44,7 @@ def retrieve_chunks(
     question: str,
     top_k: int | None = None,
     queries: Sequence[str] | None = None,
+    goals: Sequence[EvidenceGoal] | None = None,
     trace: RetrievalTrace | None = None,
     trace_stage: str = "initial",
 ) -> list[RetrievedChunk]:
@@ -50,9 +52,24 @@ def retrieve_chunks(
     active_preset = retrieval_config_repository.get_preset(db, configuration.active_preset_key)
     if active_preset is None:
         raise RuntimeError("Active retrieval preset is missing")
-    result_limit = top_k if top_k is not None else active_preset.top_k
+    requested_limit = top_k if top_k is not None else active_preset.top_k
     algorithm = SearchAlgorithmKey(configuration.active_search_algorithm_key)
-    search_queries = _normalize_search_queries(question, queries)
+    goal_query_groups = _normalize_goal_query_groups(goals)
+    result_limit = max(requested_limit, len(goal_query_groups))
+    search_queries = _normalize_search_queries(
+        question,
+        (
+            [question, *(query for _, group in goal_query_groups for query in group)]
+            if goal_query_groups
+            else queries
+        ),
+    )
+    goal_ids_by_query: dict[str, list[str]] = {}
+    for goal_id, group in goal_query_groups:
+        for query in group:
+            goal_ids = goal_ids_by_query.setdefault(query.casefold(), [])
+            if goal_id not in goal_ids:
+                goal_ids.append(goal_id)
     rerank_enabled = algorithm in {SearchAlgorithmKey.DENSE, SearchAlgorithmKey.HYBRID}
     final_candidate_limit = (
         result_limit * RERANK_CANDIDATE_MULTIPLIER if rerank_enabled else result_limit
@@ -73,6 +90,9 @@ def retrieve_chunks(
                     query=search_queries[0],
                     algorithm=algorithm.value,
                     rows=rows,
+                    goal_ids=tuple(
+                        goal_ids_by_query.get(search_queries[0].casefold(), ())
+                    ),
                 )
         else:
             per_query_limit = max(result_limit * 2, final_candidate_limit)
@@ -93,6 +113,9 @@ def retrieve_chunks(
                         query=query,
                         algorithm=algorithm.value,
                         rows=query_rows,
+                        goal_ids=tuple(
+                            goal_ids_by_query.get(query.casefold(), ())
+                        ),
                     )
             fused_rows = _reciprocal_rank_fusion(result_sets, final_candidate_limit)
             rows = _merge_query_anchors(
@@ -108,13 +131,20 @@ def retrieve_chunks(
                     rows=rows,
                 )
         if rerank_enabled:
-            rows = rerank_rows(question, rows, result_limit, queries=search_queries)
+            rows = rerank_rows(
+                question,
+                rows,
+                result_limit,
+                queries=search_queries,
+                goal_query_groups=goal_query_groups,
+            )
             if trace is not None:
                 trace.record_candidates(
                     stage=f"{trace_stage}.reranked",
                     query=question,
                     algorithm=algorithm.value,
                     rows=rows,
+                    goal_ids=tuple(goal_id for goal_id, _ in goal_query_groups),
                 )
         rows = _expand_with_adjacent_chunks(db, owner_id, rows)
     except Exception:
@@ -169,6 +199,22 @@ def _normalize_search_queries(question: str, queries: Sequence[str] | None) -> l
         seen.add(key)
         normalized.append(query)
     return normalized or [question.strip()]
+
+
+def _normalize_goal_query_groups(
+    goals: Sequence[EvidenceGoal] | None,
+) -> list[tuple[str, tuple[str, ...]]]:
+    groups: list[tuple[str, tuple[str, ...]]] = []
+    seen_ids: set[str] = set()
+    for goal in goals or ():
+        if goal.goal_id in seen_ids:
+            raise ValueError(f"Duplicate evidence goal ID: {goal.goal_id}")
+        queries = tuple(_normalize_search_queries(goal.description, goal.queries))
+        if not queries:
+            raise ValueError(f"Evidence goal has no search query: {goal.goal_id}")
+        seen_ids.add(goal.goal_id)
+        groups.append((goal.goal_id, queries))
+    return groups
 
 
 def _expand_with_adjacent_chunks(db: Session, owner_id: int, rows):

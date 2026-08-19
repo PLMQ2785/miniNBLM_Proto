@@ -3,7 +3,11 @@ from app.services.prompt_builder import (
     build_system_message,
     build_user_message,
 )
-from app.services.evidence_coverage import EvidenceMatrix
+from app.services.evidence_coverage import (
+    EvidenceMatrix,
+    EvidenceMatrixGoal,
+    EvidenceReference,
+)
 from app.services.retriever import RetrievedChunk
 
 
@@ -55,6 +59,7 @@ def test_system_prompt_allows_only_fully_supported_multi_source_inference() -> N
     assert "비교 대상 양쪽의 근거" in content
     assert "관련 사실까지 버리라는 뜻이 아니다" in content
     assert "각 SUPPORTED 항목을 빠짐없이" in content
+    assert "단위당 비율과 적용 횟수·기간" in content
     assert "vision_caption" in content
 
 
@@ -80,14 +85,22 @@ def test_user_message_includes_partial_evidence_matrix() -> None:
         [_chunk()],
         EvidenceMatrix(
             status="partial",
-            supported_goals=("지연 감점률",),
-            missing_goals=("모델 불일치 정량 감점",),
+            goals=(
+                EvidenceMatrixGoal(
+                    "g1",
+                    "지연 감점률",
+                    "supported",
+                    (EvidenceReference(1, "guide.pdf", 3, 3),),
+                ),
+                EvidenceMatrixGoal("g2", "모델 불일치 정량 감점", "missing"),
+            ),
         ),
     )
 
     assert "[Evidence Matrix]" in message["content"]
-    assert "SUPPORTED: 지연 감점률" in message["content"]
-    assert "MISSING: 모델 불일치 정량 감점" in message["content"]
+    assert "GOAL g1 [SUPPORTED]: 지연 감점률" in message["content"]
+    assert "document=guide.pdf; pages=3-3; chunk=1" in message["content"]
+    assert "GOAL g2 [MISSING]: 모델 불일치 정량 감점" in message["content"]
 
 
 def test_user_message_preserves_positionally_interpreted_literals() -> None:
@@ -116,8 +129,11 @@ def test_user_message_includes_insufficient_matrix_for_qualified_answers() -> No
     message = build_user_message(
         "자료가 뒷받침하는 내용과 확정할 수 없는 부분을 구분해 주세요.",
         [_chunk()],
-        EvidenceMatrix(status="insufficient", missing_goals=("구체 적용 조건",)),
+        EvidenceMatrix(
+            status="insufficient",
+            goals=(EvidenceMatrixGoal("g1", "구체 적용 조건", "missing"),),
+        ),
     )
 
     assert "Coverage: INSUFFICIENT" in message["content"]
-    assert "MISSING: 구체 적용 조건" in message["content"]
+    assert "GOAL g1 [MISSING]: 구체 적용 조건" in message["content"]

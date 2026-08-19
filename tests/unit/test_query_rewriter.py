@@ -1,276 +1,243 @@
+import json
+
 import pytest
 
 from app.clients.llm_client import LLMClient
 from app.services.query_rewriter import plan_retrieval_queries, rewrite_retrieval_query
 
 
-def test_single_hop_question_produces_one_query(monkeypatch: pytest.MonkeyPatch) -> None:
+def _plan_payload(*goals: dict, standalone: str = "독립 질문") -> str:
+    return json.dumps(
+        {"standalone_query": standalone, "evidence_goals": list(goals)},
+        ensure_ascii=False,
+    )
+
+
+def _goal(goal_id: str, description: str, *queries: str) -> dict:
+    return {"goal_id": goal_id, "description": description, "queries": list(queries)}
+
+
+def test_single_hop_question_produces_one_structured_goal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
-        lambda *args, **kwargs: (
-            '{"standalone_query":"낙상 예방 방법은?",'
-            '"queries":["낙상 예방 방법은?"]}'
+        lambda *args, **kwargs: _plan_payload(
+            _goal("g1", "낙상 예방 방법", "낙상 예방 방법은?"),
+            standalone="낙상 예방 방법은?",
         ),
     )
 
     plan = plan_retrieval_queries("낙상 예방 방법은?", [])
 
     assert plan.standalone_query == "낙상 예방 방법은?"
+    assert plan.goals[0].goal_id == "g1"
+    assert plan.goals[0].description == "낙상 예방 방법"
     assert plan.queries == ("낙상 예방 방법은?",)
 
 
-def test_tagged_multi_hop_plan_is_parsed(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        LLMClient,
-        "chat_completion",
-        lambda *args, **kwargs: """STANDALONE: push된 커밋에서 revert를 사용하는 이유
-QUERY: git reset hard 이력 변경 특성
-QUERY: git revert 역커밋 생성 특성
-QUERY: 원격 저장소 공유 이력 협업""",
-    )
-
-    plan = plan_retrieval_queries("복합 질문", [])
-
-    assert plan.standalone_query == "push된 커밋에서 revert를 사용하는 이유"
-    assert plan.queries == (
-        "push된 커밋에서 revert를 사용하는 이유",
-        "git reset hard 이력 변경 특성",
-        "git revert 역커밋 생성 특성",
-        "원격 저장소 공유 이력 협업",
-    )
-
-
-def test_multi_hop_question_is_decomposed_and_deduplicated(
+def test_multi_hop_plan_keeps_unique_goal_ids_and_fair_query_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        LLMClient,
-        "chat_completion",
-        lambda *args, **kwargs: """```json
-        {
-          "standalone_query": "push된 커밋에서 reset 대신 revert를 사용해야 하는 이유",
-          "queries": [
-            "push된 커밋에서 reset 대신 revert를 사용해야 하는 이유",
-            "git reset hard 이력 변경 특성",
-            "git revert 역커밋 생성 특성",
-            "원격 저장소 공유 이력 협업",
-            "제한을 초과해 제외될 질의"
-          ]
-        }
-        ```""",
+    payload = _plan_payload(
+        _goal("g1", "reset 특성", "reset history", "reset shared", "reset danger"),
+        _goal("g2", "revert 특성", "revert commit", "revert inverse", "revert safe"),
+        _goal("g3", "협업 영향", "shared history", "remote collaboration"),
+        _goal("g4", "복구 절차", "restore procedure", "recovery check"),
+        standalone="push된 커밋에서 reset 대신 revert를 쓰는 이유",
     )
+    monkeypatch.setattr(LLMClient, "chat_completion", lambda *args, **kwargs: payload)
 
     plan = plan_retrieval_queries("복합 질문", [])
 
-    assert plan.standalone_query == "push된 커밋에서 reset 대신 revert를 사용해야 하는 이유"
-    assert plan.queries == (
-        "push된 커밋에서 reset 대신 revert를 사용해야 하는 이유",
-        "git reset hard 이력 변경 특성",
-        "git revert 역커밋 생성 특성",
-        "원격 저장소 공유 이력 협업",
-    )
+    assert tuple(goal.goal_id for goal in plan.goals) == ("g1", "g2", "g3", "g4")
+    assert all(goal.queries for goal in plan.goals)
+    assert plan.goals[0].queries == ("reset history", "reset shared")
+    assert plan.goals[1].queries == ("revert commit",)
+    assert len(plan.queries) == 6
 
 
-def test_follow_up_is_rewritten_from_the_latest_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_follow_up_uses_only_bounded_latest_exchange(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     call: dict = {}
 
-    def rewrite(self, messages, temperature=0.2, operation="completion", **kwargs):
-        call["messages"] = messages
-        call["temperature"] = temperature
-        call["operation"] = operation
-        return (
-            '{"standalone_query":"낙상 후 손상 여부 확인 다음 조치",'
-            '"queries":["낙상 후 손상 여부 확인 다음 조치"]}'
+    def rewrite(self, messages, **kwargs):
+        call.update(messages=messages, kwargs=kwargs)
+        return _plan_payload(
+            _goal("g1", "다음 조치", "낙상 후 다음 조치"),
+            standalone="낙상 후 손상 여부 확인 다음 조치",
         )
 
     monkeypatch.setattr(LLMClient, "chat_completion", rewrite)
     history = [
-        {"role": "user", "content": "이전 주제"},
-        {"role": "assistant", "content": "이전 답변"},
-        {"role": "user", "content": "낙상 후 무엇을 먼저 하나요?"},
-        {"role": "assistant", "content": "손상 여부를 먼저 확인합니다."},
+        {"role": "user", "content": "무시할 질문"},
+        {"role": "assistant", "content": "무시할 답변"},
+        {"role": "user", "content": "가" * 700},
+        {"role": "assistant", "content": "나" * 1300},
     ]
 
-    result = rewrite_retrieval_query("그 다음에는 무엇을 하나요?", history)
+    result = rewrite_retrieval_query("그 다음에는?", history)
 
     assert result == "낙상 후 손상 여부 확인 다음 조치"
-    assert call["temperature"] == 0.0
-    assert call["operation"] == "query_rewrite"
-    assert call["messages"][1:3] == history[-2:]
-    assert "그 다음에는 무엇을 하나요?" in call["messages"][-1]["content"]
+    assert [message["role"] for message in call["messages"]] == [
+        "system",
+        "user",
+        "assistant",
+        "user",
+    ]
+    assert len(call["messages"][1]["content"]) == 500
+    assert len(call["messages"][2]["content"]) == 1000
+    assert call["kwargs"]["response_format"] == {"type": "json_object"}
 
 
-def test_query_plan_requests_json_object_output(monkeypatch: pytest.MonkeyPatch) -> None:
-    call: dict = {}
-
-    def rewrite(self, messages, **kwargs):
-        call.update(kwargs)
-        return '{"standalone_query":"독립 질문","queries":["독립 질문"]}'
-
-    monkeypatch.setattr(LLMClient, "chat_completion", rewrite)
-
-    plan_retrieval_queries("질문", [])
-
-    assert call["response_format"] == {"type": "json_object"}
-
-
-def test_query_plan_repair_keeps_previous_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_malformed_plan_is_repaired_once_with_previous_exchange(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[dict] = []
 
     def rewrite(self, messages, **kwargs):
         calls.append({"messages": messages, **kwargs})
         if len(calls) == 1:
-            return '{"standalone_query":"잘린 응답", "queries":['
-        return (
-            '{"standalone_query":"기능 브랜치 변경을 stash한 뒤 hotfix 처리하고 복원",'
-            '"evidence_goals":["변경 임시 보관","브랜치 전환","작업 복원과 병합"],'
-            '"queries":["git stash","hotfix branch","git stash pop git merge"]}'
+            return '{"standalone_query":"잘린 응답","evidence_goals":['
+        return _plan_payload(
+            _goal("stash", "변경 임시 보관", "git stash"),
+            _goal("restore", "작업 복원", "git stash pop"),
+            standalone="기능 브랜치 변경을 보관한 뒤 복원",
         )
 
     monkeypatch.setattr(LLMClient, "chat_completion", rewrite)
     history = [
-        {"role": "user", "content": "기능 작업 중 긴급 수정 요청을 받았습니다."},
-        {"role": "assistant", "content": "hotfix 브랜치를 사용할 수 있습니다."},
+        {"role": "user", "content": "기능 작업 중 긴급 수정 요청"},
+        {"role": "assistant", "content": "hotfix 브랜치를 사용합니다"},
     ]
 
-    plan = plan_retrieval_queries("변경을 잃지 않고 돌아와 복원하려면?", history)
+    plan = plan_retrieval_queries("변경을 잃지 않고 복원하려면?", history)
 
-    repair_request = calls[1]["messages"][-1]["content"]
-    assert "기능 작업 중 긴급 수정 요청" in repair_request
-    assert "hotfix 브랜치를 사용할 수 있습니다" in repair_request
-    assert plan.queries == (
-        "기능 브랜치 변경을 stash한 뒤 hotfix 처리하고 복원",
-        "git stash",
-        "hotfix branch",
-        "git stash pop git merge",
+    assert len(calls) == 2
+    assert calls[1]["operation"] == "query_rewrite_repair"
+    assert "기능 작업 중 긴급 수정 요청" in calls[1]["messages"][-1]["content"]
+    assert tuple(goal.goal_id for goal in plan.goals) == ("stash", "restore")
+
+
+def test_duplicate_goal_id_repair_failure_uses_safe_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invalid = _plan_payload(
+        _goal("g1", "첫 목표", "첫 질의"),
+        _goal("g1", "둘째 목표", "둘째 질의"),
     )
-    assert calls[1]["response_format"] == {"type": "json_object"}
+    monkeypatch.setattr(LLMClient, "chat_completion", lambda *args, **kwargs: invalid)
+
+    plan = plan_retrieval_queries("원래 질문", [])
+
+    assert plan.standalone_query == "원래 질문"
+    assert plan.goals[0].goal_id == "g1"
+    assert plan.goals[0].queries == ("원래 질문",)
 
 
-def test_rewrite_uses_bounded_previous_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
-    call: dict = {}
+def test_multiple_json_objects_selects_more_complete_structured_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = "\n".join(
+        [
+            _plan_payload(_goal("g1", "근거 A", "질의 A"), standalone="전체 질문"),
+            "설명",
+            _plan_payload(
+                _goal("g1", "근거 A", "질의 A"),
+                _goal("g2", "근거 B", "질의 B"),
+                standalone="전체 질문",
+            ),
+        ]
+    )
+    monkeypatch.setattr(LLMClient, "chat_completion", lambda *args, **kwargs: response)
 
-    def rewrite(self, messages, temperature=0.2, operation="completion", **kwargs):
-        call["messages"] = messages
-        return '{"standalone_query":"독립 질문","queries":["독립 질문"]}'
+    plan = plan_retrieval_queries("원래 질문", [])
+
+    assert plan.standalone_query == "전체 질문"
+    assert tuple(goal.goal_id for goal in plan.goals) == ("g1", "g2")
+
+
+def test_corrupted_goal_keys_are_salvaged_without_format_repair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+    response = json.dumps(
+        {
+            "standalone_query": "전체 질문",
+            "evidence_goals": [
+                {
+                    "goal_id": "g1",
+                    "description": "첫 근거",
+                    "queries queries": ["첫 질의"],
+                },
+                {
+                    "goal_2": "g2",
+                    "description": "둘째 근거",
+                    "queries": ["둘째 질의"],
+                },
+                {
+                    "goal_3": {
+                        "goal_id": "g3",
+                        "description": "셋째 근거",
+                        "queries": ["셋째 질의"],
+                    }
+                },
+                {
+                    "goal_id": "g4",
+                    "description, ": ["손상된 설명"],
+                    "queries geese": ["넷째 질의"],
+                },
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+    def rewrite(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return response
 
     monkeypatch.setattr(LLMClient, "chat_completion", rewrite)
-    history = [
-        {"role": "user", "content": "가" * 700},
-        {"role": "assistant", "content": "나" * 1300},
-    ]
 
-    rewrite_retrieval_query("그 이유는?", history)
+    plan = plan_retrieval_queries("원래 질문", [])
 
-    assert len(call["messages"][1]["content"]) == 500
-    assert len(call["messages"][2]["content"]) == 1000
+    assert calls == 1
+    assert tuple(goal.goal_id for goal in plan.goals) == ("g1", "g2", "g3", "g4")
+    assert tuple(goal.queries[0] for goal in plan.goals) == (
+        "첫 질의",
+        "둘째 질의",
+        "셋째 질의",
+        "넷째 질의",
+    )
+    assert plan.goals[3].description == "넷째 질의"
 
 
-def test_rewrite_failure_falls_back_to_original_question(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_plain_text_fallback_is_normalized_after_failed_repair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        LLMClient,
+        "chat_completion",
+        lambda *args, **kwargs: "standalone query: 독립형 검색 질문",
+    )
+
+    plan = plan_retrieval_queries("원래 질문", [])
+
+    assert plan.standalone_query == "독립형 검색 질문"
+    assert plan.goals[0].description == "독립형 검색 질문"
+
+
+def test_llm_failure_falls_back_to_original_question(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def fail(*args, **kwargs):
         raise RuntimeError("LLM unavailable")
 
     monkeypatch.setattr(LLMClient, "chat_completion", fail)
 
-    assert rewrite_retrieval_query(
-        "  그 다음에는?  ",
-        [{"role": "user", "content": "낙상 후 조치는?"}],
-    ) == "그 다음에는?"
-
-
-def test_invalid_json_falls_back_to_a_single_normalized_query(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        LLMClient,
-        "chat_completion",
-        lambda *args, **kwargs: "검색 질의: git revert 협업 특성",
-    )
-
-    plan = plan_retrieval_queries("원래 질문", [])
-
-    assert plan.standalone_query == "git revert 협업 특성"
-    assert plan.queries == ("git revert 협업 특성",)
-
-
-def test_multiple_json_objects_select_the_plan_with_more_queries(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        LLMClient,
-        "chat_completion",
-        lambda *args, **kwargs: """
-        {"standalone_query":"전체 질문","queries":[]}
-        설명을 덧붙였습니다.
-        {"standalone_query":"전체 질문","queries":["근거 A","근거 B"]}
-        """,
-    )
-
-    plan = plan_retrieval_queries("원래 질문", [])
-
-    assert plan.standalone_query == "전체 질문"
-    assert plan.queries == ("전체 질문", "근거 A", "근거 B")
-
-
-def test_malformed_structured_response_falls_back_to_original_question(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        LLMClient,
-        "chat_completion",
-        lambda *args, **kwargs: '{"standalone_query":"잘린 응답", "queries":[',
-    )
-
-    plan = plan_retrieval_queries("원래 질문", [])
+    plan = plan_retrieval_queries("  원래 질문  ", [])
 
     assert plan.standalone_query == "원래 질문"
     assert plan.queries == ("원래 질문",)
-
-
-def test_cross_language_query_is_preserved_without_becoming_evidence_goal(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        LLMClient,
-        "chat_completion",
-        lambda *args, **kwargs: (
-            '{"standalone_query":"분석 보고서 지연 감점과 모델 불일치 영향",'
-            '"evidence_goals":["지연 일수별 감점률","모델 일치성 평가 영향"],'
-            '"queries":["분석 보고서 지연 감점","분석 설계 모델 일치성"],'
-            '"cross_language_queries":["project report late penalty",'
-            '"implementation design model consistency"]}'
-        ),
-    )
-
-    plan = plan_retrieval_queries("복합 질문", [])
-
-    assert plan.evidence_goals == ("지연 일수별 감점률", "모델 일치성 평가 영향")
-    assert plan.queries[-2:] == (
-        "project report late penalty",
-        "implementation design model consistency",
-    )
-    assert all(query not in plan.evidence_goals for query in plan.queries[-2:])
-
-
-def test_query_plan_discards_structured_field_fragments(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        LLMClient,
-        "chat_completion",
-        lambda *args, **kwargs: (
-            '{"standalone_query":"RS485 응답 해석",'
-            '"evidence_goals":["채널 상태","프레임 조건"],'
-            '"queries":["RS485 채널 상태","cross_language_queries$: ["],'
-            '"cross_language_queries":["RS485 channel state"]}'
-        ),
-    )
-
-    plan = plan_retrieval_queries("복합 질문", [])
-
-    assert plan.queries == (
-        "RS485 응답 해석",
-        "RS485 채널 상태",
-        "RS485 channel state",
-    )

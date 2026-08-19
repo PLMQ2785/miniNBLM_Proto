@@ -1,21 +1,31 @@
+import json
+
 import pytest
 
 from app.clients.llm_client import LLMClient
 from app.services import evidence_coverage
 from app.services.evidence_coverage import (
+    EvidenceCoverageAssessment,
+    GoalCoverage,
     assess_evidence_coverage,
     build_evidence_matrix,
     complete_evidence_coverage,
 )
+from app.services.query_rewriter import EvidenceGoal
 from app.services.retrieval_trace import RetrievalTrace
 from app.services.retriever import RetrievedChunk
 
 
-def _chunk(chunk_id: int, content: str, page: int) -> RetrievedChunk:
+def _chunk(
+    chunk_id: int,
+    content: str,
+    page: int,
+    document_title: str = "git.pdf",
+) -> RetrievedChunk:
     return RetrievedChunk(
         chunk_id=chunk_id,
         document_id=10,
-        document_title="git.pdf",
+        document_title=document_title,
         content=content,
         page_start=page,
         page_end=page,
@@ -24,344 +34,373 @@ def _chunk(chunk_id: int, content: str, page: int) -> RetrievedChunk:
     )
 
 
-def test_coverage_assessment_parses_missing_facets_and_retry_queries(
+def _goals() -> tuple[EvidenceGoal, ...]:
+    return (
+        EvidenceGoal("reset", "reset의 이력 변경 특성", ("git reset history",)),
+        EvidenceGoal("revert", "revert의 공유 이력 안전성", ("git revert shared history",)),
+    )
+
+
+def _response(*goals: dict) -> str:
+    return json.dumps({"goals": list(goals)}, ensure_ascii=False)
+
+
+def test_coverage_maps_each_goal_to_verified_source_page_and_chunk(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
-        lambda *args, **kwargs: (
-            "STATUS: INSUFFICIENT\n"
-            "MISSING: 2\n"
-            "RETRY 2: DVCS 공유 이력 재작성 협업 충돌"
+        lambda *args, **kwargs: _response(
+            {
+                "goal_id": "reset",
+                "status": "supported",
+                "evidence_chunk_ids": [11],
+                "retry_queries": [],
+            },
+            {
+                "goal_id": "revert",
+                "status": "partial",
+                "evidence_chunk_ids": [12],
+                "retry_queries": ["revert inverse commit collaboration"],
+            },
         ),
     )
 
     assessment = assess_evidence_coverage(
-        "왜 revert를 사용하나요?",
-        ("reset 이력 변경", "DVCS 협업 영향"),
-        [_chunk(1, "reset은 이력을 변경한다.", 10)],
+        _goals(),
+        [
+            _chunk(11, "reset은 이력을 이동한다.", 3, "reset.pdf"),
+            _chunk(12, "revert는 새 커밋을 만든다.", 8, "revert.pdf"),
+        ],
     )
 
     assert assessment is not None
     assert assessment.sufficient is False
-    assert assessment.missing_queries == ("DVCS 협업 영향",)
-    assert assessment.retry_queries == ("DVCS 공유 이력 재작성 협업 충돌",)
+    assert assessment.goals[0].status == "supported"
+    assert assessment.goals[0].evidence[0].document_title == "reset.pdf"
+    assert assessment.goals[0].evidence[0].page_start == 3
+    assert assessment.goals[1].evidence[0].chunk_id == 12
+    assert assessment.goals[1].retry_queries == (
+        "revert inverse commit collaboration",
+    )
 
 
-def test_coverage_assessment_accepts_markdown_formatting(
+def test_unknown_chunk_id_is_repaired_once_and_json_mode_is_requested(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        LLMClient,
-        "chat_completion",
-        lambda *args, **kwargs: (
-            "```text\n"
-            "- **STATUS: INSUFFICIENT**\n"
-            "- **MISSING: 2**\n"
-            "- **RETRY 2:** git revert shared history\n"
-            "```"
-        ),
-    )
-
-    assessment = assess_evidence_coverage(
-        "왜 revert를 사용하나요?",
-        ("reset semantics", "collaboration history"),
-        [_chunk(1, "reset은 이력을 변경한다.", 10)],
-    )
-
-    assert assessment is not None
-    assert assessment.missing_queries == ("collaboration history",)
-    assert assessment.retry_queries == ("git revert shared history",)
-
-
-def test_coverage_assessment_parses_json_contract(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        LLMClient,
-        "chat_completion",
-        lambda *args, **kwargs: (
-            '{"status":"INSUFFICIENT","missing":[2],'
-            '"retry_queries":{"2":"project report late penalty per day"}}'
-        ),
-    )
-
-    assessment = assess_evidence_coverage(
-        "감점은?",
-        ("모델 일치성", "지연 감점"),
-        [_chunk(1, "부분 근거", 8)],
-    )
-
-    assert assessment is not None
-    assert assessment.missing_queries == ("지연 감점",)
-    assert assessment.retry_queries == ("project report late penalty per day",)
-
-
-def test_coverage_assessment_requests_json_object_output(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    call: dict = {}
+    calls: list[dict] = []
 
     def assess(self, messages, **kwargs):
-        call.update(kwargs)
-        return '{"status":"SUFFICIENT","missing":[],"retry_queries":{}}'
+        calls.append(kwargs)
+        chunk_id = 999 if len(calls) == 1 else 11
+        return _response(
+            {
+                "goal_id": "reset",
+                "status": "supported",
+                "evidence_chunk_ids": [chunk_id],
+                "retry_queries": [],
+            },
+            {
+                "goal_id": "revert",
+                "status": "missing",
+                "evidence_chunk_ids": [],
+                "retry_queries": ["git revert shared history"],
+            },
+        )
+
+    monkeypatch.setattr(LLMClient, "chat_completion", assess)
+
+    assessment = assess_evidence_coverage(_goals(), [_chunk(11, "reset evidence", 2)])
+
+    assert assessment is not None
+    assert len(calls) == 2
+    assert calls[0]["response_format"] == {"type": "json_object"}
+    assert calls[1]["operation"] == "evidence_coverage_repair"
+
+
+
+def test_failed_repair_uses_unchecked_matrix_instead_of_guessing_identifiers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+    malformed = _response(
+        {
+            "goal_id": "goal_1",
+            "status": "sufficient",
+            "evidence_chunk_ids": ["11", 999],
+            "retry_queries": [],
+        },
+        {
+            "goal_id": "unknown",
+            "status": "invalid",
+            "evidence_chunk_ids": [999],
+            "retry_queries": [],
+        },
+    )
+
+    def assess(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return malformed
 
     monkeypatch.setattr(LLMClient, "chat_completion", assess)
 
     assessment = assess_evidence_coverage(
-        "질문",
-        ("근거 목표",),
-        [_chunk(1, "충분한 근거", 1)],
+        _goals(),
+        [_chunk(11, "reset evidence", 2)],
     )
 
-    assert assessment is not None
-    assert assessment.sufficient is True
-    assert call["response_format"] == {"type": "json_object"}
+    assert calls == 2
+    assert assessment is None
 
 
-def test_coverage_assessment_treats_malformed_mixed_status_as_insufficient(
+def test_duplicate_or_omitted_goal_after_repair_returns_unchecked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        LLMClient,
-        "chat_completion",
-        lambda *args, **kwargs: (
-            "STATUS: SUFFICE_INSUFFICIENT\n"
-            "MISSING: 1\n"
-            "RETRY 1: git reset vs git revert"
-        ),
+    invalid = _response(
+        {
+            "goal_id": "reset",
+            "status": "supported",
+            "evidence_chunk_ids": [11],
+            "retry_queries": [],
+        }
     )
+    monkeypatch.setattr(LLMClient, "chat_completion", lambda *args, **kwargs: invalid)
 
-    assessment = assess_evidence_coverage(
-        "왜 revert를 사용하나요?",
-        ("reset과 revert 비교",),
-        [_chunk(1, "부분 근거", 10)],
-    )
-
-    assert assessment is not None
-    assert assessment.sufficient is False
-    assert assessment.retry_queries == ("git reset vs git revert",)
+    assert assess_evidence_coverage(_goals(), [_chunk(11, "evidence", 2)]) is None
 
 
-def test_coverage_retry_merges_recovered_evidence(
+def test_targeted_retry_searches_only_unresolved_goal_and_merges_evidence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    responses = iter(
+    assessments = iter(
         [
-            "STATUS: INSUFFICIENT\nMISSING: 2\nRETRY 2: DVCS 공유 이력 충돌",
-            "STATUS: SUFFICIENT",
+            EvidenceCoverageAssessment(
+                (
+                    GoalCoverage("reset", "reset의 이력 변경 특성", "supported"),
+                    GoalCoverage(
+                        "revert",
+                        "revert의 공유 이력 안전성",
+                        "missing",
+                        retry_queries=("revert inverse commit",),
+                    ),
+                )
+            ),
+            EvidenceCoverageAssessment(
+                (
+                    GoalCoverage("reset", "reset의 이력 변경 특성", "supported"),
+                    GoalCoverage("revert", "revert의 공유 이력 안전성", "supported"),
+                )
+            ),
         ]
     )
+    captured: list[tuple[EvidenceGoal, ...]] = []
     monkeypatch.setattr(
-        LLMClient,
-        "chat_completion",
-        lambda *args, **kwargs: next(responses),
+        evidence_coverage,
+        "assess_evidence_coverage",
+        lambda goals, chunks: next(assessments),
     )
-    initial = _chunk(1, "revert는 이력을 보존한다.", 6)
-    supplemental = _chunk(2, "공유 이력을 재작성하면 협업자 이력과 충돌한다.", 19)
-    retry_call = {}
 
-    def retry(**kwargs):
-        retry_call.update(kwargs)
-        return [supplemental]
+    def retrieve(**kwargs):
+        captured.append(kwargs["goals"])
+        return [_chunk(12, "revert는 역커밋을 생성한다.", 8)]
 
-    monkeypatch.setattr(evidence_coverage, "retrieve_chunks", retry)
+    monkeypatch.setattr(evidence_coverage, "retrieve_chunks", retrieve)
 
-    chunks = complete_evidence_coverage(
+    result = complete_evidence_coverage(
         db=object(),
-        owner_id=7,
-        question="push 후 왜 revert를 사용하나요?",
-        queries=("전체 질문", "revert 이력 보존", "DVCS 협업 영향"),
-        chunks=[initial],
+        owner_id=1,
+        question="왜 revert인가요?",
+        goals=_goals(),
+        chunks=[_chunk(11, "reset은 공유 이력을 변경한다.", 3)],
     )
 
-    assert [chunk.chunk_id for chunk in chunks] == [1, 2]
-    assert retry_call["owner_id"] == 7
-    assert retry_call["queries"] == ("DVCS 공유 이력 충돌",)
+    assert [chunk.chunk_id for chunk in result] == [11, 12]
+    assert tuple(goal.goal_id for goal in captured[0]) == ("revert",)
+    assert captured[0][0].queries == ("revert inverse commit",)
 
 
-def test_coverage_retry_preserves_merged_context_when_judge_remains_incomplete(
+def test_unresolved_evidence_uses_exactly_two_bounded_retrieval_actions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    unresolved = EvidenceCoverageAssessment(
+        (
+            GoalCoverage("reset", "reset의 이력 변경 특성", "supported"),
+            GoalCoverage("revert", "revert의 공유 이력 안전성", "missing"),
+        )
+    )
+    calls: list[int] = []
     monkeypatch.setattr(
-        LLMClient,
-        "chat_completion",
-        lambda *args, **kwargs: "STATUS: INSUFFICIENT\nMISSING: 1\nRETRY 1: missing",
+        evidence_coverage,
+        "assess_evidence_coverage",
+        lambda goals, chunks: unresolved,
     )
     monkeypatch.setattr(
         evidence_coverage,
         "retrieve_chunks",
-        lambda **kwargs: [_chunk(2, "여전히 관련 없는 근거", 20)],
+        lambda **kwargs: calls.append(1) or [],
     )
+
+    result = complete_evidence_coverage(
+        db=object(),
+        owner_id=1,
+        question="복합 질문",
+        goals=_goals(),
+        chunks=[_chunk(11, "partial", 1)],
+    )
+
+    assert [chunk.chunk_id for chunk in result] == [11]
+    assert len(calls) == 2
+
+
+def test_empty_initial_context_uses_hierarchical_fallback_before_targeted_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recovered = [_chunk(21, "hierarchical evidence", 4)]
     monkeypatch.setattr(
         evidence_coverage,
         "retrieve_hierarchical_chunks",
-        lambda **kwargs: [],
+        lambda **kwargs: recovered,
     )
-
-    chunks = complete_evidence_coverage(
-        db=object(),
-        owner_id=7,
-        question="질문",
-        queries=("전체 질문", "필수 근거"),
-        chunks=[_chunk(1, "부분 근거", 6)],
-    )
-
-    assert [chunk.chunk_id for chunk in chunks] == [1, 2]
-
-
-def test_empty_retry_preserves_initial_context(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
     monkeypatch.setattr(
-        LLMClient,
-        "chat_completion",
-        lambda *args, **kwargs: (
-            "STATUS: INSUFFICIENT\nMISSING: 1\nRETRY 1: missing evidence"
+        evidence_coverage,
+        "assess_evidence_coverage",
+        lambda goals, chunks: EvidenceCoverageAssessment(
+            tuple(
+                GoalCoverage(goal.goal_id, goal.description, "supported")
+                for goal in goals
+            )
         ),
     )
-    monkeypatch.setattr(evidence_coverage, "retrieve_chunks", lambda **kwargs: [])
-    monkeypatch.setattr(
-        evidence_coverage,
-        "retrieve_hierarchical_chunks",
-        lambda **kwargs: [],
-    )
-    initial = _chunk(1, "부분적으로 유효한 최초 근거", 6)
 
-    chunks = complete_evidence_coverage(
+    result = complete_evidence_coverage(
         db=object(),
-        owner_id=7,
-        question="질문",
-        queries=("전체 질문", "필수 근거"),
-        chunks=[initial],
-    )
-
-    assert chunks == [initial]
-
-
-def test_empty_initial_context_uses_hierarchical_fallback(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    recovered = _chunk(3, "계층 검색으로 찾은 근거", 9)
-    monkeypatch.setattr(
-        evidence_coverage,
-        "retrieve_hierarchical_chunks",
-        lambda **kwargs: [recovered],
-    )
-    monkeypatch.setattr(
-        evidence_coverage,
-        "retrieve_chunks",
-        lambda **kwargs: pytest.fail("Targeted retry is unnecessary after sufficient fallback"),
-    )
-    monkeypatch.setattr(
-        LLMClient,
-        "chat_completion",
-        lambda *args, **kwargs: "STATUS: SUFFICIENT",
-    )
-
-    chunks = complete_evidence_coverage(
-        db=object(),
-        owner_id=7,
-        question="질문",
-        queries=("질문",),
+        owner_id=1,
+        question="복합 질문",
+        goals=_goals(),
         chunks=[],
     )
 
-    assert chunks == [recovered]
+    assert result == recovered
 
 
-def test_unresolved_evidence_uses_exactly_two_retrieval_retries(
+def test_empty_hierarchical_result_uses_remaining_targeted_action(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls = []
-    monkeypatch.setattr(
-        LLMClient,
-        "chat_completion",
-        lambda *args, **kwargs: "STATUS: INSUFFICIENT\nMISSING: 1\nRETRY 1: missing",
-    )
-
-    def targeted(**kwargs):
-        calls.append("targeted")
-        return [_chunk(2, "표적 검색 근거", 7)]
-
-    def hierarchical(**kwargs):
-        calls.append("hierarchical")
-        return [_chunk(3, "페이지 fallback 근거", 8)]
-
-    monkeypatch.setattr(evidence_coverage, "retrieve_chunks", targeted)
+    recovered = [_chunk(22, "targeted evidence", 5)]
     monkeypatch.setattr(
         evidence_coverage,
         "retrieve_hierarchical_chunks",
-        hierarchical,
+        lambda **kwargs: [],
     )
-
-    chunks = complete_evidence_coverage(
-        db=object(),
-        owner_id=7,
-        question="질문",
-        queries=("질문",),
-        chunks=[_chunk(1, "최초 근거", 6)],
-    )
-
-    assert calls == ["targeted", "hierarchical"]
-    assert [chunk.chunk_id for chunk in chunks] == [1, 2, 3]
-
-
-def test_coverage_failure_preserves_initial_context(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    initial = _chunk(1, "근거", 1)
-
-    def fail(*args, **kwargs):
-        raise RuntimeError("vLLM unavailable")
-
-    monkeypatch.setattr(LLMClient, "chat_completion", fail)
     monkeypatch.setattr(
         evidence_coverage,
         "retrieve_chunks",
-        lambda **kwargs: pytest.fail("Retry must not run when the coverage check fails"),
+        lambda **kwargs: recovered,
+    )
+    monkeypatch.setattr(
+        evidence_coverage,
+        "assess_evidence_coverage",
+        lambda goals, chunks: (
+            EvidenceCoverageAssessment(
+                tuple(
+                    GoalCoverage(goal.goal_id, goal.description, "supported")
+                    for goal in goals
+                )
+            )
+            if chunks
+            else None
+        ),
     )
 
-    chunks = complete_evidence_coverage(
+    result = complete_evidence_coverage(
         db=object(),
-        owner_id=7,
-        question="질문",
-        queries=("질문",),
-        chunks=[initial],
+        owner_id=1,
+        question="복합 질문",
+        goals=_goals(),
+        chunks=[],
     )
 
-    assert chunks == [initial]
+    assert result == recovered
 
 
-def test_evidence_matrix_distinguishes_supported_and_missing_goals() -> None:
-    trace = RetrievalTrace(request_id="request-1")
+def test_evidence_matrix_preserves_goal_status_and_verified_references() -> None:
+    trace = RetrievalTrace(request_id="req")
     trace.record_coverage(
-        attempt=2,
+        attempt=1,
         status="insufficient",
-        missing_queries=("모델 불일치 정량 감점",),
+        goal_results=[
+            {
+                "goal_id": "reset",
+                "description": "reset의 이력 변경 특성",
+                "status": "supported",
+                "evidence": [
+                    {
+                        "chunk_id": 11,
+                        "document_title": "git.pdf",
+                        "page_start": 3,
+                        "page_end": 3,
+                    }
+                ],
+                "retry_queries": [],
+            },
+            {
+                "goal_id": "revert",
+                "description": "revert의 공유 이력 안전성",
+                "status": "contradicted",
+                "evidence": [
+                    {
+                        "chunk_id": 12,
+                        "document_title": "git.pdf",
+                        "page_start": 8,
+                        "page_end": 8,
+                    }
+                ],
+                "retry_queries": ["revert collaboration"],
+            },
+        ],
     )
 
-    matrix = build_evidence_matrix(
-        ("3일 지연 감점률", "모델 불일치 정량 감점"),
-        trace,
-    )
+    matrix = build_evidence_matrix(_goals(), trace)
 
     assert matrix.status == "partial"
-    assert matrix.supported_goals == ("3일 지연 감점률",)
-    assert matrix.missing_goals == ("모델 불일치 정량 감점",)
+    assert tuple(goal.status for goal in matrix.goals) == ("supported", "contradicted")
+    assert matrix.goals[0].evidence[0].chunk_id == 11
 
 
-def test_evidence_matrix_does_not_reuse_stale_missing_state_after_unchecked_retry() -> None:
-    trace = RetrievalTrace(request_id="request-2")
+def test_unchecked_matrix_never_reuses_stale_goal_results() -> None:
+    trace = RetrievalTrace(request_id="req")
     trace.record_coverage(
         attempt=0,
-        status="insufficient",
-        missing_queries=("DVCS 협업 영향",),
+        status="sufficient",
+        goal_results=[
+            {
+                "goal_id": goal.goal_id,
+                "description": goal.description,
+                "status": "supported",
+                "evidence": [],
+                "retry_queries": [],
+            }
+            for goal in _goals()
+        ],
     )
-    trace.record_coverage(attempt=1, status="unchecked")
+    trace.record_coverage(
+        attempt=1,
+        status="unchecked",
+        goal_results=[
+            {
+                "goal_id": goal.goal_id,
+                "description": goal.description,
+                "status": "unchecked",
+                "evidence": [],
+                "retry_queries": [],
+            }
+            for goal in _goals()
+        ],
+    )
 
-    matrix = build_evidence_matrix(("DVCS 협업 영향",), trace)
+    matrix = build_evidence_matrix(_goals(), trace)
 
     assert matrix.status == "unchecked"
-    assert matrix.missing_goals == ()
+    assert all(goal.status == "unchecked" for goal in matrix.goals)

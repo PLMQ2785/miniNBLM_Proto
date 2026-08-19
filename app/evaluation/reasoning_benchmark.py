@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 import app.models  # noqa: F401 - register SQLAlchemy relationships
+from app.config import settings
 from app.database import SessionLocal
 from app.evaluation.reasoning_fixture import (
     ReasoningCase,
@@ -247,26 +248,26 @@ def _evaluate_case(
     )
     try:
         plan = plan_retrieval_queries(case.question, [])
-        evidence_goals = plan.evidence_goals or plan.queries
-        trace.set_query_plan(plan.standalone_query, plan.queries, evidence_goals)
+        goals = plan.goals
+        trace.set_query_plan(plan.standalone_query, goals)
         initial_chunks = retrieve_chunks(
             db,
             owner_id=owner_id,
             question=plan.standalone_query,
             top_k=top_k,
-            queries=plan.queries,
+            goals=goals,
             trace=trace,
             trace_stage="initial",
         )
         final_chunks = complete_evidence_coverage(
-            db,
+            db=db,
             owner_id=owner_id,
             question=case.question,
-            queries=evidence_goals,
+            goals=goals,
             chunks=initial_chunks,
             trace=trace,
         )
-        evidence_matrix = build_evidence_matrix(evidence_goals, trace)
+        evidence_matrix = build_evidence_matrix(goals, trace)
         generated = generate_answer(
             case.question,
             final_chunks,

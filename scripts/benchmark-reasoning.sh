@@ -33,14 +33,20 @@ if [[ ! -d sample ]]; then
   exit 1
 fi
 
-curl -fsS --max-time 10 http://127.0.0.1:8070/health >/dev/null || {
-  echo "Embedding service is not ready on 127.0.0.1:8070" >&2
-  exit 1
-}
-curl -fsS --max-time 10 http://127.0.0.1:8010/v1/models >/dev/null || {
-  echo "vLLM service is not ready on 127.0.0.1:8010" >&2
-  exit 1
-}
+if ! curl -fsS --max-time 10 http://127.0.0.1:8070/health >/dev/null 2>&1; then
+  docker compose -f docker-compose.yml exec -T embedding \
+    curl -fsS --max-time 10 http://127.0.0.1:8070/health >/dev/null || {
+      echo "Embedding service is not ready on 127.0.0.1:8070" >&2
+      exit 1
+    }
+fi
+if ! curl -fsS --max-time 10 http://127.0.0.1:8010/v1/models >/dev/null 2>&1; then
+  docker compose -f docker-compose.yml exec -T llm \
+    curl -fsS --max-time 10 http://127.0.0.1:8010/v1/models >/dev/null || {
+      echo "vLLM service is not ready on 127.0.0.1:8010" >&2
+      exit 1
+    }
+fi
 
 cleanup
 mkdir -p benchmark_results/reasoning

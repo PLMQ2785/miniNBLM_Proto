@@ -294,28 +294,24 @@ def chat(
 
     retrieval_plan = plan_retrieval_queries(request.question, history)
     trace = RetrievalTrace(request_id=request_id_context.get())
-    evidence_goals = retrieval_plan.evidence_goals or retrieval_plan.queries
-    trace.set_query_plan(
-        retrieval_plan.standalone_query,
-        retrieval_plan.queries,
-        evidence_goals,
-    )
+    goals = retrieval_plan.goals
+    trace.set_query_plan(retrieval_plan.standalone_query, goals)
     chunks = retrieve_chunks(
         db=db,
         owner_id=user.id,
         question=retrieval_plan.standalone_query,
-        queries=retrieval_plan.queries,
+        goals=goals,
         trace=trace,
     )
     chunks = complete_evidence_coverage(
         db=db,
         owner_id=user.id,
         question=request.question,
-        queries=evidence_goals,
+        goals=goals,
         chunks=chunks,
         trace=trace,
     )
-    evidence_matrix = build_evidence_matrix(evidence_goals, trace)
+    evidence_matrix = build_evidence_matrix(goals, trace)
     generated = generate_answer(
         question=request.question,
         chunks=chunks,
@@ -367,28 +363,24 @@ def chat_stream(
 
     retrieval_plan = plan_retrieval_queries(request.question, history)
     trace = RetrievalTrace(request_id=request_id_context.get())
-    evidence_goals = retrieval_plan.evidence_goals or retrieval_plan.queries
-    trace.set_query_plan(
-        retrieval_plan.standalone_query,
-        retrieval_plan.queries,
-        evidence_goals,
-    )
+    goals = retrieval_plan.goals
+    trace.set_query_plan(retrieval_plan.standalone_query, goals)
     chunks = retrieve_chunks(
         db=db,
         owner_id=owner_id,
         question=retrieval_plan.standalone_query,
-        queries=retrieval_plan.queries,
+        goals=goals,
         trace=trace,
     )
     chunks = complete_evidence_coverage(
         db=db,
         owner_id=owner_id,
         question=request.question,
-        queries=evidence_goals,
+        goals=goals,
         chunks=chunks,
         trace=trace,
     )
-    evidence_matrix = build_evidence_matrix(evidence_goals, trace)
+    evidence_matrix = build_evidence_matrix(goals, trace)
 
     if session is None:
         session = chat_repository.create_session(

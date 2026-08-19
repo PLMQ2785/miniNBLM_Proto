@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 import app.models  # noqa: F401 - register all SQLAlchemy relationships
+from app.config import settings
 from app.database import SessionLocal
 from app.evaluation.fixture import (
     EvaluationCase,
@@ -34,6 +35,7 @@ from app.retrieval_presets import BUILT_IN_PRESETS
 from app.search_algorithms import SearchAlgorithmKey
 from app.services.document_processor import process_document
 from app.services.retriever import RetrievedChunk, retrieve_chunks
+from app.services.query_rewriter import EvidenceGoal
 
 
 DEFAULT_FIXTURE = Path("evaluation/retrieval_fall_prevention.json")
@@ -144,13 +146,17 @@ def _case_result(
     warmup: int,
     iterations: int,
 ) -> tuple[dict[str, Any], list[float]]:
+    goals = tuple(
+        EvidenceGoal(f"g{index}", query, (query,))
+        for index, query in enumerate(case.retrieval_queries or [case.question], start=1)
+    )
     for _ in range(warmup):
         retrieve_chunks(
             db,
             owner_id=owner_id,
             question=case.question,
             top_k=retrieval_top_k,
-            queries=case.retrieval_queries or None,
+            goals=goals,
         )
 
     latency_samples = []
@@ -162,7 +168,7 @@ def _case_result(
             owner_id=owner_id,
             question=case.question,
             top_k=retrieval_top_k,
-            queries=case.retrieval_queries or None,
+            goals=goals,
         )
         latency_samples.append((time.perf_counter() - started) * 1000)
         if first_results is None:

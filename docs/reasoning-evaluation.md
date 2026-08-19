@@ -283,7 +283,7 @@ limitations와 confidence를 JSON으로 반환한다. 구조화 결과와 모델
 Caption 실패는 해당 page metadata에 실패 상태만 기록하고 문서의 text-only
 인덱싱을 계속한다. 시각 질문 guard는 같은 페이지의 `vision_caption` chunk가 실제
 검색 Context에 있을 때만 시각 근거가 확보된 것으로 판단한다. retrieval trace
-schema v3는 후보와 최종 Context의 modality를 기록한다.
+schema v4는 goal별 검색 후보, 근거 상태와 검증된 Source/Page/chunk를 기록한다.
 
 실제 Manual 19페이지를 새 서비스 경로로 처리한 결과 JSON 파싱과
 `LB05 01 NLNNN` 추출에 성공했고, 동일 페이지에서 `text`, `vision_caption` chunk가
@@ -348,3 +348,34 @@ abstain 사례는 유효한 구체화 요청이면 검색 recall과 별도로 �
 않는다. 상태도·복합 관계는 OCR만으로 해결되지 않으므로 vision connector를 BF16로
 보존한 모델이나 별도 고성능 VLM을 같은 fixture로 3회 비교하기 전에는 답변 근거로
 승격하지 않는다.
+
+## 2026-08-19 근거 목표·실패 경계 반복 검증
+
+복합 질문을 최대 4개의 원자적 `goal_id`와 goal별 검색어로 계획하고, retrieval trace
+schema v4에 goal별 후보와 검증된 Source/Page/chunk를 보존하도록 전환했다. Gemma 4
+W4A16이 JSON mode에서도 `queries queries`, `goal_2`, 중첩 goal object 같은 손상된
+field를 생성하는 현상이 확인되어, 의미가 보존된 field 이름 손상만 결정적으로
+정규화한다. 11개 reasoning fixture의 실제 planner 응답은 정규화 후 11/11 모두
+goal plan으로 파싱됐다.
+
+근거 충족도는 `supported`, `partial`, `missing`, `contradicted` 상태를 goal별로
+판정한다. LLM의 repair 결과가 계획에 없는 goal ID나 검색 Context에 없는 chunk ID를
+반환하면 위치나 번호를 추측해 연결하지 않고 `unchecked` matrix로 되돌린다. 이
+fallback은 잘못된 `missing` 판정으로 확인 가능한 정량 근거를 버리는 것보다
+보수적이다. unresolved goal만 재검색하며 전체 제어 흐름의 추가 retrieval action은
+hierarchical fallback을 포함해 최대 2회다.
+
+`balanced + hybrid`, 19개 PDF combined corpus에서 과거 실패 경계
+사례를 반복했다.
+
+| 사례 | 반복 결과 | 판정 |
+|---|---:|---|
+| Manual 19 화면 문자열 visual-only | 거부·빈 source 3/3 | 통과 |
+| Behavior Modeling II 20 상태도 visual-only | 거부·빈 source 3/3 | 통과 |
+| 보고서 3일 지연·모델 불일치 | `-5% × 3 = -15%`, 정량 미제공 한계 3/3 | 의미 통과; citation 1 aligned, 2 review |
+
+최종 정량 사례 원본은
+`benchmark_results/reasoning/reasoning-benchmark-20260819T023414Z.json`, 두
+visual-only 사례의 3회 결과는
+`reasoning-benchmark-20260819T022529Z.json`에 저장했다. 자동 `review`는 fixture 밖
+관련 페이지 인용을 의미하며 답변 사실 오류 판정과 동일하지 않다.

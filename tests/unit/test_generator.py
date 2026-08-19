@@ -3,7 +3,7 @@ from dataclasses import replace
 import pytest
 
 from app.clients.llm_client import LLMClient
-from app.services.evidence_coverage import EvidenceMatrix
+from app.services.evidence_coverage import EvidenceMatrix, EvidenceMatrixGoal
 from app.services.generator import INSUFFICIENT_EVIDENCE_ANSWER, generate_answer
 from app.services.retriever import RetrievedChunk
 
@@ -263,7 +263,9 @@ def test_generate_answer_requests_detail_when_all_evidence_goals_are_missing(
         [retrieved_chunk],
         evidence_matrix=EvidenceMatrix(
             status="insufficient",
-            missing_goals=("현재 상태별 안전한 복구 절차",),
+            goals=(
+                EvidenceMatrixGoal("g1", "현재 상태별 안전한 복구 절차", "missing"),
+            ),
         ),
     )
 
@@ -292,14 +294,14 @@ def test_generate_answer_allows_explicitly_requested_qualified_answer(
         [retrieved_chunk],
         evidence_matrix=EvidenceMatrix(
             status="insufficient",
-            missing_goals=("구체 적용 조건",),
+            goals=(EvidenceMatrixGoal("g1", "구체 적용 조건", "missing"),),
         ),
     )
 
     assert "일반 원칙" in generated.answer
     assert len(generated.sources) == 1
     assert "Coverage: INSUFFICIENT" in captured[0][-1]["content"]
-    assert "MISSING: 구체 적용 조건" in captured[0][-1]["content"]
+    assert "GOAL g1 [MISSING]: 구체 적용 조건" in captured[0][-1]["content"]
 
 
 def test_generate_answer_restores_confusable_question_literal_without_rewriting_other_codes(

@@ -1,7 +1,7 @@
 import pytest
 
 from app.clients.llm_client import LLMClient
-from app.services.evidence_coverage import EvidenceMatrix
+from app.services.evidence_coverage import EvidenceMatrix, EvidenceMatrixGoal
 from app.services.generator import INSUFFICIENT_EVIDENCE_ANSWER, StreamingAnswer
 from app.services.retriever import RetrievedChunk
 
@@ -129,7 +129,9 @@ def test_insufficient_evidence_streams_clarification_without_revision(
         [retrieved_chunk],
         evidence_matrix=EvidenceMatrix(
             status="insufficient",
-            missing_goals=("현재 상태별 안전한 복구 절차",),
+            goals=(
+                EvidenceMatrixGoal("g1", "현재 상태별 안전한 복구 절차", "missing"),
+            ),
         ),
     )
 

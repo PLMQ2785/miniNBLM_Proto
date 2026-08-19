@@ -65,6 +65,8 @@ def test_multihop_fixture_defines_evidence_facets_and_existing_pdf_pages() -> No
     )
 
 
+
+
 def test_schema_v2_requires_queries_facets_and_answer_claims() -> None:
     with pytest.raises(ValidationError, match="require retrieval queries, evidence facets"):
         RetrievalEvaluationFixture.model_validate(

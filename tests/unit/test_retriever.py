@@ -95,7 +95,7 @@ def test_semantic_reranker_falls_back_to_retrieval_order(
     assert rows == [(first, 0.9, "first.pdf")]
 
 
-def test_semantic_reranker_preserves_the_best_candidate_for_each_facet(
+def test_semantic_reranker_preserves_the_best_candidate_for_each_goal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     overall = StubChunk(1, [1.0, 0.0, 0.0])
@@ -120,6 +120,10 @@ def test_semantic_reranker_preserves_the_best_candidate_for_each_facet(
         ],
         top_k=2,
         queries=("reset history", "distributed collaboration"),
+        goal_query_groups=(
+            ("reset", ("reset history",)),
+            ("collaboration", ("distributed collaboration",)),
+        ),
     )
 
     assert {chunk.id for chunk, _, _ in rows} == {2, 3}

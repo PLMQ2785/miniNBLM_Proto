@@ -148,7 +148,10 @@ def test_real_pdf_embedding_retrieval_generation_and_grounding() -> None:
                 client,
                 "이 자료에 없는 2035년 서울의 평균 강수량을 알려줘.",
             )
-            assert "확인되지 않습니다" in outside["answer"]
+            assert any(
+                marker in outside["answer"]
+                for marker in ("확인되지 않습니다", "업로드된 자료만으로는")
+            )
             assert outside["sources"] == []
 
             metrics = client.get("/metrics")
@@ -167,6 +170,11 @@ def test_real_pdf_embedding_retrieval_generation_and_grounding() -> None:
                 metrics.text,
                 "mininblm_retrieval_requests_total",
                 {"algorithm": "dense", "status": "success"},
+            )
+            assert _has_metric_sample(
+                metrics.text,
+                "mininblm_rerank_requests_total",
+                {"status": "success"},
             )
         finally:
             delete = client.delete(f"/documents/{document_id}")

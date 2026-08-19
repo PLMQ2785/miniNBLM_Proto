@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 import logging
 from math import sqrt
 import time
@@ -14,7 +15,13 @@ ORIGINAL_QUERY_SHARE = 0.7
 FACET_QUERY_SHARE = 0.3
 
 
-def rerank_rows(question: str, rows, top_k: int, queries=None):
+def rerank_rows(
+    question: str,
+    rows,
+    top_k: int,
+    queries=None,
+    goal_query_groups: Sequence[tuple[str, Sequence[str]]] = (),
+):
     if not rows:
         RERANK_REQUESTS.labels(status="empty").inc()
         return []
@@ -22,8 +29,14 @@ def rerank_rows(question: str, rows, top_k: int, queries=None):
     started_at = time.perf_counter()
     try:
         rerank_queries = _normalize_rerank_queries(question, queries)
+        goal_query_indexes = _goal_query_indexes(rerank_queries, goal_query_groups)
         query_embeddings = EmbeddingClient().embed_queries(rerank_queries)
-        reranked = _rerank_with_embeddings(query_embeddings, rows, top_k)
+        reranked = _rerank_with_embeddings(
+            query_embeddings,
+            rows,
+            top_k,
+            goal_query_indexes,
+        )
     except Exception:
         logger.warning("Semantic reranking failed; preserving retrieval rank", exc_info=True)
         RERANK_REQUESTS.labels(status="fallback").inc()
@@ -48,16 +61,62 @@ def _normalize_rerank_queries(question: str, queries) -> list[str]:
     return normalized
 
 
-def _rerank_with_embeddings(query_embeddings: list[list[float]], rows, top_k: int):
+def _goal_query_indexes(
+    rerank_queries: Sequence[str],
+    goal_query_groups: Sequence[tuple[str, Sequence[str]]],
+) -> tuple[tuple[str, tuple[int, ...]], ...]:
+    indexes_by_query = {
+        query.casefold(): index for index, query in enumerate(rerank_queries)
+    }
+    groups: list[tuple[str, tuple[int, ...]]] = []
+    for goal_id, queries in goal_query_groups:
+        indexes = tuple(
+            dict.fromkeys(
+                indexes_by_query[query.strip().casefold()]
+                for query in queries
+                if query.strip().casefold() in indexes_by_query
+            )
+        )
+        if not indexes:
+            raise ValueError(f"Evidence goal has no reranker query: {goal_id}")
+        groups.append((goal_id, indexes))
+    return tuple(groups)
+
+
+def _rerank_with_embeddings(
+    query_embeddings: list[list[float]],
+    rows,
+    top_k: int,
+    goal_query_indexes: Sequence[tuple[str, Sequence[int]]] = (),
+):
     if not query_embeddings:
         raise ValueError("At least one query embedding is required")
-    row_count = len(rows)
-    scored_rows = []
-    for rank, (chunk, _, document_title) in enumerate(rows, start=1):
-        query_scores = [
+    query_scores_by_row = [
+        [
             max(0.0, _cosine_similarity(query_embedding, chunk.embedding))
             for query_embedding in query_embeddings
         ]
+        for chunk, _, _ in rows
+    ]
+    return _select_rows(query_scores_by_row, rows, top_k, goal_query_indexes)
+
+
+def _select_rows(
+    query_scores_by_row: list[list[float]],
+    rows,
+    top_k: int,
+    goal_query_indexes: Sequence[tuple[str, Sequence[int]]] = (),
+):
+    if len(query_scores_by_row) != len(rows):
+        raise ValueError("Reranker score rows do not match candidate rows")
+    row_count = len(rows)
+    scored_rows = []
+    for rank, ((chunk, _, document_title), query_scores) in enumerate(
+        zip(rows, query_scores_by_row, strict=True),
+        start=1,
+    ):
+        if not query_scores:
+            raise ValueError("Each candidate requires at least one reranker score")
         if len(query_scores) == 1:
             semantic_score = query_scores[0]
         else:
@@ -73,15 +132,18 @@ def _rerank_with_embeddings(query_embeddings: list[list[float]], rows, top_k: in
 
     scored_rows.sort(key=lambda row: (-row[1], row[3], row[0].id))
     selected_ids: set[int] = set()
-    if len(query_embeddings) > 1:
-        for query_index in range(1, len(query_embeddings)):
-            best_for_query = max(
-                scored_rows,
-                key=lambda row: (row[4][query_index], -row[3], -row[0].id),
-            )
-            selected_ids.add(best_for_query[0].id)
-            if len(selected_ids) == top_k:
-                break
+    for _, query_indexes in goal_query_indexes:
+        best_for_goal = max(
+            scored_rows,
+            key=lambda row: (
+                max(row[4][query_index] for query_index in query_indexes),
+                -row[3],
+                -row[0].id,
+            ),
+        )
+        selected_ids.add(best_for_goal[0].id)
+        if len(selected_ids) == top_k:
+            break
     for row in scored_rows:
         if len(selected_ids) == top_k:
             break

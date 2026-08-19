@@ -9,7 +9,7 @@ from app.repositories import user_repository
 from app.schemas.chat import SourceRef
 from app.services.generator import GeneratedAnswer
 from app.clients.llm_client import LLMClient
-from app.services.query_rewriter import RetrievalQueryPlan
+from app.services.query_rewriter import EvidenceGoal, RetrievalQueryPlan
 from app.services.retriever import RetrievedChunk
 
 
@@ -21,7 +21,10 @@ def stub_query_planner(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         chat_api,
         "plan_retrieval_queries",
-        lambda question, history: RetrievalQueryPlan(question.strip(), (question.strip(),)),
+        lambda question, history: RetrievalQueryPlan(
+            question.strip(),
+            (EvidenceGoal("g1", question.strip(), (question.strip(),)),),
+        ),
     )
     monkeypatch.setattr(
         chat_api,
@@ -64,7 +67,10 @@ def test_chat_persists_messages_and_returns_sources(
 
     def plan_for_retrieval(question, history):
         query = rewritten_query if history else question
-        return RetrievalQueryPlan(query, (query,))
+        return RetrievalQueryPlan(
+            query,
+            (EvidenceGoal("g1", query, (query,)),),
+        )
 
     monkeypatch.setattr(chat_api, "plan_retrieval_queries", plan_for_retrieval)
 
@@ -115,7 +121,7 @@ def test_chat_persists_messages_and_returns_sources(
     assert session.document_id is None
     assert retrieval_calls[0]["owner_id"] == user.id
     assert retrieval_calls[0]["question"] == "낙상 후 무엇을 먼저 하나요?"
-    assert retrieval_calls[0]["queries"] == ("낙상 후 무엇을 먼저 하나요?",)
+    assert retrieval_calls[0]["goals"][0].queries == ("낙상 후 무엇을 먼저 하나요?",)
     assert "document_id" not in retrieval_calls[0]
     assert generation_calls[0]["history"] == []
 
@@ -134,7 +140,7 @@ def test_chat_persists_messages_and_returns_sources(
         {"role": "assistant", "content": "손상 여부를 먼저 확인합니다."},
     ]
     assert retrieval_calls[1]["question"] == rewritten_query
-    assert retrieval_calls[1]["queries"] == (rewritten_query,)
+    assert retrieval_calls[1]["goals"][0].queries == (rewritten_query,)
     assert generation_calls[1]["question"] == "그 다음에는 무엇을 하나요?"
 
     session_list = client.get("/chat/sessions")
