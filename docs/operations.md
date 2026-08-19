@@ -227,7 +227,7 @@ NATIVE_LLM_HEALTH_URL=https://llm.example/v1/models
 | `MODEL_ARCHIVE_URL` | 없음 | 원샷 컨테이너가 최초 기동 시 받을 모델 archive 직접 URL |
 | `MODEL_ARCHIVE_SHA256` | 없음 | 모델 archive의 필수 SHA-256 checksum |
 | `MODEL_KEEP_ARCHIVE` | `false` | 설치 성공 후 다운로드 archive를 `/data/model-cache`에 유지할지 여부 |
-| `VLLM_MAX_MODEL_LEN` | `8192` | 최대 sequence length |
+| `VLLM_MAX_MODEL_LEN` | `16384` | 12B·31B 공통 최대 sequence length |
 | `VLLM_GPU_MEMORY_UTILIZATION` | `0.65` | 12B vLLM GPU 메모리 목표 |
 | `VLLM_MAX_NUM_SEQS` | `4` | vLLM scheduler가 동시에 처리할 최대 활성 sequence 수 |
 | `LLM_ENDPOINTS_FILE` | `config/llm-endpoints.json` | OpenAI 호환 endpoint 허용 목록 JSON 경로 |
@@ -240,6 +240,10 @@ NATIVE_LLM_HEALTH_URL=https://llm.example/v1/models
 | `AUTH_COOKIE_SECURE` | `false` | HTTPS 운영 환경에서는 `true`로 설정 |
 | `BOOTSTRAP_ADMIN_USERNAME` | 없음 | 최초 관리자 생성 시에만 설정할 사용자명 |
 | `BOOTSTRAP_ADMIN_PASSWORD` | 없음 | 최초 로그인에서 교체할 안전한 임시 비밀번호 |
+
+`VLLM_MAX_MODEL_LEN=16384`는 Docker, native, all-in-one 12B·31B의 공통 기본값입니다.
+Vast.ai Template이나 다른 orchestrator가 같은 환경변수를 지정하면 image 기본값보다
+우선하므로 외부 배포 설정도 `16384`로 맞춰야 합니다.
 
 Bootstrap 관리자 변수는 둘 다 설정하거나 둘 다 비워야 합니다. 비밀번호는 12자
 이상이며 영문 대·소문자, 숫자, 기호 중 3종 이상이어야 하고 사용자명을 포함할 수
