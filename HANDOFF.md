@@ -53,12 +53,16 @@
 - 원샷 Web UI에서 회원가입, Manual 19페이지 업로드·인덱싱, 실제 Gemma 답변과
   5·18페이지 source 표시 확인
 - Gemma 4 31B 직접 양자화 W4A16 checkpoint 추가
-- `0.1.4` release tag는 `cpsu/mininblm:0.1.4`,
-  `0.1.4-gemma4-12b-w4a16`, `0.1.4-gemma4-31b-w4a16` 세 개
-- 31B image에도 Hugging Face snapshot downloader와 제한된 volume UID fallback을
-  적용하고 실제 snapshot·권한 smoke 및 runtime 계약을 검증
-- 31B H200 profile은 동일 cross-encoder를 사용하고 vLLM GPU memory를 기존
-  `0.70`에서 `0.65`로 낮췄다. 이번 변경에서는 31B를 기동·추론하지 않았으며,
+- `0.1.3` compatibility와 `0.1.4` release는 12B·31B 모두
+  `VLLM_MAX_MODEL_LEN=16384`로 build한다. Docker Hub tag는
+  `0.1.3-gemma4-{12b,31b}-w4a16`, `0.1.4`,
+  `0.1.4-gemma4-{12b,31b}-w4a16`이다.
+- RTX 3090 12B vLLM을 실제 `max_model_len=16384`로 기동해 `/v1/models`의
+  `max_model_len=16384`, KV cache `76,454` tokens와 최대 동시성 `4.67x` 확인
+- Docker Hub 16K manifest: 0.1.3 12B `4ca5bd3d4582`, 0.1.3 31B
+  `52cae0012e87`, 0.1.4 12B `fcc72c6bd457`, 0.1.4 31B `1598ac16d723`
+- 31B H200 profile은 동일 cross-encoder를 사용하고 vLLM GPU memory `0.65`,
+  활성 sequence 8개를 사용한다. 이번 변경에서는 31B를 기동·추론하지 않았으며,
   기존 image build/snapshot 계약 검증 외 readiness와 생성 요청은 미검증이다.
 - API 이미지: `6,555,721,208` bytes에서 `206,676,250` bytes로 약 96.8% 감소
 - API 이미지의 Torch/Sentence Transformers/Transformers 제거 및 embedding 이미지의
@@ -194,7 +198,7 @@ WSL mirrored networking에서 Docker bridge port가 Windows localhost로 전달�
 - LLM: Gemma 4 12B instruction model, W4A16 compressed-tensors 양자화
 - 기본 모델 경로: `./google/gemma-4-12B-it-W4A16`
 - vLLM Docker/native version: `0.25.0`
-- 기본 max model length: `8192`
+- 기본 max model length: `16384`
 - 12B GPU memory utilization: `0.60`; 31B H200 예시: `0.65`(미검증)
 - 기본 max sequences: `4`
 - readiness 구성요소별 timeout: `3초`

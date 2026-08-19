@@ -97,7 +97,7 @@ services:
       - --dtype
       - bfloat16
       - --max-model-len
-      - ${VLLM_MAX_MODEL_LEN:-8192}
+      - ${VLLM_MAX_MODEL_LEN:-16384}
       - --gpu-memory-utilization
       - ${VLLM_GPU_MEMORY_UTILIZATION:-0.60}
       - --max-num-seqs

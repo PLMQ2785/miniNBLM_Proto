@@ -25,6 +25,9 @@ UI는 API 서비스가 정적 파일로 제공하므로 별도 프런트엔드 �
 - 비컨테이너 실행: Python 3.12, `uv`, PostgreSQL 17와 pgvector, `curl`, `patch`
 
 기본 모델 경로는 `./google/gemma-4-12B-it-W4A16`입니다. 다른 위치를 사용하려면 `.env`의 `VLLM_MODEL_PATH`를 변경합니다.
+12B·31B runtime의 기본 `VLLM_MAX_MODEL_LEN`은 `16384`입니다. Vast.ai Template처럼
+외부 환경변수가 같은 key를 지정하면 image 기본값보다 우선하므로 배포 환경도
+`VLLM_MAX_MODEL_LEN=16384`로 맞춰야 합니다.
 
 API가 사용할 OpenAI 호환 모델 endpoint는 `config/llm-endpoints.json`에 등록합니다.
 `default_endpoint`는 사용자가 아직 선택하지 않았거나 등록 endpoint가 사라졌을 때의

@@ -53,18 +53,20 @@ Persistent application data: /data
 
 ## 2. Docker Hub 게시
 
-현재 release namespace는 `cpsu/mininblm`이며 12B 기본 tag와 variant tag는 같은
-image를 가리킵니다.
+현재 release namespace는 `cpsu/mininblm`입니다. 12B·31B `0.1.3` compatibility
+tag와 `0.1.4` release tag는 모두 `VLLM_MAX_MODEL_LEN=16384`로 build합니다.
 
 ```bash
-docker tag cpsu/mininblm:0.1.4 \
-  cpsu/mininblm:0.1.4-gemma4-12b-w4a16
-
 docker login
+docker push cpsu/mininblm:0.1.3-gemma4-12b-w4a16
+docker push cpsu/mininblm:0.1.3-gemma4-31b-w4a16
 docker push cpsu/mininblm:0.1.4
 docker push cpsu/mininblm:0.1.4-gemma4-12b-w4a16
 docker push cpsu/mininblm:0.1.4-gemma4-31b-w4a16
 ```
+
+Vast.ai Template에 `VLLM_MAX_MODEL_LEN`이 있으면 image 기본값보다 우선합니다.
+12B·31B Template 모두 값을 `16384`로 맞춰야 합니다.
 
 Private repository라면 RunPod Template에 Docker Hub registry credentials를
 등록합니다. 모델 archive를 별도 storage에 게시하기 전에 해당 모델의 재배포 조건과
@@ -315,7 +317,7 @@ RERANKER_BATCH_SIZE=16
 RERANKER_MAX_LENGTH=512
 
 VLLM_MODEL_NAME=gemma4
-VLLM_MAX_MODEL_LEN=8192
+VLLM_MAX_MODEL_LEN=16384
 VLLM_GPU_MEMORY_UTILIZATION=0.60
 VLLM_MAX_NUM_SEQS=4
 VLLM_CPU_OFFLOAD_GB=0
@@ -396,7 +398,7 @@ RERANKER_BATCH_SIZE=16
 RERANKER_MAX_LENGTH=512
 
 VLLM_MODEL_NAME=gemma4
-VLLM_MAX_MODEL_LEN=8192
+VLLM_MAX_MODEL_LEN=16384
 VLLM_GPU_MEMORY_UTILIZATION=0.65
 VLLM_MAX_NUM_SEQS=8
 VLLM_CPU_OFFLOAD_GB=0

@@ -1725,7 +1725,7 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
 - RTX 3090에서 embedding/cross-encoder Dense·Hybrid A/B를 각 3회 반복하고 두
   mode 모두 Recall@5·Hit@5 `1.0`; MRR은 `0.917 → 0.896`, cross-encoder p50은
   Dense `38.9%`, Hybrid `34.0%` 증가해 보편적 품질 우위가 없음을 확인
-- 8,192-token model에 8,243-token 복합 prompt가 전달돼 SSE 400이 발생하는 문제를
+- 기존 8,192-token 설정에서 8,243-token 복합 prompt가 전달돼 SSE 400이 발생하는 문제를
   Evidence Matrix와 서로 다른 page를 우선하는 14,000자 생성 Context로 제한하고,
   endpoint의 context/output 합계 초과에는 output budget을 한 번만 줄여 재시도
 - 실제 `1512.03385v1.pdf` 4개 goal 질문에서 오류를 재현한 뒤 수정 경로가
@@ -1738,9 +1738,15 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
   Docker Hub pull과 재시작 비용을 분리
 - 공개 Hugging Face repository의 commit SHA로 고정한 모델 snapshot 이어받기·설치·재사용
 - `chown`이 제한된 volume의 실제 UID로 PostgreSQL을 실행하는 fallback을 12B·31B
-  `0.1.4` image에 공통 적용하고 image별 실제 downloader·권한 smoke 검증
+  `0.1.3`·`0.1.4` image에 공통 적용하고 image별 실제 downloader·권한 smoke 검증
 - H200 단일 GPU용 BGE-M3·cross-encoder CUDA, vLLM sequence 8개 31B 배포 설정 유지;
   이번 변경에서는 31B 기동·추론 미실시
+- 12B·31B Docker/native/all-in-one 기본 max model length를 `8192 → 16384`로
+  통일하고 Vast.ai 등 외부 환경변수도 같은 값이 필요함을 명시
+- RTX 3090 12B에서 실제 16K vLLM readiness, KV cache `76,454` tokens와
+  16,384-token 요청 기준 최대 동시성 `4.67x` 확인
+- Docker Hub의 0.1.3·0.1.4 12B/31B tag를 모두 16K image로 push하고 remote
+  manifest digest와 active 상태 확인
 - `LLM_ENDPOINTS_FILE` JSON을 endpoint 허용 목록으로 사용하고 모든 로그인 사용자가
   작업공간에서 자신의 언어모델을 검증·전환하며 DB에 보존해 세 실행 방식에 공통 적용
 
