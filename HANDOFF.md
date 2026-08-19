@@ -613,14 +613,14 @@ Docker 경로에서 확인했다.
 
 ## 12. Git 및 작업공간 주의사항
 
-2026-08-19 기준 remote 기준선은 `02263ad`이며, goal 기반 근거 검색은
-`07a74cd`로 분리했다. 50MiB 파일·51MiB 전체 request 제한은 별도 후속 commit으로
-관리한다. 전용 cross-encoder 구현과 A/B fixture는
-`experiment/cross-encoder-reranker` branch에만 보존한다. 통합 후 로컬
-`main`은 `origin/main`보다 2개 commit 앞서며 아직 push하지 않았다. 최초 commit에
-실수로 포함된 `id_container` RSA private key는 commit amend, reflog 만료 및
-unreachable object 정리를 통해 작업공간과 전체 로컬 이력에서 제거했다. Remote
-`origin`은 GitHub 저장소로 설정되어 있다.
+2026-08-19 기준 `v0.1.4` tag와 Docker image source commit은 `d011725`다.
+goal 기반 근거 검색은 `07a74cd`, 50MiB 파일·51MiB 전체 request 제한은
+`5457185`로 분리했다. 전용 cross-encoder 구현과 A/B fixture는 원격
+`experiment/cross-encoder-reranker` branch에만 보존한다. 로컬 `main`과
+`origin/main`은 release 기록까지 동기화한다. 최초 commit에 실수로 포함된
+`id_container` RSA private key는 commit amend, reflog 만료 및 unreachable object
+정리를 통해 작업공간과 전체 로컬 이력에서 제거했다. Remote `origin`은 GitHub
+저장소로 설정되어 있다.
 
 현재 `.gitignore`는 다음 대용량/민감 경로를 제외한다.
 
