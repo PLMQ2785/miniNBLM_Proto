@@ -6,7 +6,7 @@
 |---|---:|---|---|
 | `api` | 8080 | FastAPI, Web UI, 문서 처리 조정 | 아니요 |
 | `db` | 5433 | PostgreSQL 17, pgvector | 아니요 |
-| `embedding` | 8070 | BGE-M3 embedding HTTP API | 예 |
+| `embedding` | 8070 | BGE-M3 embedding 및 BGE reranker HTTP API | 예 |
 | `llm` | 8010 | vLLM OpenAI-compatible API | 예 |
 
 mirrored WSL에서 Windows `localhost` 전달이 Docker bridge publish를 건너뛰는
@@ -222,13 +222,21 @@ NATIVE_LLM_HEALTH_URL=https://llm.example/v1/models
 | `NATIVE_VLLM_ENV_DIR` | `.venv-vllm` | 충돌을 분리한 vLLM Python 환경 |
 | `NATIVE_VLLM_VERSION` | `0.25.0` | native 설치와 호환 patch의 기준 vLLM version |
 | `VLLM_MODEL_PATH` | `./google/gemma-4-12B-it-W4A16` | 호스트의 양자화 모델 경로 |
+| `RERANKER_MODE` | `embedding` | `embedding`은 기존 cosine 재정렬, `cross_encoder`는 전용 query/passage 모델 사용 |
+| `RERANKER_BASE_URL` | `EMBEDDING_BASE_URL` | API가 `/rerank`를 호출할 내부 service URL |
+| `RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` | embedding service가 지연 적재할 cross-encoder |
+| `RERANKER_MODEL_REVISION` | 고정 commit SHA | 재현 가능한 Hugging Face 모델 revision |
+| `RERANKER_DEVICE` | embedding device | reranker 실행 device; 빈 값이면 `EMBEDDING_DEVICE` 사용 |
+| `RERANKER_DTYPE` | `float16` | GPU 기본값; CPU smoke/benchmark는 `float32` 사용 |
+| `RERANKER_BATCH_SIZE` | `16` | 한 inference batch의 query/passage pair 수 |
+| `RERANKER_MAX_LENGTH` | `512` | pair당 최대 tokenizer 길이 |
 | `MODEL_HF_REPO_ID` | 없음 | 원샷 컨테이너가 최초 기동 시 받을 공개 Hugging Face `owner/repository` |
 | `MODEL_HF_REVISION` | 없음 | Hugging Face 모델을 고정하는 필수 40자리 commit SHA |
 | `MODEL_ARCHIVE_URL` | 없음 | 원샷 컨테이너가 최초 기동 시 받을 모델 archive 직접 URL |
 | `MODEL_ARCHIVE_SHA256` | 없음 | 모델 archive의 필수 SHA-256 checksum |
 | `MODEL_KEEP_ARCHIVE` | `false` | 설치 성공 후 다운로드 archive를 `/data/model-cache`에 유지할지 여부 |
 | `VLLM_MAX_MODEL_LEN` | `8192` | 최대 sequence length |
-| `VLLM_GPU_MEMORY_UTILIZATION` | `0.65` | 12B vLLM GPU 메모리 목표 |
+| `VLLM_GPU_MEMORY_UTILIZATION` | `0.60` | 12B에서 BGE-M3·cross-encoder와 공존하도록 낮춘 vLLM GPU 메모리 목표 |
 | `VLLM_MAX_NUM_SEQS` | `4` | vLLM scheduler가 동시에 처리할 최대 활성 sequence 수 |
 | `LLM_ENDPOINTS_FILE` | `config/llm-endpoints.json` | OpenAI 호환 endpoint 허용 목록 JSON 경로 |
 | `MAX_UPLOAD_BYTES` | `52428800` | 서버가 허용하는 PDF 파일 최대 바이트 수 |
@@ -312,10 +320,13 @@ VRAM을 예약하지 않습니다. 반대로 같은 GPU에서 vLLM 인스턴스�
 각 인스턴스의 비율이 중첩되므로 합계와 embedding 등 외부 GPU 사용량을 함께
 제한해야 합니다.
 
-12B RTX 3090 profile은 `VLLM_GPU_MEMORY_UTILIZATION=0.65`,
-`VLLM_MAX_NUM_SEQS=4`를 사용합니다. 31B H200 profile은 각각 `0.70`, `8`을
-사용하며 `VLLM_TENSOR_PARALLEL_SIZE=1`입니다. 31B 조합은 이번 변경에서 실행
-검증하지 않았습니다.
+12B RTX 3090과 31B H200 배포 profile의 기본값은 `RERANKER_MODE=embedding`입니다.
+`cross_encoder`는 명시적으로 설정한 경우에만 사용합니다. 실제 12B cross-encoder
+RAG E2E에서는 `EMBEDDING_DEVICE=cuda`, `VLLM_GPU_MEMORY_UTILIZATION=0.60`,
+`VLLM_MAX_NUM_SEQS=4`로 실행했으며 VRAM은 `21,685 / 24,576MiB`, 여유는
+`2,638MiB`였습니다. 31B H200 profile은
+`VLLM_MAX_NUM_SEQS=8`, `VLLM_TENSOR_PARALLEL_SIZE=1`을 사용합니다. 31B 조합은
+이번 변경에서 실행 검증하지 않았습니다.
 
 `5433`을 다른 PostgreSQL이 사용 중이면 `.env`에서 `MININBLM_DB_PORT`를 변경한다.
 Compose는 API 연결 주소에도 같은 포트를 적용한다. 비컨테이너 실행은
@@ -417,12 +428,15 @@ API 시작 시 전역 재인덱싱 작업이 없다면 `uploaded` 또는 `proces
 
 검색 알고리즘은 청킹 preset과 독립적으로 선택합니다. `dense`는 BGE-M3와
 pgvector cosine 검색, `keyword`는 PostgreSQL FTS, `substring`은 pg_trgm,
-`hybrid`는 세 결과의 Reciprocal Rank Fusion을 사용합니다. Dense와 Hybrid 후보는
-BGE-M3 cosine으로 재정렬합니다. 관련성 점수는 원질문 70%와 goal 검색어 최대값
-30%를 결합하고, 최종 점수는 관련성 80%와 기존 검색 순위 20%를 사용합니다.
-goal별 최상위 후보를 하나 이상 보존하며 BGE-M3 호출 실패 시 기존 검색 순위를
-유지합니다. FTS와 trigram 인덱스는 상시 유지하므로 검색 알고리즘 변경에는 문서
-재인덱싱이 필요하지 않습니다.
+`hybrid`는 세 결과의 Reciprocal Rank Fusion을 사용합니다. Dense와 Hybrid의
+후보 재정렬은 `RERANKER_MODE=embedding`에서 기존 BGE-M3 cosine을,
+`cross_encoder`에서 BAAI/bge-reranker-v2-m3의 query/passage relevance를
+사용합니다. 두 모드 모두 relevance 점수 안에서 원질문 70%와 세부 질의 최대값
+30%를 반영하고, 최종 점수는 relevance 80%와 기존 검색 순위 20%를 결합합니다.
+세부 질의별 최상위 후보도 보존합니다. Cross-encoder 호출이 실패하면 같은 후보를
+BGE-M3로 재정렬하며, 이마저 실패할 때만 원래 검색 순위를 유지합니다. FTS와
+trigram 인덱스는 상시 유지하므로 알고리즘이나 reranker 모드
+변경에는 문서 재인덱싱이 필요하지 않습니다.
 
 `uploaded` 또는 `processing` 상태의 문서는 background indexing과 충돌하지
 않도록 삭제 요청에 HTTP 409를 반환합니다. `indexed`와 `failed` 문서를
@@ -607,8 +621,8 @@ Free memory ... is less than desired GPU memory utilization
 ```
 
 다른 GPU 프로세스를 종료하거나 `.env`의 `VLLM_GPU_MEMORY_UTILIZATION`을
-낮춥니다. 12B RTX 3090 profile 기본값은 `0.65`, 31B H200 환경 예시는
-`0.70`입니다.
+낮춥니다. 12B RTX 3090 profile은 BGE-M3와 cross-encoder 공존을 위해 `0.60`,
+31B H200 환경 예시는 검증 전 보수값 `0.65`를 사용합니다.
 
 ### KV cache 부족
 
@@ -684,9 +698,14 @@ RUNTIME_MODE=native ./restore.sh --yes backups/mininblm-backup-<timestamp>.tar.g
   사용자 질문 최대 500자와 직전 답변 최대 1,000자를 참고해 독립형 질문과 최대
   4개의 검색 질의를 만듭니다. 계획 실패 시 원문 질문 하나로 검색합니다.
 - 모든 질문은 검색 계획용 LLM 호출이 1회 추가됩니다. Dense와 Hybrid는 최대
-  `top_k × 3` 후보를 원 질문과 goal 검색어로 BGE-M3 재정렬합니다. 원질문
-  embedding 70%와 goal 검색어 최대값 30%를 결합하며 goal별 최상위 후보를
-  보존합니다. BGE-M3 호출 실패 시 기존 검색 순위로 fallback합니다.
+  `top_k × 3` 후보를 원 질문과 하위 질의로 재정렬합니다. 기본 `embedding`
+  모드는 BGE-M3 batch embedding 1회, `cross_encoder` 모드는 후보 수와 검색 질의
+  수의 곱만큼 pair를 채점하므로 GPU 연산과 지연이 늘어납니다. 하위 질의별
+  최상위 검색·의미 후보를 보존하며, cross-encoder 실패 시 BGE-M3, BGE-M3도
+  실패하면 기존 검색 순위로 fallback합니다.
+  2026-08-18 CPU 단회 A/B(`balanced + hybrid`, K=3)에서는 Recall/Hit `1.000`을
+  유지하며 MRR이 `0.875 → 1.000`으로 개선됐지만 p50이
+  `541.03ms → 7,166.95ms`로 증가했습니다. H200 GPU 지연은 별도 측정 대상입니다.
 - 검색 결과가 있으면 근거 충족도 LLM 호출이 1회 추가됩니다. 부족 판정이
   계속되면 표적 chunk 검색과 page 계층 fallback을 합쳐 최대 2회 재시도하고 각
   결과를 다시 판정하므로 충족도 호출은 최대 3회입니다. page fallback은 최대
@@ -729,7 +748,7 @@ RUNTIME_MODE=native ./restore.sh --yes backups/mininblm-backup-<timestamp>.tar.g
 - API 재시작 후 중단된 재인덱싱 작업의 자동 복구
 - API 재시작 후 `uploaded/processing` PDF의 자동 재인덱싱과 누락 원본 실패 처리
 - Dense, FTS Keyword, pg_trgm Substring과 RRF Hybrid 검색 결과
-- 다중 질의 RRF, 인접 청크 확장과 goal별 후보를 보존하는 BGE-M3 재정렬
+- 다중 질의 RRF, 인접 청크 확장과 BGE-M3 또는 전용 cross-encoder reranker
 - 복합 질의 근거 충족도 판정, 표적·페이지 계층 재검색 최대 2회와 Context 보존
 - 사용자별 page FTS·trigram 범위 탐색, 질의별 page anchor와 BGE-M3 chunk 재정렬
 - 답변별 retrieval trace metadata, 구조화 로그와 관리자 조회 API

@@ -65,6 +65,42 @@ def test_multihop_fixture_defines_evidence_facets_and_existing_pdf_pages() -> No
     )
 
 
+def test_work_education_fixture_covers_domains_languages_and_pdf_pages() -> None:
+    fixture_path = Path("evaluation/retrieval_work_education.json")
+    fixture = load_evaluation_fixture(fixture_path)
+
+    assert fixture.schema_version == 2
+    assert len(fixture.documents) == 5
+    assert len(fixture.cases) == 24
+    assert all(case.retrieval_queries for case in fixture.cases)
+    assert all(case.evidence_facets for case in fixture.cases)
+    assert all(case.required_answer_claims for case in fixture.cases)
+    assert any(case.question.isascii() for case in fixture.cases)
+    assert any(len(case.relevant_sources) >= 3 for case in fixture.cases)
+
+    page_counts = {}
+    for document in fixture.documents:
+        path = fixture_path.parent / document.path
+        with fitz.open(path) as pdf:
+            page_counts[document.title] = pdf.page_count
+            assert pdf.page_count == (
+                8 if document.title == "retrieval_work_hard_negatives.pdf" else 4
+            )
+            assert all(len(page.get_text().strip()) >= 100 for page in pdf)
+    assert {
+        case.case_id for case in fixture.cases if case.case_id.startswith("hard-negative-")
+    } == {
+        "hard-negative-sev1-vs-sev2",
+        "hard-negative-production-recovery",
+        "hard-negative-restricted-link",
+        "hard-negative-original-recording",
+    }
+
+    assert all(
+        source.page <= page_counts[source.document]
+        for case in fixture.cases
+        for source in case.relevant_sources
+    )
 
 
 def test_schema_v2_requires_queries_facets_and_answer_claims() -> None:
@@ -148,6 +184,7 @@ def test_markdown_report_and_recall_threshold_use_each_matrix_cell() -> None:
         "fixture": {"name": "fixture", "case_count": 2},
         "run": {
             "completed_at": "2026-08-05T00:00:00+00:00",
+            "reranker": "cross_encoder",
             "iterations_per_case": 1,
             "evaluation_k": 5,
         },
@@ -173,6 +210,7 @@ def test_markdown_report_and_recall_threshold_use_each_matrix_cell() -> None:
     }
 
     markdown = render_markdown(report)
+    assert "- Reranker: `cross_encoder`" in markdown
 
     assert "| balanced | dense | 4 | 0.750 |" in markdown
     assert _quality_failures(report, 0.75) == []

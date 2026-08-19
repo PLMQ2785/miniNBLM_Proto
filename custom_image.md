@@ -7,7 +7,7 @@ Gemma 4 12B·31B 원샷 이미지를 Docker Hub에 게시하고 NVIDIA H200 기�
 두 `linux/amd64` image는 다음 런타임을 포함하지만 Gemma weight는 포함하지 않습니다.
 
 - PostgreSQL 17 및 pgvector
-- BGE-M3 embedding service
+- BGE-M3 embedding 및 BAAI/bge-reranker-v2-m3 cross-encoder service
 - vLLM 0.25.0 및 Gemma 4 호환 patch
 - FastAPI와 Web UI
 - 모델 archive 다운로드·checksum 검증·원자적 설치 도구
@@ -100,7 +100,7 @@ volume은 설치된 모델과 다운로드 중인 Hugging Face snapshot 또는 a
 /data/model-cache    다운로드 중인 snapshot/archive와 lock
 /data/postgres       PostgreSQL data
 /data/uploads        업로드 PDF
-/data/huggingface    BGE-M3 cache
+/data/huggingface    BGE-M3와 reranker cache
 /data/backups        백업 bundle
 /data/logs           서비스 로그
 ```
@@ -140,6 +140,14 @@ MODEL_HF_REPO_ID=<Hugging-Face-owner/repository>
 MODEL_HF_REVISION=<40자리-commit-SHA>
 HF_HOME=/data/huggingface
 
+RERANKER_MODE=embedding
+RERANKER_MODEL=BAAI/bge-reranker-v2-m3
+RERANKER_MODEL_REVISION=953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+RERANKER_DEVICE=cuda
+RERANKER_DTYPE=float16
+RERANKER_BATCH_SIZE=16
+RERANKER_MAX_LENGTH=512
+
 MAX_UPLOAD_BYTES=52428800
 MAX_REQUEST_BODY_BYTES=53477376
 VISION_CAPTION_MODE=disabled
@@ -166,7 +174,6 @@ MODEL_KEEP_ARCHIVE=false
 archive URL은 공유 HTML 페이지가 아니라 `curl -L`로 파일 본문을 받을 수 있어야
 합니다. S3/R2 presigned URL은 Pod 재생성 전에 만료 여부를 확인하고, checksum은
 실제 업로드한 archive에서 계산합니다.
-
 주의사항:
 
 - `NATIVE_DB_PASSWORD`가 기본값 `rag_password`이면 Entrypoint가 실행을 거부합니다.
@@ -174,7 +181,7 @@ archive URL은 공유 HTML 페이지가 아니라 `curl -L`로 파일 본문을 
 - 모델이 이미 완전하게 설치되어 있고 source marker가 일치하면 원격 저장소에 접근하지 않습니다.
 - Hugging Face와 archive 다운로드 모두 `.part` 경로를 재사용해 다음 시작에서 이어받습니다.
 - checksum 불일치 archive는 삭제하며 모델 경로에 설치하지 않습니다.
-- BGE-M3 최초 적재에도 public Hugging Face outbound network가 필요합니다.
+- BGE-M3와 reranker 최초 적재에는 public Hugging Face outbound network가 필요합니다.
 
 Bootstrap 관리자가 필요할 때만 다음 두 변수를 함께 설정합니다.
 
@@ -299,10 +306,17 @@ HF_HOME=/data/huggingface
 
 EMBEDDING_MODEL=BAAI/bge-m3
 EMBEDDING_DEVICE=cuda
+RERANKER_MODE=embedding
+RERANKER_MODEL=BAAI/bge-reranker-v2-m3
+RERANKER_MODEL_REVISION=953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+RERANKER_DEVICE=cuda
+RERANKER_DTYPE=float16
+RERANKER_BATCH_SIZE=16
+RERANKER_MAX_LENGTH=512
 
 VLLM_MODEL_NAME=gemma4
 VLLM_MAX_MODEL_LEN=8192
-VLLM_GPU_MEMORY_UTILIZATION=0.65
+VLLM_GPU_MEMORY_UTILIZATION=0.60
 VLLM_MAX_NUM_SEQS=4
 VLLM_CPU_OFFLOAD_GB=0
 VLLM_TENSOR_PARALLEL_SIZE=1
@@ -373,10 +387,17 @@ HF_HOME=/data/huggingface
 
 EMBEDDING_MODEL=BAAI/bge-m3
 EMBEDDING_DEVICE=cuda
+RERANKER_MODE=embedding
+RERANKER_MODEL=BAAI/bge-reranker-v2-m3
+RERANKER_MODEL_REVISION=953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+RERANKER_DEVICE=cuda
+RERANKER_DTYPE=float16
+RERANKER_BATCH_SIZE=16
+RERANKER_MAX_LENGTH=512
 
 VLLM_MODEL_NAME=gemma4
 VLLM_MAX_MODEL_LEN=8192
-VLLM_GPU_MEMORY_UTILIZATION=0.70
+VLLM_GPU_MEMORY_UTILIZATION=0.65
 VLLM_MAX_NUM_SEQS=8
 VLLM_CPU_OFFLOAD_GB=0
 VLLM_TENSOR_PARALLEL_SIZE=1
@@ -414,16 +435,16 @@ Grok은 image에 포함하지 않으며 첫 실행 후 위 4.1 절의 절차로 
 첫 실행에서 이미지의 31B 기본 등록정보를 `/data/config/llm-endpoints.json`에
 생성합니다.
 
-이 profile의 전제:
+### GPU 동시성 기준
 
-- H200 한 장에서 miniNBLM vLLM 인스턴스 하나와 BGE-M3를 실행합니다.
+- H200 한 장에서 miniNBLM vLLM 인스턴스 하나와 BGE-M3, reranker를 실행합니다.
 - vLLM은 전체 GPU VRAM의 70%를 목표로 사용합니다.
 - 최대 8개 활성 sequence가 동일한 model weight와 KV cache pool을 공유합니다.
 - 요청 8개가 각각 VRAM 70%를 예약하는 구조가 아닙니다.
 - H200 한 장이므로 tensor parallel은 `1`입니다.
 - CPU offload는 사용하지 않습니다.
 
-같은 GPU에 별도 vLLM 프로세스를 추가하면 각 프로세스의 `VLLM_GPU_MEMORY_UTILIZATION`이 중첩됩니다. `0.70`은 miniNBLM vLLM 인스턴스 하나만 실행한다는 전제입니다.
+같은 GPU에 별도 vLLM 프로세스를 추가하면 각 프로세스의 `VLLM_GPU_MEMORY_UTILIZATION`이 중첩됩니다. `0.65`는 miniNBLM vLLM 인스턴스 하나만 실행한다는 전제이며 31B H200에서는 아직 실측하지 않았습니다.
 
 ## 7. 최초 실행과 확인
 
@@ -433,11 +454,12 @@ Grok은 image에 포함하지 않으며 첫 실행 후 위 4.1 절의 절차로 
 2. Entrypoint가 DB 비밀번호와 API endpoint JSON을 검증합니다.
 3. 모델 archive를 이어받고 SHA-256을 검증합니다.
 4. 임시 경로에서 `config.json`과 Safetensors를 확인하고 `/data/models/gemma4`에 설치합니다.
-5. PostgreSQL, BGE-M3와 vLLM을 시작합니다.
+5. PostgreSQL, BGE-M3, reranker와 vLLM을 시작합니다.
 6. Alembic migration 후 API와 Web UI를 시작합니다.
 
-최초 기동은 모델 다운로드·압축 해제, BGE-M3 cache 다운로드와 vLLM model 적재
-때문에 오래 걸립니다. 이후 기동에는 `/data/models/gemma4`를 재사용합니다.
+최초 기동은 모델 다운로드·압축 해제, BGE-M3와 reranker cache 다운로드,
+vLLM model 적재 때문에 오래 걸립니다. 이후 기동에는 `/data/models/gemma4`를
+재사용합니다.
 
 Readiness 확인:
 

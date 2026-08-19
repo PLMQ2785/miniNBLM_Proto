@@ -1670,13 +1670,13 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
 - 비밀번호·사용자명 재확인 후 계정 소유 문서·대화·PDF 원본 회원탈퇴
 - Docker/native PostgreSQL dump와 uploads, manifest, SHA-256을 묶는 백업·복원 스크립트
 - 복합 질문은 고유 `goal_id`가 있는 최대 4개 원자적 근거 목표와 goal별 검색어로
-  계획하고 RRF, 인접 chunk와 BGE-M3 재정렬을 적용
+  계획하고 RRF, 인접 chunk, BGE-M3 또는 cross-encoder 재정렬을 적용
 - goal별 최상위 후보를 보존하고 `supported`/`partial`/`missing`/`contradicted`
   상태와 검증된 Source/Page/chunk를 trace에 저장
 - unresolved goal 표적 검색과 page FTS·trigram 계층 fallback 최대 2회, 빈 재검색 시 Context 보존
 - 문장별 Source/Page 검증, 조건부 인용 보정과 SSE `revision`
 - 7개 복합 Git/라이선스 fixture의 balanced+hybrid Recall@3·MRR@3 `1.0`
-- 빠른 단위/API 통합 테스트 `201 passed`, 실제 모델 E2E `1 skipped`
+- 빠른 단위/API 통합 테스트 `206 passed`, 실제 모델 E2E `1 skipped`
 - 최초 Context를 비운 실제 Gemma 4 강제 테스트에서 최대 2회 검색과 유효 인용 확인
 - API·DB·embedding·LLM 4개 컨테이너 및 `/health/ready` 정상 확인
 - `sample/`의 3개 문서군을 위한 복합·다층 추론 10개 fixture와 격리 benchmark runner
@@ -1711,6 +1711,20 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
   `unchecked` matrix로 fallback하며, 최대 2회 bounded retrieval을 유지
 - visual-only 실패 경계 2개는 각각 3/3 거부·빈 source, 3일 지연 정량 사례는
   `-5% × 3 = -15%`와 모델 불일치 정량 한계를 최종 3/3 보존
+- 고정 revision BAAI/bge-reranker-v2-m3 `/rerank` endpoint, Dense/Hybrid 통합,
+  질의별 후보 보존과 BGE-M3·원검색 순위 2단계 fallback 적용
+- 실제 cross-encoder CPU HTTP smoke에서 관련 passage 점수가 무관 passage보다
+  높음을 확인하고, balanced+hybrid 단회 A/B에서 Recall@3 `1.0`을 유지하며
+  MRR@3 `0.875 → 1.0`, p50 `541.03ms → 7,166.95ms` 측정
+- RTX 3090에서 Gemma 4 12B, BGE-M3와 GPU cross-encoder를 함께 실행하고 실제
+  PDF RAG E2E `1 passed`, rerank 성공 metric 4회와 E2E 후 VRAM 여유 `2,638MiB` 확인
+- 12B vLLM GPU memory 목표를 `0.65 → 0.60`, 미검증 31B H200 예시를
+  `0.70 → 0.65`로 낮춰 reranker용 여유 확보
+- IT 운영·구매·교육·데이터 거버넌스와 의미 중첩 hard negative 5개 문서 24페이지,
+  숫자·기한·한영 혼합·최대 3페이지 근거를 포함한 24개 retrieval fixture
+- RTX 3090에서 embedding/cross-encoder Dense·Hybrid A/B를 각 3회 반복하고 두
+  mode 모두 Recall@5·Hit@5 `1.0`; MRR은 `0.917 → 0.896`, cross-encoder p50은
+  Dense `38.9%`, Hybrid `34.0%` 증가해 보편적 품질 우위가 없음을 확인
 - `run_aio.sh`로 원샷 이미지 build/pull/up/readiness/status/logs/down 경로를 통합하고,
   실제 Web UI 회원가입·Manual 업로드·인덱싱·Gemma 답변과 page source를 확인
 - all-in-one image에서 Gemma 4 weight를 제거하고 12B·31B W4A16 archive를 외부
@@ -1720,7 +1734,7 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
 - 공개 Hugging Face repository의 commit SHA로 고정한 모델 snapshot 이어받기·설치·재사용
 - `chown`이 제한된 volume의 실제 UID로 PostgreSQL을 실행하는 fallback을 12B·31B
   `0.1.4` image에 공통 적용하고 image별 실제 downloader·권한 smoke 검증
-- H200 단일 GPU용 BGE-M3 CUDA, vLLM sequence 8개 31B 배포 설정 유지;
+- H200 단일 GPU용 BGE-M3·cross-encoder CUDA, vLLM sequence 8개 31B 배포 설정 유지;
   이번 변경에서는 31B 기동·추론 미실시
 - `LLM_ENDPOINTS_FILE` JSON을 endpoint 허용 목록으로 사용하고 모든 로그인 사용자가
   작업공간에서 자신의 언어모델을 검증·전환하며 DB에 보존해 세 실행 방식에 공통 적용

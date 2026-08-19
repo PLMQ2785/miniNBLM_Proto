@@ -4,8 +4,9 @@ from math import sqrt
 import time
 
 from app.clients.embedding_client import EmbeddingClient
+from app.clients.reranker_client import RerankerClient
+from app.config import settings
 from app.observability import RERANK_DURATION, RERANK_REQUESTS
-
 
 logger = logging.getLogger(__name__)
 
@@ -27,25 +28,46 @@ def rerank_rows(
         return []
 
     started_at = time.perf_counter()
+    status = "success"
     try:
         rerank_queries = _normalize_rerank_queries(question, queries)
         goal_query_indexes = _goal_query_indexes(rerank_queries, goal_query_groups)
-        query_embeddings = EmbeddingClient().embed_queries(rerank_queries)
-        reranked = _rerank_with_embeddings(
-            query_embeddings,
-            rows,
-            top_k,
-            goal_query_indexes,
-        )
+        if settings.reranker_mode == "cross_encoder":
+            try:
+                reranked = _rerank_with_cross_encoder(
+                    rerank_queries,
+                    rows,
+                    top_k,
+                    goal_query_indexes,
+                )
+            except Exception:
+                logger.warning(
+                    "Cross-encoder reranking failed; using embedding reranking",
+                    exc_info=True,
+                )
+                status = "fallback"
+                query_embeddings = EmbeddingClient().embed_queries(rerank_queries)
+                reranked = _rerank_with_embeddings(
+                    query_embeddings,
+                    rows,
+                    top_k,
+                    goal_query_indexes,
+                )
+        else:
+            query_embeddings = EmbeddingClient().embed_queries(rerank_queries)
+            reranked = _rerank_with_embeddings(
+                query_embeddings,
+                rows,
+                top_k,
+                goal_query_indexes,
+            )
     except Exception:
         logger.warning("Semantic reranking failed; preserving retrieval rank", exc_info=True)
-        RERANK_REQUESTS.labels(status="fallback").inc()
-        return list(rows[:top_k])
-    else:
-        RERANK_REQUESTS.labels(status="success").inc()
-        return reranked
-    finally:
-        RERANK_DURATION.observe(time.perf_counter() - started_at)
+        status = "fallback"
+        reranked = list(rows[:top_k])
+    RERANK_REQUESTS.labels(status=status).inc()
+    RERANK_DURATION.observe(time.perf_counter() - started_at)
+    return reranked
 
 
 def _normalize_rerank_queries(question: str, queries) -> list[str]:
@@ -97,6 +119,33 @@ def _rerank_with_embeddings(
             for query_embedding in query_embeddings
         ]
         for chunk, _, _ in rows
+    ]
+    return _select_rows(query_scores_by_row, rows, top_k, goal_query_indexes)
+
+
+def _rerank_with_cross_encoder(
+    queries: list[str],
+    rows,
+    top_k: int,
+    goal_query_indexes: Sequence[tuple[str, Sequence[int]]] = (),
+):
+    if not queries:
+        raise ValueError("At least one reranking query is required")
+    pairs = [
+        (query, chunk.content)
+        for query in queries
+        for chunk, _, _ in rows
+    ]
+    scores = RerankerClient().score_pairs(pairs)
+    expected_score_count = len(queries) * len(rows)
+    if len(scores) != expected_score_count:
+        raise ValueError("Cross-encoder returned an invalid score count")
+    query_scores_by_row = [
+        [
+            min(1.0, max(0.0, float(scores[query_index * len(rows) + row_index])))
+            for query_index in range(len(queries))
+        ]
+        for row_index in range(len(rows))
     ]
     return _select_rows(query_scores_by_row, rows, top_k, goal_query_indexes)
 

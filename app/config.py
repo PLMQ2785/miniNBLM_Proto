@@ -107,6 +107,8 @@ class Settings(BaseSettings):
 
     embedding_base_url: str = "http://localhost:8070"
     embedding_model: str = "BAAI/bge-m3"
+    reranker_mode: Literal["embedding", "cross_encoder"] = "embedding"
+    reranker_base_url: str | None = None
 
 
     llm_endpoints_file: Path = Path("config/llm-endpoints.json")

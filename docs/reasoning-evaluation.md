@@ -365,7 +365,7 @@ fallback은 잘못된 `missing` 판정으로 확인 가능한 정량 근거를 �
 보수적이다. unresolved goal만 재검색하며 전체 제어 흐름의 추가 retrieval action은
 hierarchical fallback을 포함해 최대 2회다.
 
-`balanced + hybrid`, 19개 PDF combined corpus에서 과거 실패 경계
+`balanced + hybrid + cross_encoder`, 19개 PDF combined corpus에서 과거 실패 경계
 사례를 반복했다.
 
 | 사례 | 반복 결과 | 판정 |

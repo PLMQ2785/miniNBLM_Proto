@@ -1,0 +1,234 @@
+{
+  "schema_version": 2,
+  "name": "work-education-retrieval-v1",
+  "description": "IT 운영, 구매, 교육 운영, 데이터 거버넌스 문서의 단일·복수 근거와 한영 혼합 retrieval 평가",
+  "documents": [
+    {"path": "retrieval_work_incident_response.pdf", "title": "retrieval_work_incident_response.pdf"},
+    {"path": "retrieval_work_procurement.pdf", "title": "retrieval_work_procurement.pdf"},
+    {"path": "retrieval_education_course_policy.pdf", "title": "retrieval_education_course_policy.pdf"},
+    {"path": "retrieval_work_data_governance.pdf", "title": "retrieval_work_data_governance.pdf"},
+    {"path": "retrieval_work_hard_negatives.pdf", "title": "retrieval_work_hard_negatives.pdf"}
+  ],
+  "cases": [
+    {
+      "case_id": "sev1-ack-deadline",
+      "question": "고객 서비스 30%가 중단된 경보를 받았다. 장애 등급과 당직자의 최초 응답 시한은?",
+      "retrieval_queries": ["고객 서비스 30% 중단 장애 등급", "SEV-1 당직 ACK 시한"],
+      "relevant_sources": [{"document": "retrieval_work_incident_response.pdf", "page": 1}],
+      "evidence_facets": [{"facet_id": "severity-ack", "description": "30% 이상 중단은 SEV-1이며 10분 안에 ACK한다.", "relevant_sources": [{"document": "retrieval_work_incident_response.pdf", "page": 1}]}],
+      "required_answer_claims": ["SEV-1으로 분류한다.", "경보 후 10분 안에 ACK한다."]
+    },
+    {
+      "case_id": "containment-before-reimage",
+      "question": "침해 의심 서버를 빨리 재설치하기 전에 반드시 해야 할 격리와 포렌식 조치는 무엇인가?",
+      "retrieval_queries": ["침해 의심 서버 재설치 전 격리", "reimage 전 메모리 디스크 감사 로그 보존"],
+      "relevant_sources": [{"document": "retrieval_work_incident_response.pdf", "page": 2}],
+      "evidence_facets": [{"facet_id": "contain-preserve", "description": "호스트를 네트워크에서 격리하고 재설치 전에 증거를 보존한다.", "relevant_sources": [{"document": "retrieval_work_incident_response.pdf", "page": 2}]}],
+      "required_answer_claims": ["호스트를 네트워크에서 격리한다.", "메모리, 디스크와 감사 로그를 재설치 전에 보존한다."]
+    },
+    {
+      "case_id": "recovery-observation-reset",
+      "question": "복구 뒤 오류율이 25분 동안 낮았지만 잠시 1.2%가 되었다. 완료 판정까지 어떻게 해야 하나?",
+      "retrieval_queries": ["복구 완료 오류율 30분 연속 1% 미만", "관찰 중 오류율 1% 이상 시간 재계산"],
+      "relevant_sources": [{"document": "retrieval_work_incident_response.pdf", "page": 3}],
+      "evidence_facets": [{"facet_id": "recovery-window", "description": "오류율 1% 미만을 30분 연속 충족해야 하고 위반 시 다시 계산한다.", "relevant_sources": [{"document": "retrieval_work_incident_response.pdf", "page": 3}]}],
+      "required_answer_claims": ["관찰 시간을 처음부터 다시 계산한다.", "오류율 1% 미만을 30분 연속 확인한다."]
+    },
+    {
+      "case_id": "postincident-action-accountability",
+      "question": "SEV-1 사후 검토 초안과 개선 action item이 유효하려면 어떤 시간·책임 정보가 필요한가?",
+      "retrieval_queries": ["SEV-1 post incident review 초안 기한", "action item owner 완료 기한"],
+      "relevant_sources": [{"document": "retrieval_work_incident_response.pdf", "page": 4}],
+      "evidence_facets": [{"facet_id": "pir-actions", "description": "2영업일 안에 초안을 작성하고 각 조치에 owner와 기한을 둔다.", "relevant_sources": [{"document": "retrieval_work_incident_response.pdf", "page": 4}]}],
+      "required_answer_claims": ["종료 후 2영업일 안에 초안을 작성한다.", "개선 항목마다 한 명의 owner와 완료 기한을 기록한다."]
+    },
+    {
+      "case_id": "procurement-quote-band",
+      "question": "부가세 제외 320만원 구매에서 필요한 견적 수와, 금액을 쪼개 처리해도 되는지 알려줘.",
+      "retrieval_queries": ["320만원 구매 서면 견적 수", "구매 금액 분할 기준 회피 금지"],
+      "relevant_sources": [{"document": "retrieval_work_procurement.pdf", "page": 1}],
+      "evidence_facets": [{"facet_id": "quote-threshold", "description": "100만원 이상 500만원 미만은 3개 견적이 필요하고 분할 회피는 금지된다.", "relevant_sources": [{"document": "retrieval_work_procurement.pdf", "page": 1}]}],
+      "required_answer_claims": ["세 곳의 서면 견적을 비교한다.", "기준 회피를 위한 주문 분할은 금지된다."]
+    },
+    {
+      "case_id": "conflict-disclosure-recusal",
+      "question": "평가자가 후보 업체에 최근 근무한 사실을 공개했다면 그대로 점수를 매겨도 되나?",
+      "retrieval_queries": ["공급업체 최근 고용 관계 이해충돌 공개", "이해충돌 평가자 점수 부여 업체 선정 회피"],
+      "relevant_sources": [{"document": "retrieval_work_procurement.pdf", "page": 2}],
+      "evidence_facets": [{"facet_id": "recusal", "description": "관계를 공개하고 평가에서 빠져 독립 평가자로 교체해야 한다.", "relevant_sources": [{"document": "retrieval_work_procurement.pdf", "page": 2}]}],
+      "required_answer_claims": ["최근 고용 관계를 서면 공개한다.", "당사자는 평가와 선정에서 빠지고 독립 평가자가 검토한다."]
+    },
+    {
+      "case_id": "sole-source-prerequisites",
+      "question": "납기가 급하다는 이유만으로 단독 공급 계약을 바로 발주할 수 있는가? 필요한 사전 근거는?",
+      "retrieval_queries": ["납기 긴급 단독 공급 자동 승인 여부", "단독 구매 기술 사유 시장 조사 재무 사전 승인"],
+      "relevant_sources": [{"document": "retrieval_work_procurement.pdf", "page": 3}],
+      "evidence_facets": [{"facet_id": "sole-source-evidence", "description": "긴급 일정만으로는 부족하며 기술 사유, 시장 조사와 재무 승인이 필요하다.", "relevant_sources": [{"document": "retrieval_work_procurement.pdf", "page": 3}]}],
+      "required_answer_claims": ["일정이 촉박하다는 사정만으로 자동 승인되지 않는다.", "발주 전에 기술적 사유, 시장 조사와 재무 책임자 승인을 남긴다."]
+    },
+    {
+      "case_id": "three-way-match-block",
+      "question": "invoice는 도착했지만 입고 기록의 수량이 다르다. 지급 통제상 다음 조치는?",
+      "retrieval_queries": ["invoice 입고 기록 수량 불일치 지급", "PO 검수 invoice 3-way match"],
+      "relevant_sources": [{"document": "retrieval_work_procurement.pdf", "page": 4}],
+      "evidence_facets": [{"facet_id": "payment-match", "description": "PO, 입고 기록, invoice가 일치하지 않으면 지급을 보류한다.", "relevant_sources": [{"document": "retrieval_work_procurement.pdf", "page": 4}]}],
+      "required_answer_claims": ["3-way match로 세 자료를 대조한다.", "차이를 해결할 때까지 지급을 보류한다."]
+    },
+    {
+      "case_id": "attendance-approved-absence",
+      "question": "질병 결석을 공결로 심사받기 위한 증빙 기한과 공결이 면제하지 않는 의무는?",
+      "retrieval_queries": ["질병 결석 공결 증빙 제출 기한", "공결 승인 과제 제출 의무"],
+      "relevant_sources": [{"document": "retrieval_education_course_policy.pdf", "page": 1}],
+      "evidence_facets": [{"facet_id": "absence-evidence", "description": "7일 안에 증빙을 내야 하며 공결도 과제 의무를 없애지 않는다.", "relevant_sources": [{"document": "retrieval_education_course_policy.pdf", "page": 1}]}],
+      "required_answer_claims": ["결석일부터 7일 안에 증빙을 제출한다.", "공결 승인은 과제 제출 의무를 면제하지 않는다."]
+    },
+    {
+      "case_id": "late-penalty-vs-extension",
+      "question": "과제를 이틀 늦게 낸 경우와 마감 전에 연장 승인을 받은 경우의 감점 차이는?",
+      "retrieval_queries": ["과제 이틀 지각 제출 감점", "마감 전 extension 승인 감점 없음"],
+      "relevant_sources": [{"document": "retrieval_education_course_policy.pdf", "page": 2}],
+      "evidence_facets": [{"facet_id": "late-extension", "description": "무승인 지각은 일 10% 감점이고 사전 승인 연장은 새 기한까지 감점하지 않는다.", "relevant_sources": [{"document": "retrieval_education_course_policy.pdf", "page": 2}]}],
+      "required_answer_claims": ["사전 승인 없이 이틀 늦으면 20% 감점한다.", "마감 전 승인된 연장은 새 기한까지 감점하지 않는다."]
+    },
+    {
+      "case_id": "peer-review-revision-note",
+      "question": "프로젝트 동료 댓글 두 개만 받으면 검토가 끝나는가? 수정본 제출 계약까지 설명해줘.",
+      "retrieval_queries": ["동료 두 명 peer review revision note", "마지막 검토 후 48시간 수정본"],
+      "relevant_sources": [{"document": "retrieval_education_course_policy.pdf", "page": 3}],
+      "evidence_facets": [{"facet_id": "peer-revision", "description": "두 명의 검토와 피드백별 revision note, 48시간 내 수정본이 필요하다.", "relevant_sources": [{"document": "retrieval_education_course_policy.pdf", "page": 3}]}],
+      "required_answer_claims": ["서로 다른 동료 두 명의 검토가 필요하다.", "피드백별 반영 여부를 기록하고 마지막 검토 후 48시간 안에 수정본을 낸다."]
+    },
+    {
+      "case_id": "makeup-exam-window",
+      "question": "When is a learner eligible for a make-up exam, and what is the application deadline?",
+      "retrieval_queries": ["make-up exam eligible documented illness emergency", "대체 시험 신청 5영업일"],
+      "relevant_sources": [{"document": "retrieval_education_course_policy.pdf", "page": 4}],
+      "evidence_facets": [{"facet_id": "makeup-eligibility", "description": "문서화된 사유가 있어야 하고 시험일부터 5영업일 안에 신청한다.", "relevant_sources": [{"document": "retrieval_education_course_policy.pdf", "page": 4}]}],
+      "required_answer_claims": ["문서로 확인되는 질병, 가족상 또는 시스템 장애가 허용 사유다.", "정규 시험일부터 5영업일 안에 신청한다."]
+    },
+    {
+      "case_id": "data-classification-recording",
+      "question": "원본 고객 상담 녹취와 미공개 재무 정보는 각각 어느 정보 등급인가?",
+      "retrieval_queries": ["원본 고객 녹취 정보 등급", "미공개 재무 정보 classification"],
+      "relevant_sources": [{"document": "retrieval_work_data_governance.pdf", "page": 1}],
+      "evidence_facets": [{"facet_id": "classification-levels", "description": "원본 녹취는 Restricted, 미공개 재무는 Confidential이다.", "relevant_sources": [{"document": "retrieval_work_data_governance.pdf", "page": 1}]}],
+      "required_answer_claims": ["원본 고객 녹취는 Restricted다.", "미공개 재무 정보는 Confidential이다."]
+    },
+    {
+      "case_id": "restricted-sharing-controls",
+      "question": "How may Restricted data be shared with an external named recipient, and how long can the link remain active?",
+      "retrieval_queries": ["Restricted data external named recipient encrypted link MFA", "Restricted 공유 링크 만료 24시간 소유자 승인"],
+      "relevant_sources": [{"document": "retrieval_work_data_governance.pdf", "page": 2}],
+      "evidence_facets": [{"facet_id": "secure-sharing", "description": "승인 후 MFA 암호화 링크를 지정 수신자에게 최대 24시간 제공한다.", "relevant_sources": [{"document": "retrieval_work_data_governance.pdf", "page": 2}]}],
+      "required_answer_claims": ["자료 소유자 승인을 받고 지정 수신자에게 MFA 암호화 링크로 공유한다.", "링크 만료는 최대 24시간이다."]
+    },
+    {
+      "case_id": "recording-retention-legal-hold",
+      "question": "생성 후 100일 된 고객 원본 녹취가 legal hold 상태라면 삭제해야 하나?",
+      "retrieval_queries": ["고객 원본 녹취 90일 자동 삭제", "legal hold 보존 기간 삭제 예외"],
+      "relevant_sources": [{"document": "retrieval_work_data_governance.pdf", "page": 3}],
+      "evidence_facets": [{"facet_id": "hold-overrides-retention", "description": "90일 기본 보존보다 legal hold가 우선해 해제 전까지 삭제하지 않는다.", "relevant_sources": [{"document": "retrieval_work_data_governance.pdf", "page": 3}]}],
+      "required_answer_claims": ["기본 보존 기간은 90일이다.", "legal hold가 있으면 해제 통지까지 삭제하지 않는다."]
+    },
+    {
+      "case_id": "restricted-exposure-reporting",
+      "question": "Restricted 정보 노출이 아직 확정되지 않았을 때 신고 시점과 현장에서 하지 말아야 할 행동은?",
+      "retrieval_queries": ["Restricted 노출 의심 SOC 신고 15분", "노출 의심 자체 조사 로그 삭제 금지"],
+      "relevant_sources": [{"document": "retrieval_work_data_governance.pdf", "page": 4}],
+      "evidence_facets": [{"facet_id": "report-without-tampering", "description": "확정을 기다리지 않고 15분 내 신고하며 로그나 파일을 변경하지 않는다.", "relevant_sources": [{"document": "retrieval_work_data_governance.pdf", "page": 4}]}],
+      "required_answer_claims": ["발견 후 15분 안에 SOC에 신고한다.", "자체 조사 목적으로 로그를 삭제하거나 파일을 수정하지 않는다."]
+    },
+    {
+      "case_id": "conflicted-reviewer-restricted-bid",
+      "question": "최근 근무했던 외부 업체를 평가하는 사람이 Restricted 등급 입찰 자료를 업체 담당자에게 보내려 한다. 평가와 공유 전에 각각 무엇이 필요한가?",
+      "retrieval_queries": ["최근 고용 공급업체 이해충돌 평가 회피", "Restricted 외부 수신자 소유자 승인 MFA 암호화 링크"],
+      "relevant_sources": [
+        {"document": "retrieval_work_procurement.pdf", "page": 2},
+        {"document": "retrieval_work_data_governance.pdf", "page": 2}
+      ],
+      "evidence_facets": [
+        {"facet_id": "reviewer-recusal", "description": "관계를 공개하고 평가에서 빠져야 한다.", "relevant_sources": [{"document": "retrieval_work_procurement.pdf", "page": 2}]},
+        {"facet_id": "external-restricted-share", "description": "소유자 승인 후 지정 수신자에게 MFA 암호화 링크로 공유한다.", "relevant_sources": [{"document": "retrieval_work_data_governance.pdf", "page": 2}]}
+      ],
+      "required_answer_claims": ["평가자는 관계를 공개하고 선정 평가에서 빠진다.", "자료 소유자 승인 후 MFA 암호화 링크로 지정 수신자에게 공유한다."]
+    },
+    {
+      "case_id": "exposure-preservation-hold",
+      "question": "고객 녹취 유출이 의심되어 서버를 조사한다. 신고, 서버 처리, 녹취 삭제 정책을 함께 적용하면 어떤 순서와 예외가 필요한가?",
+      "retrieval_queries": ["고객 녹취 Restricted 노출 SOC 15분 신고", "침해 서버 네트워크 격리 재설치 전 증거 보존", "고객 원본 녹취 90일 legal hold 삭제 예외"],
+      "relevant_sources": [
+        {"document": "retrieval_work_incident_response.pdf", "page": 2},
+        {"document": "retrieval_work_data_governance.pdf", "page": 3},
+        {"document": "retrieval_work_data_governance.pdf", "page": 4}
+      ],
+      "evidence_facets": [
+        {"facet_id": "exposure-report", "description": "의심 발견 후 15분 안에 SOC에 신고한다.", "relevant_sources": [{"document": "retrieval_work_data_governance.pdf", "page": 4}]},
+        {"facet_id": "server-evidence", "description": "서버를 격리하고 초기화 전에 증거를 보존한다.", "relevant_sources": [{"document": "retrieval_work_incident_response.pdf", "page": 2}]},
+        {"facet_id": "recording-hold", "description": "90일 보존이 기본이나 legal hold 시 해제 전까지 삭제하지 않는다.", "relevant_sources": [{"document": "retrieval_work_data_governance.pdf", "page": 3}]}
+      ],
+      "required_answer_claims": ["15분 안에 SOC에 신고한다.", "서버를 격리하고 재설치 전에 증거를 보존한다.", "legal hold가 있으면 90일이 지나도 녹취를 삭제하지 않는다."]
+    },
+    {
+      "case_id": "sev1-through-recovery",
+      "question": "대규모 고객 장애를 SEV-1으로 접수한 시점부터 트래픽 복귀 완료까지 필요한 응답·승인·관찰 조건은?",
+      "retrieval_queries": ["SEV-1 30% 중단 ACK 10분", "rollback 트래픽 복귀 공동 승인", "오류율 1% 미만 30분 연속"],
+      "relevant_sources": [
+        {"document": "retrieval_work_incident_response.pdf", "page": 1},
+        {"document": "retrieval_work_incident_response.pdf", "page": 3}
+      ],
+      "evidence_facets": [
+        {"facet_id": "incident-ack", "description": "SEV-1 경보를 10분 안에 ACK한다.", "relevant_sources": [{"document": "retrieval_work_incident_response.pdf", "page": 1}]},
+        {"facet_id": "recovery-gate", "description": "공동 승인 후 오류율 1% 미만을 30분 연속 관찰한다.", "relevant_sources": [{"document": "retrieval_work_incident_response.pdf", "page": 3}]}
+      ],
+      "required_answer_claims": ["경보 후 10분 안에 ACK하고 incident channel을 연다.", "변경 담당자와 incident commander가 함께 복귀를 승인한다.", "오류율 1% 미만을 30분 연속 확인한다."]
+    },
+    {
+      "case_id": "learner-exception-deadlines",
+      "question": "질병으로 수업과 정규 시험을 빠지고 과제 연장도 필요한 학습자가 놓치지 말아야 할 세 가지 신청 시점은?",
+      "retrieval_queries": ["질병 공결 증빙 결석 후 7일", "과제 extension 마감 전 승인", "make-up exam 시험 후 5영업일"],
+      "relevant_sources": [
+        {"document": "retrieval_education_course_policy.pdf", "page": 1},
+        {"document": "retrieval_education_course_policy.pdf", "page": 2},
+        {"document": "retrieval_education_course_policy.pdf", "page": 4}
+      ],
+      "evidence_facets": [
+        {"facet_id": "absence-deadline", "description": "공결 증빙은 결석 후 7일 안에 낸다.", "relevant_sources": [{"document": "retrieval_education_course_policy.pdf", "page": 1}]},
+        {"facet_id": "extension-deadline", "description": "무감점 연장은 과제 마감 전에 승인받는다.", "relevant_sources": [{"document": "retrieval_education_course_policy.pdf", "page": 2}]},
+        {"facet_id": "makeup-deadline", "description": "대체 시험은 정규 시험 후 5영업일 안에 신청한다.", "relevant_sources": [{"document": "retrieval_education_course_policy.pdf", "page": 4}]}
+      ],
+      "required_answer_claims": ["공결 증빙은 결석 후 7일 안에 제출한다.", "과제 연장은 마감 전에 승인받는다.", "대체 시험은 정규 시험일부터 5영업일 안에 신청한다."]
+    },
+    {
+      "case_id": "hard-negative-sev1-vs-sev2",
+      "question": "실제 고객 요청 30%가 완전히 중단된 경우 훈련용 SEV-2 성능 저하 기준이 아니라 적용할 등급과 ACK 시한은?",
+      "retrieval_queries": ["실제 고객 요청 30% 완전 중단 SEV-1", "SEV-1 ACK 10분 SEV-2 30분 아님"],
+      "relevant_sources": [{"document": "retrieval_work_incident_response.pdf", "page": 1}],
+      "evidence_facets": [{"facet_id": "production-sev1", "description": "실제 30% 이상 중단은 SEV-1이며 10분 안에 ACK한다.", "relevant_sources": [{"document": "retrieval_work_incident_response.pdf", "page": 1}]}],
+      "required_answer_claims": ["SEV-1으로 분류한다.", "10분 안에 ACK한다.", "SEV-2 훈련 예시의 30분 기준을 적용하지 않는다."]
+    },
+    {
+      "case_id": "hard-negative-production-recovery",
+      "question": "운영 트래픽 복귀에서 staging의 단독 승인·10분 관찰이 아니라 필요한 승인 주체와 연속 관찰 조건은?",
+      "retrieval_queries": ["운영 트래픽 복귀 공동 승인", "운영 오류율 1% 미만 30분 연속"],
+      "relevant_sources": [{"document": "retrieval_work_incident_response.pdf", "page": 3}],
+      "evidence_facets": [{"facet_id": "production-recovery-gate", "description": "운영 복귀는 공동 승인과 30분 연속 오류율 기준이 필요하다.", "relevant_sources": [{"document": "retrieval_work_incident_response.pdf", "page": 3}]}],
+      "required_answer_claims": ["변경 담당자와 incident commander가 함께 승인한다.", "오류율 1% 미만을 30분 연속 확인한다."]
+    },
+    {
+      "case_id": "hard-negative-restricted-link",
+      "question": "Restricted 원본 고객 자료를 외부인에게 공유할 때 Confidential 자료의 72시간 기준 대신 적용할 통제와 만료 시간은?",
+      "retrieval_queries": ["Restricted 외부 공유 자료 소유자 승인", "Restricted MFA 암호화 링크 최대 24시간"],
+      "relevant_sources": [{"document": "retrieval_work_data_governance.pdf", "page": 2}],
+      "evidence_facets": [{"facet_id": "restricted-not-confidential", "description": "Restricted 자료에는 외부 승인, MFA 링크와 24시간 상한을 적용한다.", "relevant_sources": [{"document": "retrieval_work_data_governance.pdf", "page": 2}]}],
+      "required_answer_claims": ["자료 소유자 승인을 받는다.", "지정 수신자에게 MFA 암호화 링크로 공유한다.", "만료 시간은 최대 24시간이다."]
+    },
+    {
+      "case_id": "hard-negative-original-recording",
+      "question": "익명 집계 통계의 365일 규칙과 구분하여 Restricted 원본 고객 녹취의 기본 보존 기간과 legal hold 예외를 설명해줘.",
+      "retrieval_queries": ["Restricted 원본 고객 녹취 기본 90일", "원본 녹취 legal hold 삭제 예외"],
+      "relevant_sources": [{"document": "retrieval_work_data_governance.pdf", "page": 3}],
+      "evidence_facets": [{"facet_id": "original-recording-retention", "description": "원본 녹취는 90일 보존하며 legal hold가 우선한다.", "relevant_sources": [{"document": "retrieval_work_data_governance.pdf", "page": 3}]}],
+      "required_answer_claims": ["원본 고객 녹취의 기본 보존 기간은 90일이다.", "legal hold가 있으면 해제 전까지 삭제하지 않는다.", "익명 통계의 365일 기준을 적용하지 않는다."]
+    }
+  ]
+}

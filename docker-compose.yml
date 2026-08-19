@@ -32,6 +32,8 @@ services:
       EMBEDDING_BASE_URL: http://127.0.0.1:8070
       LLM_ENDPOINTS_FILE: /app/config/llm-endpoints.json
       XAI_API_KEY: ${XAI_API_KEY:-}
+      RERANKER_MODE: ${RERANKER_MODE:-embedding}
+      RERANKER_BASE_URL: ${RERANKER_BASE_URL:-http://127.0.0.1:8070}
       VISION_CAPTION_MODE: ${VISION_CAPTION_MODE:-disabled}
       VISION_CAPTION_DPI: ${VISION_CAPTION_DPI:-144}
       VISION_CAPTION_VERSION: ${VISION_CAPTION_VERSION:-gemma4-page-caption-v1}
@@ -67,6 +69,12 @@ services:
     network_mode: host
     environment:
       EMBEDDING_MODEL: BAAI/bge-m3
+      RERANKER_MODEL: ${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}
+      RERANKER_MODEL_REVISION: ${RERANKER_MODEL_REVISION:-953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e}
+      RERANKER_DEVICE: ${RERANKER_DEVICE:-}
+      RERANKER_DTYPE: ${RERANKER_DTYPE:-float16}
+      RERANKER_BATCH_SIZE: ${RERANKER_BATCH_SIZE:-16}
+      RERANKER_MAX_LENGTH: ${RERANKER_MAX_LENGTH:-512}
     volumes:
       - hf_cache:/root/.cache/huggingface
 
@@ -91,7 +99,7 @@ services:
       - --max-model-len
       - ${VLLM_MAX_MODEL_LEN:-8192}
       - --gpu-memory-utilization
-      - ${VLLM_GPU_MEMORY_UTILIZATION:-0.65}
+      - ${VLLM_GPU_MEMORY_UTILIZATION:-0.60}
       - --max-num-seqs
       - ${VLLM_MAX_NUM_SEQS:-4}
       - --limit-mm-per-prompt.image

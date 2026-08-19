@@ -123,9 +123,32 @@ Dense와 Hybrid는 각 고정 retrieval query를 독립 goal로 취급해 1위 �
 초기 검색의 `top_k × 3` 후보를 재정렬한다. 실제 채팅에서는 query planner가 최대
 4개의 고유 `goal_id`, 원자적 설명, goal별 검색어를 생성한다. 최종 후보 수는 goal
 수보다 작아지지 않으며 goal별 최상위 후보를 하나 이상 유지한다.
-BGE-M3 cosine 관련성 80%와 기존 후보 순위 20%를 결합한다. 관련성은 원질문
-70%와 goal 검색어 최대값 30%로 구성하며 Keyword와 Substring은 선택한 알고리즘의
-순수 순위를 유지한다. BGE-M3 호출 실패 시 기존 검색 순위로 fallback한다.
+`RERANKER_MODE=embedding`은 BGE-M3 cosine을, `cross_encoder`는
+BAAI/bge-reranker-v2-m3 query/passage relevance를 사용한다. 두 모드 모두 relevance
+80%와 기존 후보 순위 20%를 결합하고, relevance는 원질문 70%와 goal 검색어 최대값
+30%로 구성한다. Keyword와 Substring은 선택한 알고리즘의 순수 순위를 유지한다.
+Cross-encoder 실패 시 BGE-M3 재정렬, BGE-M3도 실패하면 기존 순위로 fallback한다.
+
+동일 fixture의 A/B 비교는 다른 인자를 고정하고 모드만 바꿔 실행한다.
+
+```bash
+RERANKER_MODE=embedding ./scripts/benchmark-retrieval.sh --preset balanced --algorithm hybrid
+RERANKER_MODE=cross_encoder ./scripts/benchmark-retrieval.sh --preset balanced --algorithm hybrid
+```
+
+보고서 `run.reranker`와 Markdown `Reranker` 항목에 실행 모드가 기록된다.
+
+2026-08-18 CPU 단회 결과(`balanced + hybrid`, warmup 0, 질문별 1회, K=3):
+
+| Mode | Recall@3 | Hit@3 | MRR@3 | p50 ms | p95 ms |
+|---|---:|---:|---:|---:|---:|
+| `embedding` | 1.000 | 1.000 | 0.875 | 541.03 | 585.73 |
+| `cross_encoder` | 1.000 | 1.000 | 1.000 | 7,166.95 | 8,707.06 |
+
+Cross-encoder가 이 작은 fixture의 1위 정렬은 개선했지만 CPU p50은 약 13.2배
+증가했다. RTX 3090의 12B profile에서는 GPU cross-encoder로 실제 RAG E2E를
+통과했다. 31B profile은 같은 reranker 품질을 전제로 설정만 반영했으며 H200
+지연과 전체 문서 fixture는 아직 측정하지 않았다.
 
 실제 채팅 경로는 각 goal을 `supported`, `partial`, `missing`, `contradicted`로
 판정한다. 판정 LLM은 goal ID와 chunk ID만 반환하고 서버가 실제 검색 Context에서
@@ -152,3 +175,51 @@ p50은 `219.52 ms`, p95는 `265.54 ms`였으며, 소형 corpus의 단일 실행 
 ```bash
 uv run python scripts/generate_multihop_retrieval_fixture_pdfs.py
 ```
+
+## 업무·교육 문서 확장 평가
+
+`evaluation/retrieval_work_education.json`은 간호·Git·라이선스에 치우친 기존
+fixture를 다음 5개 업무·교육 문서, 24페이지로 확장한다.
+
+- IT incident response: SEV-1, 증거 보존, 복구 gate, 사후 검토
+- 구매 통제: 견적 구간, 이해충돌, 단독 공급, 3-way match
+- 교육 운영: 공결, 지각 제출과 연장, peer review, 대체 시험
+- 데이터 거버넌스: 정보 등급, Restricted 공유, 보존, 노출 신고
+- 의미 중첩 hard negative: 폐기 정책, 훈련·staging·Confidential·익명 통계의
+  유사 수치와 실제 운영 정책을 구분
+
+24개 case에는 숫자·기한 구분, 간접 표현, 영문 질문에서 한국어 근거 검색,
+2~3페이지 복수 근거와 hard-negative 4건이 포함된다. PDF와 fixture 계약은
+다음 명령으로 재생성·검증한다.
+
+```bash
+uv run python scripts/generate_work_education_retrieval_fixture_pdfs.py
+uv run pytest -q tests/unit/test_retrieval_evaluation.py
+```
+
+동일 조건의 embedding/cross-encoder A/B를 기본 3회 반복하려면 다음 명령을
+사용한다. `RERANKER_AB_REPEATS`와 `RERANKER_AB_FIXTURE`로 반복 수와 fixture를
+바꿀 수 있다.
+
+```bash
+./scripts/benchmark-reranker-ab.sh
+```
+
+2026-08-19 RTX 3090 GPU 확장 결과는 `balanced`, Dense/Hybrid, 질문별 warmup
+1회와 측정 3회, `K=5` 조건의 독립 A/B 3회 평균이다. 원본 보고서는
+`20260819T014906Z`부터 `20260819T015408Z`까지 여섯 JSON/Markdown 파일이다.
+
+| Mode | Algorithm | Recall@5 | Hit@5 | MRR@5 | p50 ms | p95 ms |
+|---|---|---:|---:|---:|---:|---:|
+| `embedding` | Dense | 1.000 | 1.000 | 0.917 | 182.33 | 222.58 |
+| `cross_encoder` | Dense | 1.000 | 1.000 | 0.896 | 253.19 | 322.23 |
+| `embedding` | Hybrid | 1.000 | 1.000 | 0.917 | 214.33 | 271.18 |
+| `cross_encoder` | Hybrid | 1.000 | 1.000 | 0.896 | 287.19 | 367.33 |
+
+두 mode 모두 모든 정답 근거를 K=5 안에 회수했지만 hard-negative 4건은 실제 정책
+페이지가 모두 2위였다. Cross-encoder는 폐기된 320만원 구매 예제를 현행 정책보다
+앞세워 `procurement-quote-band`도 2위로 낮추면서 MRR이 `0.917 → 0.896`으로
+감소했다. 평균 p50은 embedding 대비 Dense `38.9%`, Hybrid `34.0%` 높았다.
+따라서 이 fixture는 전용 reranker의 보편적 품질 우위를 입증하지 않으며 embedding
+fallback을 유지해야 한다. 다음 비교는 negation·정책 유효성 판별을 별도 학습한
+reranker 또는 goal-aware contradiction 점수를 대상으로 해야 한다.

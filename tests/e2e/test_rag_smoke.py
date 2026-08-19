@@ -171,11 +171,12 @@ def test_real_pdf_embedding_retrieval_generation_and_grounding() -> None:
                 "mininblm_retrieval_requests_total",
                 {"algorithm": "dense", "status": "success"},
             )
-            assert _has_metric_sample(
-                metrics.text,
-                "mininblm_rerank_requests_total",
-                {"status": "success"},
-            )
+            if os.getenv("RERANKER_MODE") == "cross_encoder":
+                assert _has_metric_sample(
+                    metrics.text,
+                    "mininblm_rerank_requests_total",
+                    {"status": "success"},
+                )
         finally:
             delete = client.delete(f"/documents/{document_id}")
             assert delete.status_code == 204

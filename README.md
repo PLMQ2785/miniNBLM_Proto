@@ -9,7 +9,7 @@ PDF 문서를 업로드하고, 문서에 근거한 답변과 실제로 인용한
 Browser
   -> api        FastAPI API + Vanilla HTML/CSS/JS Web UI
        -> db    PostgreSQL 17 + pgvector
-       -> embedding  BGE-M3 embedding service
+       -> embedding  BGE-M3 embedding + BGE reranker cross-encoder service
        -> llm   vLLM OpenAI-compatible Gemma 4 endpoint
 ```
 
@@ -41,9 +41,9 @@ Caption은 페이지당 이미지 1장을 순차 처리하므로 큰 PDF의 최�
 
 ## 원샷 통합 컨테이너
 
-`Dockerfile.all-in-one`은 PostgreSQL 17+pgvector, BGE-M3, vLLM 0.25.0,
-Gemma 4 호환 patch, FastAPI와 Web UI를 이미지 하나에 넣되 모델 weight는 포함하지
-않습니다. 컨테이너 내부에서는
+`Dockerfile.all-in-one`은 PostgreSQL 17+pgvector, BGE-M3,
+BAAI/bge-reranker-v2-m3, vLLM 0.25.0, Gemma 4 호환 patch, FastAPI와 Web UI를
+이미지 하나에 넣되 모델 weight는 포함하지 않습니다. 컨테이너 내부에서는
 DB·embedding·LLM은 loopback에만 bind하고 API만
 `0.0.0.0:8080`에 공개합니다.
 
@@ -66,7 +66,7 @@ archive를 이어받아 SHA-256을 검증합니다. `config.json`과 Safetensors
 뒤에만 `/data/models/gemma4`로 원자적으로 설치합니다. 이후 기동은 `/data`의
 설치된 모델을 재사용하므로 다시 다운로드하지 않습니다.
 
-운영 데이터, 모델, 업로드 PDF, BGE-M3 cache와 로그는 `mininblm_data` volume에
+운영 데이터, 모델, 업로드 PDF, BGE-M3·reranker cache와 로그는 `mininblm_data` volume에
 보존됩니다. `NATIVE_DB_PASSWORD`는 기본값 사용을 거부하므로
 `.env.all-in-one`에서 반드시 변경해야 합니다. 모델 weight가 Docker build context와
 image layer에서 제외되어 12B·31B image는 런타임 코드 차이만 가집니다.
@@ -95,10 +95,11 @@ docker push cpsu/mininblm:0.1.4-gemma4-31b-w4a16
 AIO_ENV_FILE=.env.all-in-one-31b ./run_aio.sh --no-build
 ```
 
-31B 환경 예시의 기본 배포 대상은 NVIDIA H200 1장입니다. BGE-M3도 GPU에서
-실행하며 vLLM VRAM 목표는 `0.70`, 최대 활성 sequence는 8개입니다. 이 31B 조합은
-이번 변경에서 기동하거나 추론하지 않았습니다. `VLLM_MAX_NUM_SEQS`는 전체 사용자
-수가 아니라 동시에 GPU scheduler에 올라가는 요청 수의 상한입니다.
+31B 환경 예시의 기본 배포 대상은 NVIDIA H200 1장입니다. BGE-M3와
+BAAI/bge-reranker-v2-m3 cross-encoder도 GPU에서 실행하도록 구성했으며 vLLM
+VRAM 목표를 기존 70%에서 65%로 낮췄습니다. 최대 8개 활성 sequence를 사용하지만,
+이 31B 조합은 이번 변경에서 기동하거나 추론하지 않았습니다. `VLLM_MAX_NUM_SEQS`는
+전체 사용자 수가 아니라 동시에 GPU scheduler에 올라가는 요청 수의 상한입니다.
 
 ```bash
 docker compose --env-file .env.all-in-one \
@@ -344,10 +345,40 @@ retrieval 지연을 비교할 때는 다음 명령을 사용합니다. LLM은 �
 ./scripts/benchmark-retrieval.sh
 ```
 
-Dense와 Hybrid 후보는 기존 BGE-M3 cosine으로 재정렬합니다. 관련성 점수는
-원질문 70%와 goal 검색어의 최대값 30%를 결합하고, 최종 점수는 이 관련성 80%와
-기존 검색 순위 20%를 사용합니다. 고유 `goal_id`별 최상위 후보를 최종 Context에
-하나 이상 보존하며 embedding 재정렬 실패 시 기존 검색 순위를 유지합니다.
+`RERANKER_MODE`를 지정하지 않거나 배포 예시를 그대로 사용할 때는 `embedding`이며
+기존 BGE-M3 cosine 재정렬을 유지합니다. `cross_encoder`는 A/B 실험을 위한
+명시적 opt-in입니다. 같은 fixture와 인자를 유지하고 모드만 바꾸면 각
+JSON/Markdown 보고서의 `Reranker` 필드에 실행 모드가 기록됩니다.
+
+```bash
+RERANKER_MODE=embedding ./scripts/benchmark-retrieval.sh
+RERANKER_MODE=cross_encoder ./scripts/benchmark-retrieval.sh
+```
+
+`cross_encoder`는 후보 query/passage를 BAAI/bge-reranker-v2-m3로 직접 채점하고
+고유 `goal_id`별 검색 후보를 최종 Context에 하나 이상 보존합니다. 서비스 오류나
+timeout이면 기존 BGE-M3 재정렬로 자동 fallback합니다.
+
+2026-08-18 CPU 단회 비교(`balanced + hybrid`, K=3, 8질문)는 두 모드 모두
+Recall/Hit `1.000`이었고 MRR은 `0.875 → 1.000`으로 개선됐습니다. CPU retrieval
+p50은 `541.03ms → 7,166.95ms`로 약 13.2배 증가했습니다. 이후 RTX 3090에서
+Gemma 4 12B, BGE-M3와 cross-encoder를 함께 실행해 실제 RAG E2E가 통과했고,
+vLLM VRAM 목표 60%에서 E2E 후 GPU 메모리는 `21,685 / 24,576MiB`,
+여유는 `2,638MiB`였습니다. 31B는 같은 reranker 품질을 전제로 설정만 반영했으며
+실행 검증하지 않았습니다.
+
+업무·교육 5개 문서, 24페이지와 의미 중첩 hard negative를 포함한 24개 case를
+대상으로 두 reranker를 3회 반복 비교하려면 다음 명령을 사용합니다.
+
+```bash
+./scripts/benchmark-reranker-ab.sh
+```
+
+2026-08-19 RTX 3090 확장 결과에서 두 mode의 Dense/Hybrid Recall@5·Hit@5는
+모두 `1.000`이었습니다. MRR@5는 embedding `0.917`, cross-encoder `0.896`으로
+cross-encoder가 개선하지 못했습니다. 평균 p50도 embedding 대비 Dense `38.9%`,
+Hybrid `34.0%` 높았습니다. 세부 fixture와 측정값은
+`docs/retrieval-evaluation.md`에 기록합니다.
 
 로컬 `sample/`의 실제 PDF를 사용해 복합·다층 추론과 text-only 한계를
 문서군별로 평가할 때는 다음 명령을 사용합니다. 실제 embedding과 LLM을
@@ -406,7 +437,7 @@ curl -N -b session.cookie \
 - 일반 사용자 비밀번호 변경·다른 세션 폐기와 사용자 소유 데이터 회원탈퇴
 - 명시적 관리자 bootstrap, 최초 로그인 비밀번호 변경 강제와 관리자 지원 비밀번호 재설정
 - pgvector Dense, PostgreSQL FTS, pg_trgm 및 RRF Hybrid 검색
-- Dense/Hybrid 후보의 BGE-M3 cosine 재정렬과 goal별 최상위 후보 보존
+- Dense/Hybrid 후보의 선택적 BAAI/bge-reranker-v2-m3 cross-encoder 재정렬과 BGE-M3 fallback
 - 로그인 사용자의 모든 indexed 문서를 대상으로 하는 작업공간 RAG 검색
 - 좌표 기반 PDF 텍스트 순서, 반복 머리말·꼬리말 제거와 표 행·열 보존
 - 페이지별 시각 의존도 감지, 선택적 Gemma 4 구조화 caption과 시각 근거가 검색되지

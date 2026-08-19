@@ -4,7 +4,7 @@
 
 - 기준일: 2026-08-19 (Asia/Seoul)
 - 프로젝트: 사용자 PDF 기반 범용 RAG Assistant
-- 현재 단계: 1차 MVP, Vision caption, native/all-in-one 배포와 goal 기반 근거 검색 완료
+- 현재 단계: 1차 MVP, Vision caption, native/all-in-one 배포와 선택적 전용 cross-encoder reranker 완료
 - 패키지 관리: `uv`
 - 런타임: 4-container Compose, 단일 all-in-one container, 또는 `run-native.sh`
 - Web UI: React 없이 FastAPI가 Vanilla HTML/CSS/JavaScript 정적 파일 제공
@@ -12,8 +12,19 @@
 
 최근 검증 결과:
 
-- 빠른 단위/API 통합 테스트: `201 passed`, 실제 모델 E2E `1 skipped`
-- RTX 3090에서 Gemma 4 12B + BGE-M3 실제 RAG E2E: `1 passed`
+- 빠른 단위/API 통합 테스트: `206 passed`, 실제 모델 E2E `1 skipped`
+- RTX 3090에서 Gemma 4 12B + BGE-M3 + cross-encoder 실제 RAG E2E: `1 passed`
+- 실제 BAAI/bge-reranker-v2-m3 고정 revision을 CPU에서 적재하고 `/rerank` HTTP
+  pair relevance가 관련 passage `0.049126`, 무관 passage `0.0000165`로 분리됨을 확인
+- 실제 retrieval A/B(`balanced + hybrid`, K=3, 8질문, CPU 단회): Recall/Hit
+  `1.000` 유지, MRR `0.875 → 1.000`, p50 `541.03ms → 7,166.95ms`
+- 업무·교육 5개 문서 24페이지, 숫자·기한·한영 혼합·최대 3페이지 근거와
+  의미 중첩 hard-negative를 포함한 24개 retrieval fixture
+- RTX 3090에서 `balanced` Dense/Hybrid A/B를 각 3회 반복한 결과 두 mode 모두
+  Recall@5·Hit@5 `1.000`; MRR은 embedding `0.917`, cross-encoder `0.896`
+- Cross-encoder 평균 p50은 embedding 대비 Dense `38.9%`, Hybrid `34.0%` 증가
+- 12B vLLM GPU memory 목표 `0.60`에서 E2E 후 VRAM `21,685 / 24,576MiB`,
+  여유 `2,638MiB`; rerank metric `status="success"` 4회 확인
 - 실제 Gemma 4 planner 11개 reasoning fixture 응답을 모두 원자적 goal plan으로 복구;
   의미가 보존된 JSON field 손상은 정규화하고 알 수 없는 goal/chunk ID는 추측하지 않음
 - visual-only 실패 경계 2개를 각각 3회 실행해 거부·빈 source 6/6, 3일 지연 정량
@@ -43,9 +54,9 @@
   `0.1.4-gemma4-12b-w4a16`, `0.1.4-gemma4-31b-w4a16` 세 개
 - 31B image에도 Hugging Face snapshot downloader와 제한된 volume UID fallback을
   적용하고 실제 snapshot·권한 smoke 및 runtime 계약을 검증
-- 31B H200 profile은 vLLM GPU memory `0.70`, 활성 sequence 8개를 사용한다.
-  이번 변경에서는 31B를 기동·추론하지 않았으며 기존 image build/snapshot 계약
-  검증 외 readiness와 생성 요청은 미검증이다.
+- 31B H200 profile은 동일 cross-encoder를 사용하고 vLLM GPU memory를 기존
+  `0.70`에서 `0.65`로 낮췄다. 이번 변경에서는 31B를 기동·추론하지 않았으며,
+  기존 image build/snapshot 계약 검증 외 readiness와 생성 요청은 미검증이다.
 - API 이미지: `6,555,721,208` bytes에서 `206,676,250` bytes로 약 96.8% 감소
 - API 이미지의 Torch/Sentence Transformers/Transformers 제거 및 embedding 이미지의
   Torch/Sentence Transformers 유지 확인
@@ -151,7 +162,7 @@
 Browser
   -> api:8080
        -> db:5433             PostgreSQL 17 + pgvector
-       -> embedding:8070      BGE-M3 embedding
+       -> embedding:8070      BGE-M3 embedding + BGE reranker
        -> llm:8010            vLLM + Gemma 4 12B W4A16
 ```
 
@@ -159,7 +170,7 @@ Browser
 |---|---|---|---|
 | `api` | `0.0.0.0:8080` | FastAPI, Web UI, 문서 처리 조정 | 아니요 |
 | `db` | `127.0.0.1:5433` | PostgreSQL 17, pgvector | 아니요 |
-| `embedding` | `127.0.0.1:8070` | BGE-M3 embedding HTTP API | 예 |
+| `embedding` | `127.0.0.1:8070` | BGE-M3 embedding 및 BGE reranker HTTP API | 예 |
 | `llm` | `127.0.0.1:8010` | vLLM OpenAI-compatible API | 예 |
 
 배포 단위를 줄여야 할 때는 `Dockerfile.all-in-one`이 네 논리 서비스를 컨테이너
@@ -175,11 +186,13 @@ WSL mirrored networking에서 Docker bridge port가 Windows localhost로 전달�
 
 - Embedding model: `BAAI/bge-m3`
 - Embedding dimension: `1024`
+- Reranker: `BAAI/bge-reranker-v2-m3`, revision `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`
+- 12B/31B 배포 profile mode: `cross_encoder`; config 미지정 fallback: `embedding`
 - LLM: Gemma 4 12B instruction model, W4A16 compressed-tensors 양자화
 - 기본 모델 경로: `./google/gemma-4-12B-it-W4A16`
 - vLLM Docker/native version: `0.25.0`
 - 기본 max model length: `8192`
-- 12B GPU memory utilization: `0.65`; 31B H200 예시: `0.70`(미검증)
+- 12B GPU memory utilization: `0.60`; 31B H200 예시: `0.65`(미검증)
 - 기본 max sequences: `4`
 - readiness 구성요소별 timeout: `3초`
 
@@ -245,8 +258,9 @@ quantization patch를 적용한다. `latest` 재빌드에서 model config 호환
   독립형 retrieval query를 생성하며, 최종 답변과 저장에는 원문 질문을 유지
 - 복합 질문은 고유 `goal_id`가 있는 최대 4개 원자적 근거 목표와 goal별 검색어로
   계획하고 RRF로 병합한다.
-- Dense/Hybrid 후보는 BGE-M3 cosine과 기존 검색 순위를 결합해 재정렬하고,
-  goal별 최상위 후보를 하나 이상 보존한다. BGE-M3 호출 실패 시 기존 순위를 유지한다.
+- Dense/Hybrid 후보는 `RERANKER_MODE=embedding`에서 BGE-M3 cosine,
+  `cross_encoder`에서 전용 query/passage relevance와 기존 순위로 재정렬한다.
+  두 모드 모두 goal별 최상위 후보를 보존하며 cross-encoder 오류 시 BGE-M3로 fallback한다.
 - 근거 충족도는 각 goal을 `supported`, `partial`, `missing`, `contradicted`로 판정하고
   서버가 실제 chunk ID에서 문서명과 페이지를 검증해 매핑한다. unresolved goal만 표적
   chunk 검색하며 page FTS·trigram 계층 fallback과 합쳐 최대 2회 재검색한다.
@@ -544,7 +558,7 @@ Docker 경로에서 확인했다.
 | `app/storage/local_storage.py` | 로컬 PDF 저장소 |
 | `app/services/upload_validation.py` | PDF 업로드 검증 |
 | `app/static/` | Vanilla JS Web UI |
-| `embedding_service/` | BGE-M3 embedding HTTP 서비스 |
+| `embedding_service/` | BGE-M3 embedding 및 BGE reranker HTTP 서비스 |
 | `alembic/versions/` | DB migration |
 | `tests/unit/` | DB 불필요 단위 테스트 |
 | `tests/integration/` | 격리 DB API 통합 테스트 |
@@ -558,6 +572,11 @@ Docker 경로에서 확인했다.
 - 모든 질문은 구조화 검색 계획 LLM 호출이 1회 추가되고, 검색 결과가 있으면 goal별
   근거 충족도 호출도 1회 추가된다. 부족 판정이 지속되면 unresolved goal의 표적 chunk
   검색과 page 계층 fallback을 합쳐 최대 2회, 충족도 판정은 최대 3회 수행한다.
+- `cross_encoder`는 후보 수 × 원질문·goal 검색어 수만큼 pair를 채점하므로 기존
+  BGE-M3 재정렬보다 GPU 연산과 지연이 증가한다. CPU 단회 A/B에서 MRR은
+  `0.875 → 1.000`으로 개선됐지만 p50은 약 13.2배 증가했다. 12B RTX 3090
+  E2E와 메모리 여유는 검증했지만 H200 31B GPU p95와 전체 문서 fixture 품질은
+  아직 측정 전이다.
 - 답변에 문장별 유효 인용이 빠졌을 때만 인용 보정 LLM 호출이 최대 1회
   추가된다. 완전한 인용 답변과 자료 부재 답변은 보정 호출을 생략한다.
 - 문서 처리와 재인덱싱이 API process의 background task를 사용한다.
