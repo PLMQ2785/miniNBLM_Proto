@@ -38,8 +38,9 @@
   DB·embedding·LLM readiness가 모두 `ok`인 startup smoke 확인
 - 원샷 Web UI에서 회원가입, Manual 19페이지 업로드·인덱싱, 실제 Gemma 답변과
   5·18페이지 source 표시 확인
-- Gemma 4 31B 직접 양자화 W4A16 checkpoint와
-  `cpsu/mininblm:0.1.3-gemma4-31b-w4a16` 배포 image 추가
+- Gemma 4 31B 직접 양자화 W4A16 checkpoint 추가
+- `0.1.4` release tag는 `cpsu/mininblm:0.1.4`,
+  `0.1.4-gemma4-12b-w4a16`, `0.1.4-gemma4-31b-w4a16` 세 개
 - 31B image에도 Hugging Face snapshot downloader와 제한된 volume UID fallback을
   적용하고 실제 snapshot·권한 smoke 및 runtime 계약을 검증
 - 31B H200 profile은 vLLM GPU memory `0.70`, 활성 sequence 8개를 사용한다.

@@ -53,18 +53,17 @@ Persistent application data: /data
 
 ## 2. Docker Hub 게시
 
-Docker Hub namespace가 `mininblm`이 아니면 실제 계정 또는 organization으로 retag합니다.
+현재 release namespace는 `cpsu/mininblm`이며 12B 기본 tag와 variant tag는 같은
+image를 가리킵니다.
 
 ```bash
-docker tag mininblm/all-in-one:0.1.0 \
-  <dockerhub-user>/mininblm:0.1.0
-
-docker tag mininblm/all-in-one:0.1.0-gemma4-31b-w4a16 \
-  <dockerhub-user>/mininblm:0.1.0-gemma4-31b-w4a16
+docker tag cpsu/mininblm:0.1.4 \
+  cpsu/mininblm:0.1.4-gemma4-12b-w4a16
 
 docker login
-docker push <dockerhub-user>/mininblm:0.1.0
-docker push <dockerhub-user>/mininblm:0.1.0-gemma4-31b-w4a16
+docker push cpsu/mininblm:0.1.4
+docker push cpsu/mininblm:0.1.4-gemma4-12b-w4a16
+docker push cpsu/mininblm:0.1.4-gemma4-31b-w4a16
 ```
 
 Private repository라면 RunPod Template에 Docker Hub registry credentials를
@@ -272,13 +271,13 @@ cd /app
 ### Image
 
 ```text
-mininblm/all-in-one:0.1.0
+cpsu/mininblm:0.1.4
 ```
 
 또는 retag한 image:
 
 ```text
-<dockerhub-user>/mininblm:0.1.3-gemma4-12b-w4a16
+<dockerhub-user>/mininblm:0.1.4-gemma4-12b-w4a16
 ```
 
 ### RunPod Raw 환경변수 전체 목록
@@ -346,13 +345,13 @@ Bootstrap 두 변수는 일회성 테스트에서 유지해도 되며, 장기 �
 ### Image
 
 ```text
-cpsu/mininblm:0.1.3-gemma4-31b-w4a16
+cpsu/mininblm:0.1.4-gemma4-31b-w4a16
 ```
 
 또는 retag한 image:
 
 ```text
-<dockerhub-user>/mininblm:0.1.3-gemma4-31b-w4a16
+<dockerhub-user>/mininblm:0.1.4-gemma4-31b-w4a16
 ```
 
 ### RunPod Raw 환경변수 전체 목록

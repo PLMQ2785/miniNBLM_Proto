@@ -1719,7 +1719,7 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
   Docker Hub pull과 재시작 비용을 분리
 - 공개 Hugging Face repository의 commit SHA로 고정한 모델 snapshot 이어받기·설치·재사용
 - `chown`이 제한된 volume의 실제 UID로 PostgreSQL을 실행하는 fallback을 12B·31B
-  `0.1.3` image에 공통 적용하고 image별 실제 downloader·권한 smoke 검증
+  `0.1.4` image에 공통 적용하고 image별 실제 downloader·권한 smoke 검증
 - H200 단일 GPU용 BGE-M3 CUDA, vLLM sequence 8개 31B 배포 설정 유지;
   이번 변경에서는 31B 기동·추론 미실시
 - `LLM_ENDPOINTS_FILE` JSON을 endpoint 허용 목록으로 사용하고 모든 로그인 사용자가

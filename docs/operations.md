@@ -112,10 +112,10 @@ stop/restart 시 초기화되므로 영속 운영에서는 외부 PostgreSQL을 
 ```bash
 docker compose --env-file .env.all-in-one \
   -f docker-compose.all-in-one.yml build mininblm
-docker tag mininblm/all-in-one:0.1.0 <account>/mininblm:0.1.0
+docker tag cpsu/mininblm:0.1.4 cpsu/mininblm:0.1.4-gemma4-12b-w4a16
 docker login
-docker push <account>/mininblm:0.1.0
-```
+docker push cpsu/mininblm:0.1.4
+docker push cpsu/mininblm:0.1.4-gemma4-12b-w4a16
 
 #### Gemma 4 31B W4A16 variant
 
@@ -131,7 +131,7 @@ cp .env.all-in-one-31b.example .env.all-in-one-31b
 # NATIVE_DB_PASSWORD, MODEL_ARCHIVE_URL, MODEL_ARCHIVE_SHA256, GPU 설정을 변경
 docker compose --env-file .env.all-in-one-31b \
   -f docker-compose.all-in-one.yml build mininblm
-docker push <account>/mininblm:0.1.0-gemma4-31b-w4a16
+docker push cpsu/mininblm:0.1.4-gemma4-31b-w4a16
 
 # 원격 서버
 AIO_ENV_FILE=.env.all-in-one-31b ./run_aio.sh pull

@@ -4,10 +4,11 @@ services:
       context: .
       dockerfile: Dockerfile.all-in-one
       args:
+        MININBLM_IMAGE_VERSION: ${MININBLM_IMAGE_VERSION:-0.1.4}
         MININBLM_MODEL_VARIANT: ${MININBLM_MODEL_VARIANT:-gemma4-12b-w4a16}
         MININBLM_MODEL_DISPLAY_NAME: ${MININBLM_MODEL_DISPLAY_NAME:-Gemma 4 12B W4A16}
         MININBLM_LLM_CONFIG_SOURCE: ${MININBLM_LLM_CONFIG_FILE:-config/llm-endpoints.json}
-    image: ${MININBLM_ALL_IN_ONE_IMAGE:-mininblm/all-in-one:0.1.0}
+    image: ${MININBLM_ALL_IN_ONE_IMAGE:-cpsu/mininblm:0.1.4}
     gpus: all
     ipc: host
     network_mode: host
