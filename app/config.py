@@ -103,9 +103,11 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://rag_user:rag_password@localhost:5433/rag_db"
     upload_dir: str = "./data/uploads"
     max_upload_bytes: int = Field(default=50 * 1024 * 1024, ge=1)
+    max_request_body_bytes: int = Field(default=51 * 1024 * 1024, ge=1)
 
     embedding_base_url: str = "http://localhost:8070"
     embedding_model: str = "BAAI/bge-m3"
+
 
     llm_endpoints_file: Path = Path("config/llm-endpoints.json")
     llm_configuration: LLMConfiguration = Field(exclude=True)
@@ -140,6 +142,13 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @model_validator(mode="after")
+    def validate_request_body_limit(self) -> "Settings":
+        if self.max_request_body_bytes <= self.max_upload_bytes:
+            raise ValueError("MAX_REQUEST_BODY_BYTES must be greater than MAX_UPLOAD_BYTES")
+        return self
+
 
     @model_validator(mode="after")
     def validate_bootstrap_administrator(self) -> "Settings":

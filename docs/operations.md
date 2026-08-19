@@ -228,10 +228,11 @@ NATIVE_LLM_HEALTH_URL=https://llm.example/v1/models
 | `MODEL_ARCHIVE_SHA256` | 없음 | 모델 archive의 필수 SHA-256 checksum |
 | `MODEL_KEEP_ARCHIVE` | `false` | 설치 성공 후 다운로드 archive를 `/data/model-cache`에 유지할지 여부 |
 | `VLLM_MAX_MODEL_LEN` | `8192` | 최대 sequence length |
-| `VLLM_GPU_MEMORY_UTILIZATION` | `0.65` | vLLM이 사용할 GPU 메모리 비율 |
+| `VLLM_GPU_MEMORY_UTILIZATION` | `0.65` | 12B vLLM GPU 메모리 목표 |
 | `VLLM_MAX_NUM_SEQS` | `4` | vLLM scheduler가 동시에 처리할 최대 활성 sequence 수 |
 | `LLM_ENDPOINTS_FILE` | `config/llm-endpoints.json` | OpenAI 호환 endpoint 허용 목록 JSON 경로 |
 | `MAX_UPLOAD_BYTES` | `52428800` | 서버가 허용하는 PDF 파일 최대 바이트 수 |
+| `MAX_REQUEST_BODY_BYTES` | `53477376` | 50MiB PDF와 multipart overhead를 허용하는 전체 HTTP request body 상한 |
 | `READINESS_TIMEOUT_SECONDS` | `3` | readiness 구성요소별 최대 점검 시간(초) |
 | `LOG_LEVEL` | `INFO` | API JSON 구조화 로그 수준 |
 | 활성 retrieval preset | `balanced` | DB에서 관리하며 기본 `top_k=8`, 청크 `1000/150` |
@@ -311,11 +312,10 @@ VRAM을 예약하지 않습니다. 반대로 같은 GPU에서 vLLM 인스턴스�
 각 인스턴스의 비율이 중첩되므로 합계와 embedding 등 외부 GPU 사용량을 함께
 제한해야 합니다.
 
-31B H200 환경 예시는 `EMBEDDING_DEVICE=cuda`,
-`VLLM_GPU_MEMORY_UTILIZATION=0.70`, `VLLM_MAX_NUM_SEQS=8`,
-`VLLM_TENSOR_PARALLEL_SIZE=1`을 사용합니다. `8`은 성능 최댓값이 아니라 초기
-동시성 상한이며, 실제 부하에서 대기 요청, TTFT, 생성 속도, KV cache 사용률과
-preemption을 확인한 뒤 `12`, `16`과 비교합니다.
+12B RTX 3090 profile은 `VLLM_GPU_MEMORY_UTILIZATION=0.65`,
+`VLLM_MAX_NUM_SEQS=4`를 사용합니다. 31B H200 profile은 각각 `0.70`, `8`을
+사용하며 `VLLM_TENSOR_PARALLEL_SIZE=1`입니다. 31B 조합은 이번 변경에서 실행
+검증하지 않았습니다.
 
 `5433`을 다른 PostgreSQL이 사용 중이면 `.env`에서 `MININBLM_DB_PORT`를 변경한다.
 Compose는 API 연결 주소에도 같은 포트를 적용한다. 비컨테이너 실행은
@@ -417,19 +417,26 @@ API 시작 시 전역 재인덱싱 작업이 없다면 `uploaded` 또는 `proces
 
 검색 알고리즘은 청킹 preset과 독립적으로 선택합니다. `dense`는 BGE-M3와
 pgvector cosine 검색, `keyword`는 PostgreSQL FTS, `substring`은 pg_trgm,
-`hybrid`는 세 결과의 Reciprocal Rank Fusion을 사용합니다. FTS와 trigram
-인덱스는 상시 유지하므로 알고리즘 변경은 문서 재인덱싱 없이 즉시 적용됩니다.
+`hybrid`는 세 결과의 Reciprocal Rank Fusion을 사용합니다. Dense와 Hybrid 후보는
+BGE-M3 cosine으로 재정렬합니다. 관련성 점수는 원질문 70%와 goal 검색어 최대값
+30%를 결합하고, 최종 점수는 관련성 80%와 기존 검색 순위 20%를 사용합니다.
+goal별 최상위 후보를 하나 이상 보존하며 BGE-M3 호출 실패 시 기존 검색 순위를
+유지합니다. FTS와 trigram 인덱스는 상시 유지하므로 검색 알고리즘 변경에는 문서
+재인덱싱이 필요하지 않습니다.
 
 `uploaded` 또는 `processing` 상태의 문서는 background indexing과 충돌하지
 않도록 삭제 요청에 HTTP 409를 반환합니다. `indexed`와 `failed` 문서를
 삭제하면 관련 pages, chunks, 해당 문서에 직접 연결된 기존 chat session과 원본
 파일 디렉터리를 함께 제거합니다. 작업공간 chat session은 유지됩니다.
 
-PDF 업로드는 `.pdf` 파일명과 PDF MIME type을 모두 요구합니다. 저장 중
-`MAX_UPLOAD_BYTES`를 넘으면 HTTP 413을 반환하고, `%PDF-` 시그니처가 없거나
-PyMuPDF가 열 수 없는 손상 파일 또는 암호화된 파일은 HTTP 400을 반환합니다.
-거절된 업로드의 문서 DB 행과 부분 저장 파일은 즉시 정리됩니다. 텍스트가 없는
-정상 PDF는 업로드 자체는 허용하지만 인덱싱 단계에서 `failed`로 전환됩니다.
+PDF 업로드는 `.pdf` 파일명과 PDF MIME type을 모두 요구합니다.
+`MAX_REQUEST_BODY_BYTES`를 넘는 전체 HTTP body는 form parsing 전에 HTTP 413으로
+거절합니다. `MAX_UPLOAD_BYTES`를 넘는 PDF도 저장 중 HTTP 413을 반환합니다. 기본
+request 상한은 51MiB이므로 50MiB PDF와 multipart overhead를 함께 허용합니다.
+`%PDF-` 시그니처가 없거나 PyMuPDF가 열 수 없는 손상 파일 또는 암호화된 파일은
+HTTP 400을 반환합니다. 거절된 업로드의 문서 DB 행과 부분 저장 파일은 즉시
+정리됩니다. 텍스트가 없는 정상 PDF는 업로드 자체는 허용하지만 인덱싱 단계에서
+`failed`로 전환됩니다.
 
 `POST /chat` 요청과 응답의 최소 형태는 다음과 같습니다.
 
@@ -600,8 +607,8 @@ Free memory ... is less than desired GPU memory utilization
 ```
 
 다른 GPU 프로세스를 종료하거나 `.env`의 `VLLM_GPU_MEMORY_UTILIZATION`을
-낮춥니다. 공통 12B 기본값은 embedding service와의 공존을 고려한 `0.65`이고,
-31B H200 환경 예시는 한 vLLM 인스턴스에 `0.70`을 할당합니다.
+낮춥니다. 12B RTX 3090 profile 기본값은 `0.65`, 31B H200 환경 예시는
+`0.70`입니다.
 
 ### KV cache 부족
 
@@ -677,9 +684,9 @@ RUNTIME_MODE=native ./restore.sh --yes backups/mininblm-backup-<timestamp>.tar.g
   사용자 질문 최대 500자와 직전 답변 최대 1,000자를 참고해 독립형 질문과 최대
   4개의 검색 질의를 만듭니다. 계획 실패 시 원문 질문 하나로 검색합니다.
 - 모든 질문은 검색 계획용 LLM 호출이 1회 추가됩니다. Dense와 Hybrid는 최대
-  `top_k × 3` 후보를 원 질문과 하위 질의의 BGE-M3 유사도로 재정렬하므로 batch
-  embedding 호출도 1회 추가됩니다. 하위 질의별 1위 검색·의미 후보를 보존하며,
-  재정렬 실패 시 기존 검색 순위를 사용합니다.
+  `top_k × 3` 후보를 원 질문과 goal 검색어로 BGE-M3 재정렬합니다. 원질문
+  embedding 70%와 goal 검색어 최대값 30%를 결합하며 goal별 최상위 후보를
+  보존합니다. BGE-M3 호출 실패 시 기존 검색 순위로 fallback합니다.
 - 검색 결과가 있으면 근거 충족도 LLM 호출이 1회 추가됩니다. 부족 판정이
   계속되면 표적 chunk 검색과 page 계층 fallback을 합쳐 최대 2회 재시도하고 각
   결과를 다시 판정하므로 충족도 호출은 최대 3회입니다. page fallback은 최대
@@ -722,7 +729,7 @@ RUNTIME_MODE=native ./restore.sh --yes backups/mininblm-backup-<timestamp>.tar.g
 - API 재시작 후 중단된 재인덱싱 작업의 자동 복구
 - API 재시작 후 `uploaded/processing` PDF의 자동 재인덱싱과 누락 원본 실패 처리
 - Dense, FTS Keyword, pg_trgm Substring과 RRF Hybrid 검색 결과
-- 다중 질의 RRF, 인접 청크 확장과 BGE-M3 원 질문 semantic reranker
+- 다중 질의 RRF, 인접 청크 확장과 goal별 후보를 보존하는 BGE-M3 재정렬
 - 복합 질의 근거 충족도 판정, 표적·페이지 계층 재검색 최대 2회와 Context 보존
 - 사용자별 page FTS·trigram 범위 탐색, 질의별 page anchor와 BGE-M3 chunk 재정렬
 - 답변별 retrieval trace metadata, 구조화 로그와 관리자 조회 API

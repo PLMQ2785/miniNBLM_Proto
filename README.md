@@ -9,7 +9,7 @@ PDF 문서를 업로드하고, 문서에 근거한 답변과 실제로 인용한
 Browser
   -> api        FastAPI API + Vanilla HTML/CSS/JS Web UI
        -> db    PostgreSQL 17 + pgvector
-       -> embedding  BAAI/bge-m3 embedding service
+       -> embedding  BGE-M3 embedding service
        -> llm   vLLM OpenAI-compatible Gemma 4 endpoint
 ```
 
@@ -43,7 +43,8 @@ Caption은 페이지당 이미지 1장을 순차 처리하므로 큰 PDF의 최�
 
 `Dockerfile.all-in-one`은 PostgreSQL 17+pgvector, BGE-M3, vLLM 0.25.0,
 Gemma 4 호환 patch, FastAPI와 Web UI를 이미지 하나에 넣되 모델 weight는 포함하지
-않습니다. 컨테이너 내부에서는 DB·embedding·LLM은 loopback에만 bind하고 API만
+않습니다. 컨테이너 내부에서는
+DB·embedding·LLM은 loopback에만 bind하고 API만
 `0.0.0.0:8080`에 공개합니다.
 
 공개 Hugging Face model repository와 변경되지 않는 40자리 commit SHA를 설정합니다.
@@ -94,9 +95,9 @@ AIO_ENV_FILE=.env.all-in-one-31b ./run_aio.sh --no-build
 ```
 
 31B 환경 예시의 기본 배포 대상은 NVIDIA H200 1장입니다. BGE-M3도 GPU에서
-실행하며, 단일 vLLM 인스턴스에 VRAM의 70%를 할당하고 최대 8개 활성 sequence를
-continuous batching으로 처리합니다. `VLLM_MAX_NUM_SEQS`는 전체 사용자 수가
-아니라 동시에 GPU scheduler에 올라가는 요청 수의 상한입니다.
+실행하며 vLLM VRAM 목표는 `0.70`, 최대 활성 sequence는 8개입니다. 이 31B 조합은
+이번 변경에서 기동하거나 추론하지 않았습니다. `VLLM_MAX_NUM_SEQS`는 전체 사용자
+수가 아니라 동시에 GPU scheduler에 올라가는 요청 수의 상한입니다.
 
 ```bash
 docker compose --env-file .env.all-in-one \
@@ -341,6 +342,11 @@ retrieval 지연을 비교할 때는 다음 명령을 사용합니다. LLM은 �
 ./scripts/benchmark-retrieval.sh
 ```
 
+Dense와 Hybrid 후보는 기존 BGE-M3 cosine으로 재정렬합니다. 관련성 점수는
+원질문 70%와 goal 검색어의 최대값 30%를 결합하고, 최종 점수는 이 관련성 80%와
+기존 검색 순위 20%를 사용합니다. 고유 `goal_id`별 최상위 후보를 최종 Context에
+하나 이상 보존하며 embedding 재정렬 실패 시 기존 검색 순위를 유지합니다.
+
 로컬 `sample/`의 실제 PDF를 사용해 복합·다층 추론과 text-only 한계를
 문서군별로 평가할 때는 다음 명령을 사용합니다. 실제 embedding과 LLM을
 사용하지만 전용 tmpfs DB에서 실행됩니다.
@@ -350,6 +356,13 @@ retrieval 지연을 비교할 때는 다음 명령을 사용합니다. LLM은 �
 ./scripts/benchmark-reasoning.sh --group OpenSWDesign
 ./scripts/benchmark-reasoning.sh --group OpenSWUnderstand
 ```
+
+실패 경계 사례의 반복 실행은 `--case`, `--iterations`, `--corpus-mode combined`를
+함께 사용합니다. 2026-08-19 검증에서는 visual-only 2개 사례가 각각 3/3으로
+명시적 거부와 빈 source를 유지했고, 3일 지연 정량 사례가 `-5% × 3 = -15%`와
+모델 불일치의 정량 근거 부재를 3/3으로 구분했습니다. 실제 Gemma 4 planner의
+11개 fixture 응답도 모두 원자적 goal plan으로 정규화됐습니다. 세부 결과는
+`docs/reasoning-evaluation.md`에 기록합니다.
 
 회원가입, 문서 업로드와 질문 요청 예시:
 
@@ -386,16 +399,17 @@ curl -N -b session.cookie \
 ## 현재 MVP 범위
 
 - PDF 추가·삭제, 텍스트 추출, page 단위 text/Vision caption chunking 및 BGE-M3 embedding
-- 50MB 서버 제한, PDF 시그니처·구조·암호화 여부 업로드 검증
+- 50MiB PDF 파일·51MiB 전체 multipart request 제한과 PDF 시그니처·구조·암호화 검증
 - 공개 회원가입, 로그인·로그아웃과 사용자별 문서·대화 격리
 - 일반 사용자 비밀번호 변경·다른 세션 폐기와 사용자 소유 데이터 회원탈퇴
 - 명시적 관리자 bootstrap, 최초 로그인 비밀번호 변경 강제와 관리자 지원 비밀번호 재설정
 - pgvector Dense, PostgreSQL FTS, pg_trgm 및 RRF Hybrid 검색
+- Dense/Hybrid 후보의 BGE-M3 cosine 재정렬과 goal별 최상위 후보 보존
 - 로그인 사용자의 모든 indexed 문서를 대상으로 하는 작업공간 RAG 검색
 - 좌표 기반 PDF 텍스트 순서, 반복 머리말·꼬리말 제거와 표 행·열 보존
 - 페이지별 시각 의존도 감지, 선택적 Gemma 4 구조화 caption과 시각 근거가 검색되지
   않은 화면·도표 질문의 명시적 거부
-- 최대 4개 근거 질의와 최대 2개 교차언어 질의, 검색 방식별 후보 보존 및 부분 근거 답변
+- 고유 `goal_id`가 있는 최대 4개 원자적 근거 목표, goal별 후보 보존과 부분 근거 답변
 - 여러 대화 세션 저장, 최근 대화 자동 복원과 직전 대화 기반 후속 검색 질의 재작성
 - 여러 OpenAI 호환 endpoint 등록과 기본 endpoint 선택을 통한 Gemma 4 12B W4A16 답변 생성
 - SSE 기반 답변 스트리밍과 완료된 대화의 이력 저장

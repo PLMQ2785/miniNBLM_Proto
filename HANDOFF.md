@@ -2,9 +2,9 @@
 
 ## 1. 현재 상태
 
-- 기준일: 2026-08-11 (Asia/Seoul)
+- 기준일: 2026-08-19 (Asia/Seoul)
 - 프로젝트: 사용자 PDF 기반 범용 RAG Assistant
-- 현재 단계: 1차 MVP, Vision caption, native 실행과 원샷 통합 이미지 지원 완료
+- 현재 단계: 1차 MVP, Vision caption, native/all-in-one 배포와 goal 기반 근거 검색 완료
 - 패키지 관리: `uv`
 - 런타임: 4-container Compose, 단일 all-in-one container, 또는 `run-native.sh`
 - Web UI: React 없이 FastAPI가 Vanilla HTML/CSS/JavaScript 정적 파일 제공
@@ -12,8 +12,14 @@
 
 최근 검증 결과:
 
-- 빠른 단위/API 통합 테스트: `202 passed`, 실제 모델 E2E `1 skipped`
-- 실제 BGE-M3/Gemma 4 E2E: `1 passed`
+- 빠른 단위/API 통합 테스트: `201 passed`, 실제 모델 E2E `1 skipped`
+- RTX 3090에서 Gemma 4 12B + BGE-M3 실제 RAG E2E: `1 passed`
+- 실제 Gemma 4 planner 11개 reasoning fixture 응답을 모두 원자적 goal plan으로 복구;
+  의미가 보존된 JSON field 손상은 정규화하고 알 수 없는 goal/chunk ID는 추측하지 않음
+- visual-only 실패 경계 2개를 각각 3회 실행해 거부·빈 source 6/6, 3일 지연 정량
+  사례를 최종 3회 실행해 `-5% × 3 = -15%`와 모델 불일치 정량 한계 3/3 확인
+- goal별 `supported`/`partial`/`missing`/`contradicted` matrix, unresolved goal 표적
+  검색과 hierarchical fallback을 포함한 최대 2회 retrieval action 적용
 - 실제 Gemma 4 SSE에서 다중 delta, 출처, 완료 event와 대화 저장 확인
 - JSON 구조화 로그, `X-Request-ID`, Prometheus HTTP·검색·LLM 지표 확인
 - 자료 밖 질문 E2E에서 거부 응답의 source가 빈 배열인지 확인
@@ -36,9 +42,9 @@
   `cpsu/mininblm:0.1.3-gemma4-31b-w4a16` 배포 image 추가
 - 31B image에도 Hugging Face snapshot downloader와 제한된 volume UID fallback을
   적용하고 실제 snapshot·권한 smoke 및 runtime 계약을 검증
-- H200 1장 기준 BGE-M3 CUDA, vLLM GPU memory `0.70`, 활성 sequence `8`,
-  tensor parallel `1`로 31B 배포 profile 갱신 및 image build 성공
-- 31B H200 실제 readiness와 생성 요청은 원격 검증 대상으로 남음
+- 31B H200 profile은 vLLM GPU memory `0.70`, 활성 sequence 8개를 사용한다.
+  이번 변경에서는 31B를 기동·추론하지 않았으며 기존 image build/snapshot 계약
+  검증 외 readiness와 생성 요청은 미검증이다.
 - API 이미지: `6,555,721,208` bytes에서 `206,676,250` bytes로 약 96.8% 감소
 - API 이미지의 Torch/Sentence Transformers/Transformers 제거 및 embedding 이미지의
   Torch/Sentence Transformers 유지 확인
@@ -65,8 +71,8 @@
 - DB dump와 uploads, manifest, SHA-256을 묶는 백업 bundle 생성·검증 완료
 - Playwright 계정 smoke: 일반 사용자 비밀번호 변경, 390px overflow 없음,
   회원탈퇴 후 세션·재로그인 차단 확인
-- 복합 Git 질의에서 최대 4개 근거 질의와 최대 2개 교차언어 질의, RRF, 인접 chunk, BGE-M3 semantic
-  reranker와 근거 충족도 기반 제한 재검색(표적 chunk + page 계층, 최대 2회) 확인
+- 복합 Git 질의에서 고유 `goal_id`가 있는 최대 4개 원자적 근거 목표와 goal별 검색어,
+  RRF, 인접 chunk, BGE-M3 reranker와 근거 충족도 기반 제한 재검색 확인
 - 실제 Gemma 4에서 reset·revert·DVCS 근거를 여러 PDF 페이지에서 결합하고,
   답변에 인용된 5개 문서 페이지만 source로 반환하는 경로 확인
 - 주장별 인용 검증 적용 후 동일 복합 질의의 모든 실질 문장에 유효한
@@ -85,8 +91,8 @@
   페이지별 언어·image/drawing·시각 근거 위험 메타데이터를 chunk까지 전달
 - 페이지를 지정한 화면 전사·다이어그램 계산 질문은 시각 근거가 있으면 LLM 호출 전에
   text-only 한계 답변으로 종료하고 source를 반환하지 않음
-- 교차언어 검색어 1~2개, query plan 형식 복구 1회, 검색 방식/질의별 후보 보존,
-  재검색 시 최초 Context 우선 보존과 근거 매트릭스 기반 부분 답변 적용
+- query plan 형식 복구 1회, goal별 후보 보존, 재검색 시 최초 Context 우선 보존과
+  goal별 Source/Page/chunk 근거 매트릭스 기반 부분 답변 적용
 - embedding query 5개 batch 계약 준수, 생성 토큰 제한·반복 퇴행 감지 후 1회 재생성,
   불완전한 Source/Page 구조 보정 적용
 - 2026-08-07 10개 기준선(`20260807T060016Z`)은 source recall 8건 `1.0`,
@@ -144,7 +150,7 @@
 Browser
   -> api:8080
        -> db:5433             PostgreSQL 17 + pgvector
-       -> embedding:8070      BAAI/bge-m3
+       -> embedding:8070      BGE-M3 embedding
        -> llm:8010            vLLM + Gemma 4 12B W4A16
 ```
 
@@ -172,7 +178,7 @@ WSL mirrored networking에서 Docker bridge port가 Windows localhost로 전달�
 - 기본 모델 경로: `./google/gemma-4-12B-it-W4A16`
 - vLLM Docker/native version: `0.25.0`
 - 기본 max model length: `8192`
-- 기본 GPU memory utilization: `0.65`
+- 12B GPU memory utilization: `0.65`; 31B H200 예시: `0.70`(미검증)
 - 기본 max sequences: `4`
 - readiness 구성요소별 timeout: `3초`
 
@@ -215,6 +221,8 @@ quantization patch를 적용한다. `latest` 재빌드에서 model config 호환
 업로드 검증:
 
 - 기본 50MB 서버 파일 제한 (`MAX_UPLOAD_BYTES=52428800`)
+- 전체 multipart request body 51MiB 제한 (`MAX_REQUEST_BODY_BYTES=53477376`);
+  50MiB PDF와 multipart overhead를 함께 허용하고 초과 시 HTTP 413
 - `.pdf` 파일명과 PDF MIME type 요구
 - `%PDF-` 시그니처 검사
 - PyMuPDF를 이용한 PDF 구조 및 page 존재 검사
@@ -234,14 +242,15 @@ quantization patch를 적용한다. `latest` 재빌드에서 model config 호환
 - 후속 질문 생성에 최근 8개 메시지를 최대 8,000자까지 전달
 - 후속 질문 검색에는 직전 사용자 질문 500자와 답변 1,000자까지만 사용해
   독립형 retrieval query를 생성하며, 최종 답변과 저장에는 원문 질문을 유지
-- 복합 질문은 최대 4개 근거 검색어와 최대 2개 반대 언어 검색어로 계획하고 RRF로 병합
-- Dense/Hybrid 후보는 원질문·세부 질의 BGE-M3 유사도와 기존 순위로 재정렬하며
-  질의별 최상위 검색·의미 후보를 보존
-- 검색 근거 충족도를 LLM으로 검사하고 부족한 전제는 표적 chunk 검색과 page
-  FTS·trigram 계층 fallback으로 최대 2회 재검색한다. 빈 재검색은 기존 Context를
-  보존하고 최종 판정이 불안정해도 병합 근거를 답변 모델에 전달한다.
-- 계층 fallback은 세부 질의별 상위 페이지를 보존하고 해당 페이지와 겹치는
-  chunk만 BGE-M3로 재정렬한다.
+- 복합 질문은 고유 `goal_id`가 있는 최대 4개 원자적 근거 목표와 goal별 검색어로
+  계획하고 RRF로 병합한다.
+- Dense/Hybrid 후보는 BGE-M3 cosine과 기존 검색 순위를 결합해 재정렬하고,
+  goal별 최상위 후보를 하나 이상 보존한다. BGE-M3 호출 실패 시 기존 순위를 유지한다.
+- 근거 충족도는 각 goal을 `supported`, `partial`, `missing`, `contradicted`로 판정하고
+  서버가 실제 chunk ID에서 문서명과 페이지를 검증해 매핑한다. unresolved goal만 표적
+  chunk 검색하며 page FTS·trigram 계층 fallback과 합쳐 최대 2회 재검색한다.
+- 형식 오류는 JSON repair를 한 번 수행하고, 실패 시 `unchecked`로 기록하면서 기존
+  Context를 보존한다. 계층 fallback은 goal별 상위 페이지와 겹치는 chunk를 재정렬한다.
 - 삭제된 PDF의 과거 source 제목은 보존하고 원본 접근은 비활성화
 - 자료에서 답을 확인할 수 없다는 응답은 source를 반환하지 않으며, 모델이
   `[[NO_SOURCE]`처럼 마커 대괄호를 일부 누락해도 후처리함
@@ -534,7 +543,7 @@ Docker 경로에서 확인했다.
 | `app/storage/local_storage.py` | 로컬 PDF 저장소 |
 | `app/services/upload_validation.py` | PDF 업로드 검증 |
 | `app/static/` | Vanilla JS Web UI |
-| `embedding_service/` | BGE-M3 HTTP 서비스 |
+| `embedding_service/` | BGE-M3 embedding HTTP 서비스 |
 | `alembic/versions/` | DB migration |
 | `tests/unit/` | DB 불필요 단위 테스트 |
 | `tests/integration/` | 격리 DB API 통합 테스트 |
@@ -545,9 +554,9 @@ Docker 경로에서 확인했다.
 - 이전 대화 생성 문맥은 최근 8개 메시지, 최대 8,000자로 제한된다.
 - retrieval query rewriting은 장기 대화 전체가 아닌 직전 질문·답변 한 쌍만
   사용하며, 재작성 LLM 호출이 실패하면 원문 질문으로 검색한다.
-- 모든 질문은 검색 계획 LLM 호출이 1회 추가되고, 검색 결과가 있으면 근거
-  충족도 호출도 1회 추가된다. 부족 판정이 지속되면 표적 chunk 검색과 page
-  계층 fallback을 합쳐 최대 2회, 충족도 판정은 최대 3회 수행한다.
+- 모든 질문은 구조화 검색 계획 LLM 호출이 1회 추가되고, 검색 결과가 있으면 goal별
+  근거 충족도 호출도 1회 추가된다. 부족 판정이 지속되면 unresolved goal의 표적 chunk
+  검색과 page 계층 fallback을 합쳐 최대 2회, 충족도 판정은 최대 3회 수행한다.
 - 답변에 문장별 유효 인용이 빠졌을 때만 인용 보정 LLM 호출이 최대 1회
   추가된다. 완전한 인용 답변과 자료 부재 답변은 보정 호출을 생략한다.
 - 문서 처리와 재인덱싱이 API process의 background task를 사용한다.
@@ -561,8 +570,8 @@ Docker 경로에서 확인했다.
 - Prometheus 수집 서버, 대시보드와 경보 규칙은 아직 배포하지 않는다.
 - 이메일 기반 셀프서비스 비밀번호 재설정, 계정 잠금과 rate limit은 없다.
 - 기본 HTTP/LAN 설정은 `AUTH_COOKIE_SECURE=false`다.
-- 업로드 파일 자체는 50MB로 제한하지만 reverse proxy 수준의 전체 request body
-  제한은 별도로 구성하지 않았다.
+- API 최외곽에서 전체 request body를 51MiB로 제한한다. 외부 reverse proxy를
+  추가하는 배포에서는 이 값보다 낮은 body limit으로 50MiB PDF를 막지 않아야 한다.
 
 ## 11. 남은 작업 권장 순서
 
@@ -573,30 +582,25 @@ Docker 경로에서 확인했다.
 - PostgreSQL 및 업로드 원본 bundle의 격리 환경 복원 리허설
 - Prometheus 수집·대시보드·경보 규칙 구성
 - 검증된 vLLM base digest/version 고정과 custom image tag 정합성 확보
-- reverse proxy request body 제한을 애플리케이션의 50MB 제한과 일치시킴
 - 환경변수 선택을 넘어선 관리자 런타임 모델 전환 API/UI
 
 ### 2순위: 처리 안정성과 RAG 품질 확장
 
 - Redis + RQ/Celery worker로 문서 처리와 재인덱싱 분리
 - MinIO/S3 object storage 전환
-- 다양한 업무·교육 문서로 평가 fixture 확대
-- 복합 추론 실패 사례 3회 반복, visual-only 답변 제한과 coverage 형식 안정화
-- 도메인별 용어·약어 정규화 및 reranker 비교
 - scanned PDF OCR과 text+vision 전체 문서군 반복 benchmark
 - 문서 버전 관리, 이메일 인증, 학습 피드백
 
 ## 12. Git 및 작업공간 주의사항
 
-Git baseline은 `ceb4d37 V0.3.0`이다. 이후 통합 readiness, 작업공간 전체 검색,
-source 문서명, 문서 선택 제거, 대화 세션, 스트리밍·관측성, 계정 생명주기와
-복합 RAG 검색이 순서대로 반영되었다. 2026-08-07 현재 로컬 `main`의 최신
-통합 commit은 `ece7d7e`이며 `origin/main`보다 4개 commit 앞서 있어 push가
-필요하다. 최초
-commit에 실수로 포함된
-`id_container` RSA private key는 commit amend, reflog 만료 및 unreachable object
-정리를 통해 작업공간과 전체 로컬 이력에서 제거했다. Remote `origin`은 GitHub
-저장소로 설정되어 있다.
+2026-08-19 기준 remote 기준선은 `02263ad`이며, goal 기반 근거 검색은
+`07a74cd`로 분리했다. 50MiB 파일·51MiB 전체 request 제한은 별도 후속 commit으로
+관리한다. 전용 cross-encoder 구현과 A/B fixture는
+`experiment/cross-encoder-reranker` branch에만 보존한다. 통합 후 로컬
+`main`은 `origin/main`보다 2개 commit 앞서며 아직 push하지 않았다. 최초 commit에
+실수로 포함된 `id_container` RSA private key는 commit amend, reflog 만료 및
+unreachable object 정리를 통해 작업공간과 전체 로컬 이력에서 제거했다. Remote
+`origin`은 GitHub 저장소로 설정되어 있다.
 
 현재 `.gitignore`는 다음 대용량/민감 경로를 제외한다.
 

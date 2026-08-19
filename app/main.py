@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api import admin_retrieval, admin_users, auth, chat, documents, health, language_models, metrics
 from app.config import settings
 from app.observability import RequestObservabilityMiddleware, configure_logging
+from app.request_limits import RequestBodyLimitMiddleware
 from app.services.runtime_service import initialize_runtime
 
 
@@ -19,6 +20,10 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="PDF RAG Assistant API", lifespan=lifespan)
+app.add_middleware(
+    RequestBodyLimitMiddleware,
+    max_body_bytes=settings.max_request_body_bytes,
+)
 app.add_middleware(RequestObservabilityMiddleware)
 
 

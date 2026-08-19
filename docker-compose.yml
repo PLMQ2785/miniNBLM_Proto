@@ -28,6 +28,7 @@ services:
       DATABASE_URL: postgresql+psycopg://rag_user:rag_password@127.0.0.1:${MININBLM_DB_PORT:-5433}/rag_db
       UPLOAD_DIR: /app/data/uploads
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-52428800}
+      MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-53477376}
       EMBEDDING_BASE_URL: http://127.0.0.1:8070
       LLM_ENDPOINTS_FILE: /app/config/llm-endpoints.json
       XAI_API_KEY: ${XAI_API_KEY:-}
