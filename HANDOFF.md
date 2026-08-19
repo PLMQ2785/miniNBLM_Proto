@@ -620,7 +620,8 @@ Docker 경로에서 확인했다.
 
 ## 12. Git 및 작업공간 주의사항
 
-2026-08-19 기준 `v0.1.4` tag와 Docker image source commit은 `d011725`다.
+2026-08-19 기준 0.1.3·0.1.4 16K Docker image source commit은 `05e7923`이며,
+`v0.1.4` Git tag도 이 16K release 계열로 갱신한다.
 goal 기반 근거 검색은 `07a74cd`, 50MiB 파일·51MiB 전체 request 제한은
 `5457185`로 분리했다. 전용 cross-encoder 구현과 A/B fixture는 원격
 `experiment/cross-encoder-reranker` branch에만 보존한다. 로컬 `main`과
