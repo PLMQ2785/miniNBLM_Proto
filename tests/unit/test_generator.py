@@ -3,7 +3,11 @@ from dataclasses import replace
 import pytest
 
 from app.clients.llm_client import LLMClient
-from app.services.evidence_coverage import EvidenceMatrix, EvidenceMatrixGoal
+from app.services.evidence_coverage import (
+    EvidenceMatrix,
+    EvidenceMatrixGoal,
+    EvidenceReference,
+)
 from app.services.generator import INSUFFICIENT_EVIDENCE_ANSWER, generate_answer
 from app.services.retriever import RetrievedChunk
 
@@ -436,3 +440,44 @@ def test_generate_answer_retries_degenerate_repetition_once(
     assert operations == ["answer", "answer_retry"]
     assert "t.t.t" not in generated.answer
     assert len(generated.sources) == 1
+
+
+def test_generate_answer_maps_citations_to_prioritized_bounded_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chunks = [
+        RetrievedChunk(
+            chunk_id=index,
+            document_id=20 + index,
+            document_title=f"document-{index}.pdf",
+            content=f"핵심 근거 {index} " + ("x" * 4000),
+            page_start=index,
+            page_end=index,
+            score=1.0 - index / 10,
+            source_refs={"page": index},
+        )
+        for index in range(1, 6)
+    ]
+    matrix = EvidenceMatrix(
+        status="complete",
+        goals=(
+            EvidenceMatrixGoal(
+                "g1",
+                "후순위 핵심 근거",
+                "supported",
+                (EvidenceReference(5, "document-5.pdf", 5, 5),),
+            ),
+        ),
+    )
+    captured_messages: list[dict[str, str]] = []
+
+    def complete(self, messages, **kwargs):
+        captured_messages.extend(messages)
+        return "후순위 핵심 근거입니다. [Source 1, Page 5]"
+
+    monkeypatch.setattr(LLMClient, "chat_completion", complete)
+
+    generated = generate_answer("핵심 근거는?", chunks, evidence_matrix=matrix)
+
+    assert "[Source 1]\nDocument: document-5.pdf" in captured_messages[-1]["content"]
+    assert generated.sources[0].chunk_id == 5

@@ -1676,7 +1676,7 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
 - unresolved goal 표적 검색과 page FTS·trigram 계층 fallback 최대 2회, 빈 재검색 시 Context 보존
 - 문장별 Source/Page 검증, 조건부 인용 보정과 SSE `revision`
 - 7개 복합 Git/라이선스 fixture의 balanced+hybrid Recall@3·MRR@3 `1.0`
-- 빠른 단위/API 통합 테스트 `206 passed`, 실제 모델 E2E `1 skipped`
+- 빠른 단위/API 통합 테스트 `207 passed`, 실제 모델 E2E `1 skipped`
 - 최초 Context를 비운 실제 Gemma 4 강제 테스트에서 최대 2회 검색과 유효 인용 확인
 - API·DB·embedding·LLM 4개 컨테이너 및 `/health/ready` 정상 확인
 - `sample/`의 3개 문서군을 위한 복합·다층 추론 10개 fixture와 격리 benchmark runner
@@ -1725,6 +1725,11 @@ FTS, pg_trgm, RRF Hybrid 검색도 현재 구현에 포함되며, 관리자가 �
 - RTX 3090에서 embedding/cross-encoder Dense·Hybrid A/B를 각 3회 반복하고 두
   mode 모두 Recall@5·Hit@5 `1.0`; MRR은 `0.917 → 0.896`, cross-encoder p50은
   Dense `38.9%`, Hybrid `34.0%` 증가해 보편적 품질 우위가 없음을 확인
+- 8,192-token model에 8,243-token 복합 prompt가 전달돼 SSE 400이 발생하는 문제를
+  Evidence Matrix와 서로 다른 page를 우선하는 14,000자 생성 Context로 제한하고,
+  endpoint의 context/output 합계 초과에는 output budget을 한 번만 줄여 재시도
+- 실제 `1512.03385v1.pdf` 4개 goal 질문에서 오류를 재현한 뒤 수정 경로가
+  `session`, 다중 `delta`, `revision`, `sources`, `done` event를 완료함을 확인
 - `run_aio.sh`로 원샷 이미지 build/pull/up/readiness/status/logs/down 경로를 통합하고,
   실제 Web UI 회원가입·Manual 업로드·인덱싱·Gemma 답변과 page source를 확인
 - all-in-one image에서 Gemma 4 weight를 제거하고 12B·31B W4A16 archive를 외부

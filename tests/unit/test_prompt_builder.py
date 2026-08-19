@@ -1,7 +1,10 @@
 from app.services.prompt_builder import (
+    MAX_GENERATION_CONTEXT_CHARS,
     build_rag_messages,
+    build_retrieval_context,
     build_system_message,
     build_user_message,
+    select_generation_chunks,
 )
 from app.services.evidence_coverage import (
     EvidenceMatrix,
@@ -137,3 +140,79 @@ def test_user_message_includes_insufficient_matrix_for_qualified_answers() -> No
 
     assert "Coverage: INSUFFICIENT" in message["content"]
     assert "GOAL g1 [MISSING]: 구체 적용 조건" in message["content"]
+
+
+def test_generation_context_is_bounded_and_prioritizes_matrix_evidence() -> None:
+    chunks = [
+        RetrievedChunk(
+            chunk_id=index,
+            document_id=10,
+            document_title=f"document-{index}.pdf",
+            content=str(index) * 4000,
+            page_start=index,
+            page_end=index,
+            score=1.0 - index / 10,
+            source_refs={"page": index},
+        )
+        for index in range(1, 6)
+    ]
+    matrix = EvidenceMatrix(
+        status="complete",
+        goals=(
+            EvidenceMatrixGoal(
+                "g1",
+                "후순위 핵심 근거",
+                "supported",
+                (EvidenceReference(5, "document-5.pdf", 5, 5),),
+            ),
+        ),
+    )
+
+    selected = select_generation_chunks(chunks, matrix)
+    context = build_retrieval_context(selected)
+
+    assert selected[0].chunk_id == 5
+    assert len(selected) < len(chunks)
+    assert len(context) <= MAX_GENERATION_CONTEXT_CHARS
+
+
+def test_generation_context_prefers_distinct_pages_before_adjacent_duplicates() -> None:
+    page_numbers = (7, 7, 6, 6, 5, 4)
+    content_lengths = (3500, 2000, 3500, 1500, 3500, 1800)
+    chunks = [
+        RetrievedChunk(
+            chunk_id=index,
+            document_id=10,
+            document_title="paper.pdf",
+            content="x" * content_length,
+            page_start=page,
+            page_end=page,
+            score=1.0 - index / 10,
+            source_refs={"page": page},
+        )
+        for index, (page, content_length) in enumerate(
+            zip(page_numbers, content_lengths, strict=True),
+            start=1,
+        )
+    ]
+    matrix = EvidenceMatrix(
+        status="complete",
+        goals=(
+            EvidenceMatrixGoal(
+                "g1",
+                "page 7 evidence",
+                "supported",
+                (EvidenceReference(1, "paper.pdf", 7, 7),),
+            ),
+            EvidenceMatrixGoal(
+                "g2",
+                "page 6 evidence",
+                "supported",
+                (EvidenceReference(3, "paper.pdf", 6, 6),),
+            ),
+        ),
+    )
+
+    selected = select_generation_chunks(chunks, matrix)
+
+    assert [chunk.chunk_id for chunk in selected] == [1, 3, 5, 6]
