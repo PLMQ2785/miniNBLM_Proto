@@ -13,32 +13,83 @@ EXCLUDED_STATE_PATTERN = re.compile(
     r"(?:\.gitignore|\bignored?\b|\bexcluded?\b|무시|제외)",
     re.IGNORECASE,
 )
+MAX_GENERATION_CONTEXT_CHARS = 14_000
 
 
 def load_rag_system_prompt() -> str:
     return RAG_SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
 
 
+def _format_chunk_section(index: int, chunk: RetrievedChunk) -> str:
+    page = _format_page(chunk)
+    return "\n".join(
+        [
+            f"[Source {index}]",
+            f"Document: {chunk.document_title}",
+            f"Document ID: {chunk.document_id}",
+            f"Page: {page}",
+            f"Chunk ID: {chunk.chunk_id}",
+            f"Evidence Modality: {chunk.content_type}",
+            f"Text Evidence Quality: {_format_evidence_quality(chunk)}",
+            "Content:",
+            chunk.content,
+        ]
+    )
+
+
+def select_generation_chunks(
+    chunks: list[RetrievedChunk],
+    evidence_matrix: EvidenceMatrix | None = None,
+) -> list[RetrievedChunk]:
+    evidence_chunk_ids = (
+        {
+            reference.chunk_id
+            for goal in evidence_matrix.goals
+            for reference in goal.evidence
+        }
+        if evidence_matrix is not None
+        else set()
+    )
+    evidence_chunks = [
+        chunk for chunk in chunks if chunk.chunk_id in evidence_chunk_ids
+    ]
+    covered_locations = {
+        (chunk.document_id, chunk.page_start, chunk.page_end)
+        for chunk in evidence_chunks
+    }
+    distinct_page_chunks: list[RetrievedChunk] = []
+    repeated_page_chunks: list[RetrievedChunk] = []
+    for chunk in chunks:
+        if chunk.chunk_id in evidence_chunk_ids:
+            continue
+        location = (chunk.document_id, chunk.page_start, chunk.page_end)
+        if location not in covered_locations:
+            distinct_page_chunks.append(chunk)
+            covered_locations.add(location)
+        else:
+            repeated_page_chunks.append(chunk)
+    prioritized = [
+        *evidence_chunks,
+        *distinct_page_chunks,
+        *repeated_page_chunks,
+    ]
+    selected: list[RetrievedChunk] = []
+    used_chars = 0
+    for chunk in prioritized:
+        section = _format_chunk_section(len(selected) + 1, chunk)
+        section_chars = len(section) + (2 if selected else 0)
+        if selected and used_chars + section_chars > MAX_GENERATION_CONTEXT_CHARS:
+            continue
+        selected.append(chunk)
+        used_chars += section_chars
+    return selected
+
+
 def build_retrieval_context(chunks: list[RetrievedChunk]) -> str:
-    sections: list[str] = []
-    for index, chunk in enumerate(chunks, start=1):
-        page = _format_page(chunk)
-        sections.append(
-            "\n".join(
-                [
-                    f"[Source {index}]",
-                    f"Document: {chunk.document_title}",
-                    f"Document ID: {chunk.document_id}",
-                    f"Page: {page}",
-                    f"Chunk ID: {chunk.chunk_id}",
-                    f"Evidence Modality: {chunk.content_type}",
-                    f"Text Evidence Quality: {_format_evidence_quality(chunk)}",
-                    "Content:",
-                    chunk.content,
-                ]
-            )
-        )
-    return "\n\n".join(sections)
+    return "\n\n".join(
+        _format_chunk_section(index, chunk)
+        for index, chunk in enumerate(chunks, start=1)
+    )
 
 
 def build_system_message() -> dict[str, str]:

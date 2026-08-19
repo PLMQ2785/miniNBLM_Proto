@@ -12,6 +12,7 @@ from app.services.prompt_builder import (
     EXCLUDED_STATE_PATTERN,
     build_rag_messages,
     build_retrieval_context,
+    select_generation_chunks,
 )
 from app.services.evidence_guard import assess_evidence_answerability
 from app.services.evidence_coverage import EvidenceMatrix
@@ -107,10 +108,14 @@ class StreamingAnswer:
             self.generated = GeneratedAnswer(answer=INSUFFICIENT_EVIDENCE_ANSWER, sources=[])
             yield INSUFFICIENT_EVIDENCE_ANSWER
             return
+        generation_chunks = select_generation_chunks(
+            self.chunks,
+            self.evidence_matrix,
+        )
 
         messages = build_rag_messages(
             self.question,
-            self.chunks,
+            generation_chunks,
             self.history,
             evidence_matrix=self.evidence_matrix,
         )
@@ -123,16 +128,16 @@ class StreamingAnswer:
         if _has_degenerate_repetition(raw_answer):
             raw_answer = _retry_degenerate_answer(messages, raw_answer)
         answer = (
-            validate_answer_citations(self.question, raw_answer, self.chunks)
+            validate_answer_citations(self.question, raw_answer, generation_chunks)
             if normalizer.has_grounded_source
             else raw_answer
         )
         answer, has_grounded_source = _normalize_source_decision(answer)
-        answer = _repair_literal_fidelity(self.question, answer, self.chunks)
+        answer = _repair_literal_fidelity(self.question, answer, generation_chunks)
         answer = _normalize_positional_channel_answer(
             self.question,
             answer,
-            self.chunks,
+            generation_chunks,
         )
         answer = _restore_question_literal_fidelity(self.question, answer)
         answer, has_grounded_source = _normalize_source_decision(answer)
@@ -141,7 +146,7 @@ class StreamingAnswer:
         self.generated = GeneratedAnswer(
             answer=answer,
             sources=(
-                _sources_for_citations(answer, self.chunks)
+                _sources_for_citations(answer, generation_chunks)
                 if has_grounded_source
                 else []
             ),
@@ -162,10 +167,11 @@ def generate_answer(
         return GeneratedAnswer(answer=VISUAL_EVIDENCE_LIMIT_ANSWER, sources=[])
     if _requires_clarification(question, evidence_matrix):
         return GeneratedAnswer(answer=INSUFFICIENT_EVIDENCE_ANSWER, sources=[])
+    generation_chunks = select_generation_chunks(chunks, evidence_matrix)
 
     messages = build_rag_messages(
         question,
-        chunks,
+        generation_chunks,
         history,
         evidence_matrix=evidence_matrix,
     )
@@ -174,16 +180,16 @@ def generate_answer(
         answer = _retry_degenerate_answer(messages, answer)
     answer, has_grounded_source = _normalize_source_decision(answer)
     if has_grounded_source:
-        answer = validate_answer_citations(question, answer, chunks)
+        answer = validate_answer_citations(question, answer, generation_chunks)
         answer, has_grounded_source = _normalize_source_decision(answer)
-    answer = _repair_literal_fidelity(question, answer, chunks)
-    answer = _normalize_positional_channel_answer(question, answer, chunks)
+    answer = _repair_literal_fidelity(question, answer, generation_chunks)
+    answer = _normalize_positional_channel_answer(question, answer, generation_chunks)
     answer = _restore_question_literal_fidelity(question, answer)
     answer, has_grounded_source = _normalize_source_decision(answer)
     answer = _ensure_exclusion_precondition(question, answer)
     return GeneratedAnswer(
         answer=answer,
-        sources=_sources_for_citations(answer, chunks) if has_grounded_source else [],
+        sources=_sources_for_citations(answer, generation_chunks) if has_grounded_source else [],
     )
 
 def _requires_clarification(

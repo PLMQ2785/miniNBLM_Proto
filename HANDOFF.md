@@ -12,12 +12,15 @@
 
 최근 검증 결과:
 
-- 빠른 단위/API 통합 테스트: `201 passed`, 실제 모델 E2E `1 skipped`
+- 빠른 단위/API 통합 테스트: `207 passed`, 실제 모델 E2E `1 skipped`
 - RTX 3090에서 Gemma 4 12B + BGE-M3 실제 RAG E2E: `1 passed`
 - 실제 Gemma 4 planner 11개 reasoning fixture 응답을 모두 원자적 goal plan으로 복구;
   의미가 보존된 JSON field 손상은 정규화하고 알 수 없는 goal/chunk ID는 추측하지 않음
 - visual-only 실패 경계 2개를 각각 3회 실행해 거부·빈 source 6/6, 3일 지연 정량
   사례를 최종 3회 실행해 `-5% × 3 = -15%`와 모델 불일치 정량 한계 3/3 확인
+- ResNet 논문 4개 goal 복합 질문의 8,243-token prompt로 재현한 SSE 400 오류를
+  Evidence Matrix·page 다양성 우선 14,000자 Context와 단일 output-budget retry로
+  수정하고 실제 `session/delta/revision/sources/done` 완료 확인
 - goal별 `supported`/`partial`/`missing`/`contradicted` matrix, unresolved goal 표적
   검색과 hierarchical fallback을 포함한 최대 2회 retrieval action 적용
 - 실제 Gemma 4 SSE에서 다중 delta, 출처, 완료 event와 대화 저장 확인

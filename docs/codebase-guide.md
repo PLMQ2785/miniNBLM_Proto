@@ -468,6 +468,10 @@ sequenceDiagram
 8. coverage가 부족하면 unresolved goal만 검색한다.
 9. 필요하면 page FTS/trigram → page와 겹치는 chunk의 hierarchical fallback을 수행한다.
 10. 추가 retrieval action은 전체 합계 최대 2회다.
+11. 답변 생성 전 Evidence Matrix가 가리킨 chunk를 우선하고 서로 다른 page를 보존하면서
+    formatted Context를 최대 14,000자로 제한한다.
+12. endpoint가 context/output 합계 초과를 반환하면 남은 window 범위에서 output token을
+    한 번만 줄여 재시도한다.
 
 #### 검색 코드를 수정할 때 같이 볼 파일
 
@@ -795,6 +799,9 @@ DB `documents.status`와 `error_message`, 원본 `file_path`, page/chunk row 개
 - 최종 답변이 실제 인용한 Source 번호만 `SourceRef`로 변환한다.
 - 문서 삭제 뒤 과거 source label은 보존하되 `available=false`가 될 수 있다.
 - `Source N`은 현재 Context list의 1-based index다.
+- 생성 Context는 `prompt_builder.select_generation_chunks()`가 근거 chunk와 page
+  다양성을 우선해 14,000자로 제한한다. Source 번호와 citation mapping에는 선택된
+  동일 chunk list를 사용해야 한다.
 
 ### 재인덱싱
 
