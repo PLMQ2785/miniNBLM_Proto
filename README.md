@@ -397,8 +397,7 @@ Hybrid `34.0%` 높았습니다. 세부 fixture와 측정값은
 함께 사용합니다. 2026-08-19 검증에서는 visual-only 2개 사례가 각각 3/3으로
 명시적 거부와 빈 source를 유지했고, 3일 지연 정량 사례가 `-5% × 3 = -15%`와
 모델 불일치의 정량 근거 부재를 3/3으로 구분했습니다. 실제 Gemma 4 planner의
-11개 fixture 응답도 모두 원자적 goal plan으로 정규화됐습니다. 세부 결과는
-`docs/reasoning-evaluation.md`에 기록합니다.
+11개 fixture 응답도 모두 원자적 goal plan으로 정규화됐습니다.
 
 회원가입, 문서 업로드와 질문 요청 예시:
 
@@ -425,12 +424,7 @@ curl -N -b session.cookie \
 
 ## 문서
 
-- [요구사항 및 데이터 설계](task.md)
-- [프런트엔드 요구사항과 구조 설계](docs/frontend-design.md)
-- [검색 preset 요구사항](docs/retrieval-presets.md)
-- [Retrieval 품질 평가 및 benchmark](docs/retrieval-evaluation.md)
-- [복합·다층 추론 및 text-only 한계 평가](docs/reasoning-evaluation.md)
-- [운영, 검증 및 문제 해결](docs/operations.md)
+- [Custom image 및 RunPod 배포](custom_image.md)
 
 ## 현재 MVP 범위
 
@@ -461,5 +455,4 @@ curl -N -b session.cookie \
 다시 적용해 전체 재인덱싱해야 합니다. Vision caption도 이 재인덱싱부터 생성됩니다.
 원본 텍스트와 caption은 각각 `text`, `vision_caption` chunk로 분리되지만 둘 다
 BGE-M3 텍스트 embedding으로 검색합니다. Scanned PDF 전용 OCR, 영속 작업 queue,
-전체 문서군 Vision 품질 benchmark는 후속 범위입니다. 상세 설계와 실제 검증 결과는
-`docs/reasoning-evaluation.md`를 참고합니다.
+전체 문서군 Vision 품질 benchmark는 후속 범위입니다.

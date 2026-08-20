@@ -21,6 +21,11 @@ backups/
 benchmark_results/
 /sample/
 
+# 로컬 기획·평가·인수인계 문서
+/docs/
+/HANDOFF.md
+/task.md
+
 # Private keys and credential containers
 /id_container
 id_rsa
