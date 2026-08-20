@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 
-from app.services.conversation_service import build_conversation_context
+from app.services.conversation_service import (
+    build_conversation_context,
+    limit_conversation_context,
+)
 
 
 @dataclass(frozen=True)
@@ -38,3 +41,16 @@ def test_build_conversation_context_limits_total_characters() -> None:
     assert sum(len(message["content"]) for message in context) == 8000
     assert context[0]["content"] == "가" * 2000
     assert context[1]["content"] == "나" * 6000
+
+
+def test_limit_conversation_context_supports_compact_and_empty_budgets() -> None:
+    """복구 단계가 최신 이력만 남기거나 이력을 완전히 제거할 수 있게 한다."""
+    history = [
+        {"role": "user", "content": "이전 질문"},
+        {"role": "assistant", "content": "가" * 3000},
+    ]
+
+    compact = limit_conversation_context(history, 1000)
+
+    assert compact == [{"role": "assistant", "content": "가" * 1000}]
+    assert limit_conversation_context(history, 0) == []
