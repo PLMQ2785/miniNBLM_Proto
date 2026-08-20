@@ -5,6 +5,7 @@ from app.services.pdf_parser import ParsedPage
 
 @dataclass(frozen=True)
 class TextChunk:
+    """검색 결과가 텍스트·시각 출처로 돌아갈 수 있게 근거 위치를 담는다."""
     content: str
     page_start: int | None
     page_end: int | None
@@ -20,6 +21,7 @@ def chunk_pages(
     chunk_overlap: int = 500,
     document_id: int | None = None,
 ) -> list[TextChunk]:
+    """페이지 텍스트와 시각 캡션을 출처별 검색 청크로 나눈다."""
     chunks: list[TextChunk] = []
     chunk_index = 0
 
@@ -27,7 +29,7 @@ def chunk_pages(
         text = page.text.strip()
         source_page_metadata = _source_page_metadata(page.metadata)
         if text:
-            # Overlap keeps sentences near a boundary searchable from either chunk.
+            # 경계 문장도 양쪽 청크에서 검색되도록 일부 텍스트를 겹친다.
             start = 0
             while start < len(text):
                 end = min(start + chunk_size, len(text))
@@ -65,7 +67,7 @@ def chunk_pages(
                     break
                 start = max(end - chunk_overlap, start + 1)
 
-        # Captions stay separate so text and visual evidence keep their provenance.
+        # 텍스트와 시각 근거의 출처를 구분하려고 캡션을 별도 청크로 둔다.
         vision = page.metadata.get("vision_caption", {})
         if isinstance(vision, dict) and vision.get("status") == "completed":
             content = str(vision.get("search_text", "")).strip()
@@ -101,6 +103,7 @@ def chunk_pages(
 
 
 def _source_page_metadata(metadata: dict) -> dict:
+    """청크 출처에 필요한 페이지·시각 보강 메타데이터만 추린다."""
     keys = (
         "width",
         "height",

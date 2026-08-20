@@ -5,6 +5,7 @@ set -Eeuo pipefail
 PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_DIR"
 
+# 사용 가능한 네이티브 실행 명령을 안내한다.
 usage() {
   cat <<'EOF'
 Usage:
@@ -24,6 +25,7 @@ NATIVE_START_EMBEDDING, or NATIVE_START_LLM=false to use external services.
 EOF
 }
 
+# 필수 실행 파일이 설치되어 있는지 확인한다.
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "오류: '$1' 명령을 찾을 수 없습니다." >&2
@@ -31,6 +33,7 @@ require_command() {
   fi
 }
 
+# 환경 파일에서 지정한 설정값을 읽는다.
 env_value() {
   local key="$1"
   local default_value="${2:-}"
@@ -51,6 +54,7 @@ env_value() {
   printf '%s' "$default_value"
 }
 
+# 프로젝트 기준 경로를 절대 경로로 바꾼다.
 absolute_path() {
   local value="$1"
   if [[ "$value" == /* ]]; then
@@ -60,6 +64,7 @@ absolute_path() {
   fi
 }
 
+# 문자열 설정값을 불리언으로 판별한다.
 is_true() {
   case "${1,,}" in
     1|true|yes|on) return 0 ;;
@@ -67,6 +72,7 @@ is_true() {
   esac
 }
 
+# 최초 실행에 필요한 환경 파일을 준비한다.
 ensure_env_file() {
   if [[ ! -f "$PROJECT_DIR/.env" ]]; then
     cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
@@ -74,15 +80,17 @@ ensure_env_file() {
   fi
 }
 
+# 데이터베이스 URL 구성요소를 안전하게 인코딩한다.
 urlencode() {
   python3 -c 'import sys; from urllib.parse import quote; print(quote(sys.argv[1], safe=""))' "$1"
 }
+# 로그에 표시할 데이터베이스 비밀번호를 가린다.
 redact_database_url() {
   printf '%s' "$1" | sed -E 's#(://[^:/@]+:)[^@]+@#\1***@#'
 }
 
 
-# Process environment wins over .env so orchestrators can override image defaults.
+# 실행 환경 변수가 이미지 기본 설정보다 우선하도록 구성을 읽는다.
 load_config() {
   DB_PORT="${MININBLM_DB_PORT:-$(env_value MININBLM_DB_PORT 5433)}"
   DB_NAME="${NATIVE_DB_NAME:-$(env_value NATIVE_DB_NAME rag_db)}"
@@ -139,18 +147,22 @@ load_config() {
   mkdir -p "$RUNTIME_DIR" "$LOG_DIR" "$HF_HOME_DIR" "$UPLOAD_DIR_VALUE"
 }
 
+# 서비스별 PID 파일 경로를 만든다.
 pid_file() {
   printf '%s/%s.pid' "$RUNTIME_DIR" "$1"
 }
 
+# 서비스별 로그 파일 경로를 만든다.
 log_file() {
   printf '%s/%s.log' "$LOG_DIR" "$1"
 }
+# API 점검 상태를 기록할 파일 경로를 만든다.
 maintenance_file() {
   printf '%s/api.maintenance' "$RUNTIME_DIR"
 }
 
 
+# 이 스크립트가 기록한 서비스 PID를 읽는다.
 service_pid() {
   local file
   file="$(pid_file "$1")"
@@ -158,13 +170,14 @@ service_pid() {
   tr -d '[:space:]' <"$file"
 }
 
+# 기록된 PID의 프로세스가 살아 있는지 확인한다.
 service_running() {
   local pid
   pid="$(service_pid "$1" 2>/dev/null || true)"
   [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null
 }
 
-# PID files track only processes started by this script.
+# 이 스크립트가 시작한 프로세스만 PID 파일로 추적해 기동한다.
 start_process() {
   local service="$1"
   shift
@@ -185,6 +198,7 @@ start_process() {
   fi
 }
 
+# 추적 중인 서비스 프로세스를 안전하게 종료한다.
 stop_process() {
   local service="$1"
   local pid
@@ -207,6 +221,7 @@ stop_process() {
   rm -f "$(pid_file "$service")"
 }
 
+# 서비스 프로세스와 HTTP 준비 상태를 함께 기다린다.
 wait_for_http() {
   local service="$1"
   local url="$2"
@@ -231,6 +246,7 @@ wait_for_http() {
   echo " 완료"
 }
 
+# 설치된 PostgreSQL 실행 파일 경로를 찾는다.
 resolve_postgres_bin() {
   if [[ -n "${POSTGRES_BIN_DIR:-}" ]]; then
     printf '%s' "$POSTGRES_BIN_DIR"
@@ -251,6 +267,7 @@ resolve_postgres_bin() {
   [[ -n "$selected" ]] || return 1
   printf '%s' "$selected"
 }
+# 데이터베이스 소유자 권한으로 PostgreSQL 명령을 실행한다.
 postgres_as_owner() {
   if [[ "$(id -u)" -eq 0 ]]; then
     runuser -u "$DB_OS_USER" -- "$@"
@@ -260,6 +277,7 @@ postgres_as_owner() {
 }
 
 
+# 비밀번호를 전달해 PostgreSQL 클라이언트를 실행한다.
 postgres_with_password() {
   if [[ "$(id -u)" -eq 0 ]]; then
     runuser -u "$DB_OS_USER" -- env PGPASSWORD="$DB_PASSWORD" "$@"
@@ -269,6 +287,7 @@ postgres_with_password() {
 }
 
 
+# PostgreSQL 데이터와 소켓 디렉터리의 소유권을 준비한다.
 prepare_postgres_storage() {
   local data_uid desired_uid selected_uid selected_group owner_record
 
@@ -310,6 +329,7 @@ prepare_postgres_storage() {
 
 
 
+# 로컬 PostgreSQL을 초기화하고 준비될 때까지 기다린다.
 start_database() {
   is_true "$MANAGE_DB" || return 0
   [[ "$DB_NAME" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || {
@@ -390,6 +410,7 @@ start_database() {
 }
 
 
+# 이 스크립트가 관리하는 PostgreSQL을 종료한다.
 stop_database() {
   is_true "$MANAGE_DB" || return 0
   local pg_bin
@@ -402,6 +423,7 @@ stop_database() {
   rm -f "$(pid_file db)"
 }
 
+# API 기동 전에 최신 데이터베이스 스키마를 적용한다.
 run_migrations() {
   echo "Alembic migration을 적용합니다."
   env DATABASE_URL="$DATABASE_URL_VALUE" UPLOAD_DIR="$UPLOAD_DIR_VALUE" \
@@ -409,6 +431,7 @@ run_migrations() {
     "$NATIVE_PYTHON" -m alembic upgrade head
 }
 
+# 네이티브 임베딩 서비스를 기동한다.
 start_embedding() {
   is_true "$START_EMBEDDING" || return 0
   start_process embedding \
@@ -417,6 +440,7 @@ start_embedding() {
     --host 127.0.0.1 --port "$EMBEDDING_PORT" --no-access-log
 }
 
+# 로컬 모델을 사용하는 vLLM 서비스를 기동한다.
 start_llm() {
   is_true "$START_LLM" || return 0
   [[ -x "$VLLM_BIN" ]] || {
@@ -442,6 +466,7 @@ start_llm() {
     --host 127.0.0.1 --port "$LLM_PORT"
 }
 
+# API 프로세스 시작 전에 설정을 불러올 수 있는지 확인한다.
 validate_api_config() {
   echo "API 설정을 검증합니다."
   if ! env LLM_ENDPOINTS_FILE="$LLM_ENDPOINTS_FILE_VALUE" \
@@ -452,6 +477,7 @@ validate_api_config() {
 }
 
 
+# 마이그레이션 후 API 서비스를 기동한다.
 start_api() {
   run_migrations
   start_process api \
@@ -462,7 +488,7 @@ start_api() {
     --host "$API_HOST" --port "$API_PORT" --no-access-log
 }
 
-# Start dependencies first; the API is last because its readiness checks all of them.
+# 의존 서비스를 먼저 준비하고 마지막에 API를 기동한다.
 start_all() {
   require_command curl
   [[ -x "$NATIVE_PYTHON" ]] || {
@@ -494,7 +520,7 @@ start_all() {
   echo "비컨테이너 서비스가 준비되었습니다: http://localhost:$API_PORT/"
 }
 
-# Stop in reverse dependency order.
+# 의존성의 역순으로 전체 서비스를 종료한다.
 stop_all() {
   local failed=false
   stop_process api || failed=true
@@ -505,6 +531,7 @@ stop_all() {
   [[ "$failed" == false ]]
 }
 
+# 네이티브 서비스별 현재 실행 상태를 표시한다.
 print_status() {
   local service
   for service in api embedding llm db; do
@@ -521,6 +548,7 @@ print_status() {
   done
 }
 
+# API와 임베딩 서비스의 네이티브 의존성을 설치한다.
 setup_native() {
   require_command uv
   echo "API와 embedding 의존성을 $NATIVE_ENV_DIR 에 설치합니다."
@@ -529,6 +557,7 @@ setup_native() {
   echo "설치 완료. PostgreSQL/pgvector와 vLLM은 ./run-native.sh doctor로 확인하십시오."
 }
 
+# 설치된 vLLM 패키지의 소스 경로를 찾는다.
 vllm_source_path() {
   "$VLLM_PYTHON" - <<'PY'
 from pathlib import Path
@@ -538,6 +567,7 @@ print(Path(vllm.__file__).resolve().parent / "model_executor" / "models" / "gemm
 PY
 }
 
+# 별도 환경에 vLLM을 설치하고 호환 패치를 적용한다.
 setup_vllm() {
   require_command uv
   require_command patch
@@ -576,6 +606,7 @@ PY
   echo "vLLM native 설치와 Gemma 4 W4A16 호환 patch 적용을 완료했습니다."
 }
 
+# 네이티브 실행에 필요한 명령과 연결 상태를 진단한다.
 doctor() {
   local failed=false
   echo "Native runtime 진단"
@@ -653,6 +684,7 @@ doctor() {
   [[ "$failed" == false ]]
 }
 
+# 전체 또는 지정 서비스의 로그를 이어서 표시한다.
 follow_logs() {
   local service="${1:-}"
   if [[ -n "$service" ]]; then

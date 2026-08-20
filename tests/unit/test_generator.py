@@ -14,6 +14,7 @@ from app.services.retriever import RetrievedChunk
 
 @pytest.fixture
 def retrieved_chunk() -> RetrievedChunk:
+    """답변 생성 검증에 쓸 기본 검색 청크를 제공한다."""
     return RetrievedChunk(
         chunk_id=10,
         document_id=20,
@@ -30,6 +31,7 @@ def test_generate_answer_removes_sources_and_marker_for_ungrounded_response(
     monkeypatch: pytest.MonkeyPatch,
     retrieved_chunk: RetrievedChunk,
 ) -> None:
+    """근거 없음 응답에서 표식과 출처를 모두 제거하는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
@@ -46,6 +48,7 @@ def test_generate_answer_supports_legacy_no_source_prefix(
     monkeypatch: pytest.MonkeyPatch,
     retrieved_chunk: RetrievedChunk,
 ) -> None:
+    """표식 없는 기존 근거 없음 문구도 출처 없이 처리하는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
@@ -63,6 +66,7 @@ def test_generate_answer_accepts_malformed_no_source_marker(
     retrieved_chunk: RetrievedChunk,
     marker: str,
 ) -> None:
+    """깨진 근거 없음 표식도 노출하지 않고 인식하는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
@@ -83,6 +87,7 @@ def test_generate_answer_keeps_generic_detail_after_no_source_marker(
     monkeypatch: pytest.MonkeyPatch,
     retrieved_chunk: RetrievedChunk,
 ) -> None:
+    """근거 없음 표식 뒤의 유용한 안내 문구는 보존하는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
@@ -103,6 +108,7 @@ def test_generate_answer_keeps_sources_for_grounded_response(
     monkeypatch: pytest.MonkeyPatch,
     retrieved_chunk: RetrievedChunk,
 ) -> None:
+    """유효하게 인용된 답변은 대응 출처를 유지하는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
@@ -122,6 +128,7 @@ def test_generate_answer_returns_only_cited_unique_source_pages(
     monkeypatch: pytest.MonkeyPatch,
     retrieved_chunk: RetrievedChunk,
 ) -> None:
+    """인용된 문서 페이지만 중복 없이 출처로 반환하는지 보장한다."""
     chunks = [
         retrieved_chunk,
         RetrievedChunk(
@@ -166,6 +173,7 @@ def test_generate_answer_keeps_all_sources_used_for_a_derived_conclusion(
     monkeypatch: pytest.MonkeyPatch,
     retrieved_chunk: RetrievedChunk,
 ) -> None:
+    """도출 결론에 함께 인용된 모든 근거 출처를 보존하는지 보장한다."""
     reset_chunk = RetrievedChunk(
         chunk_id=21,
         document_id=30,
@@ -208,6 +216,7 @@ def test_generate_answer_does_not_expose_uncited_candidates(
     monkeypatch: pytest.MonkeyPatch,
     retrieved_chunk: RetrievedChunk,
 ) -> None:
+    """인용되지 않은 검색 후보를 최종 출처로 노출하지 않는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
@@ -222,6 +231,7 @@ def test_generate_answer_does_not_expose_uncited_candidates(
 def test_generate_answer_blocks_exact_visual_page_request_without_llm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """시각 근거 없는 특정 도표 계산 요청을 LLM 호출 전에 차단하는지 보장한다."""
     chunk = RetrievedChunk(
         chunk_id=30,
         document_id=40,
@@ -256,6 +266,7 @@ def test_generate_answer_requests_detail_when_all_evidence_goals_are_missing(
     monkeypatch: pytest.MonkeyPatch,
     retrieved_chunk: RetrievedChunk,
 ) -> None:
+    """모든 근거 목표가 누락되면 답변 대신 구체화 요청을 반환하는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
@@ -285,9 +296,11 @@ def test_generate_answer_allows_explicitly_requested_qualified_answer(
     monkeypatch: pytest.MonkeyPatch,
     retrieved_chunk: RetrievedChunk,
 ) -> None:
+    """사용자가 요구한 조건부 답변은 근거 부족 상태에서도 허용하는지 보장한다."""
     captured: list[list[dict[str, str]]] = []
 
     def answer(_, messages, **kwargs):
+        """전달된 프롬프트를 기록하고 인용된 조건부 답변을 반환한다."""
         captured.append(messages)
         return "자료가 확인하는 일반 원칙만 설명합니다. [Source 1, Page 3]"
 
@@ -312,9 +325,11 @@ def test_generate_answer_restores_confusable_question_literal_without_rewriting_
     monkeypatch: pytest.MonkeyPatch,
     retrieved_chunk: RetrievedChunk,
 ) -> None:
+    """혼동된 질문 리터럴만 복원하고 다른 코드는 보존하는지 보장한다."""
     operations: list[str] = []
 
     def complete(*args, **kwargs):
+        """생성 및 리터럴 복구 단계별 응답을 제공한다."""
         operation = kwargs["operation"]
         operations.append(operation)
         if operation == "answer":
@@ -355,6 +370,7 @@ def test_generate_answer_normalizes_positional_channel_mapping_from_context(
     monkeypatch: pytest.MonkeyPatch,
     retrieved_chunk: RetrievedChunk,
 ) -> None:
+    """문맥의 채널 정의에 맞춰 위치별 코드 해석을 교정하는지 보장한다."""
     retrieved_chunk = replace(
         retrieved_chunk,
         content=(
@@ -400,6 +416,7 @@ def test_generate_answer_prepends_missing_exclusion_release_step(
     monkeypatch: pytest.MonkeyPatch,
     retrieved_chunk: RetrievedChunk,
 ) -> None:
+    """제외 파일 작업 답변 앞에 제외 해제 단계를 추가하는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
@@ -421,6 +438,7 @@ def test_generate_answer_retries_degenerate_repetition_once(
     monkeypatch: pytest.MonkeyPatch,
     retrieved_chunk: RetrievedChunk,
 ) -> None:
+    """퇴행적 반복 응답을 감지해 정확히 한 번 재생성하는지 보장한다."""
     responses = iter(
         [
             "낙상 예방은 t.t.t.t.t.t.t.t.t.t.t.t.t.t.t.t.t.t.t.t.",
@@ -430,6 +448,7 @@ def test_generate_answer_retries_degenerate_repetition_once(
     operations: list[str] = []
 
     def complete(self, messages, **kwargs):
+        """호출 작업을 기록하고 순서대로 준비된 응답을 반환한다."""
         operations.append(kwargs["operation"])
         return next(responses)
 
@@ -445,6 +464,7 @@ def test_generate_answer_retries_degenerate_repetition_once(
 def test_generate_answer_maps_citations_to_prioritized_bounded_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """우선순위와 길이 제한이 적용된 문맥 기준으로 인용을 매핑하는지 보장한다."""
     chunks = [
         RetrievedChunk(
             chunk_id=index,
@@ -472,6 +492,7 @@ def test_generate_answer_maps_citations_to_prioritized_bounded_context(
     captured_messages: list[dict[str, str]] = []
 
     def complete(self, messages, **kwargs):
+        """생성 메시지를 기록하고 첫 문맥 근거를 인용한다."""
         captured_messages.extend(messages)
         return "후순위 핵심 근거입니다. [Source 1, Page 5]"
 

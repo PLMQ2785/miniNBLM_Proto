@@ -1,4 +1,4 @@
-# Lightweight API image; model and embedding runtimes live in separate services.
+# 모델 및 임베딩 런타임과 분리한 경량 API 이미지다.
 FROM python:3.12-slim
 COPY --from=ghcr.io/astral-sh/uv:0.9.28 /uv /uvx /bin/
 

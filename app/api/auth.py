@@ -32,6 +32,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def _user_response(user: User) -> UserResponse:
+    """ORM 사용자를 인증 API 응답 경계로 변환한다."""
     return UserResponse(
         user_id=user.public_id,
         username=user.username,
@@ -41,6 +42,7 @@ def _user_response(user: User) -> UserResponse:
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
+    """인증 토큰을 브라우저 전용 세션 쿠키로 설정한다."""
     response.set_cookie(
         key=settings.auth_cookie_name,
         value=token,
@@ -54,6 +56,7 @@ def _set_session_cookie(response: Response, token: str) -> None:
 
 
 def _clear_session_cookie(response: Response) -> None:
+    """브라우저의 세션 쿠키를 지우고 캐시를 막는다."""
     response.delete_cookie(
         key=settings.auth_cookie_name,
         httponly=True,
@@ -70,6 +73,7 @@ def register(
     response: Response,
     db: Session = Depends(get_db),
 ) -> AuthResponse:
+    """계정을 만들고 새 인증 세션을 쿠키로 발급한다."""
     try:
         authenticated = auth_service.register(db, credentials.username, credentials.password)
     except UsernameAlreadyExistsError as exc:
@@ -80,6 +84,7 @@ def register(
 
 @router.post("/login", response_model=AuthResponse)
 def login(credentials: LoginCredentials, response: Response, db: Session = Depends(get_db)) -> AuthResponse:
+    """자격 증명을 검증하고 인증 세션 쿠키를 발급한다."""
     try:
         authenticated = auth_service.login(db, credentials.username, credentials.password)
     except InvalidCredentialsError as exc:
@@ -90,6 +95,7 @@ def login(credentials: LoginCredentials, response: Response, db: Session = Depen
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(request: Request, response: Response, db: Session = Depends(get_db)) -> Response:
+    """현재 인증 세션과 브라우저 쿠키를 함께 제거한다."""
     auth_service.logout(db, request.cookies.get(settings.auth_cookie_name))
     _clear_session_cookie(response)
     response.status_code = status.HTTP_204_NO_CONTENT
@@ -104,6 +110,7 @@ def change_password(
     user: User = Depends(get_authenticated_user),
     db: Session = Depends(get_db),
 ) -> AuthResponse:
+    """현재 비밀번호를 확인한 뒤 비밀번호와 세션 상태를 갱신한다."""
     session_token = request.cookies.get(settings.auth_cookie_name)
     if session_token is None:
         raise HTTPException(
@@ -139,6 +146,7 @@ def delete_account(
     db: Session = Depends(get_db),
     _: None = Depends(ensure_retrieval_writes_available),
 ) -> Response:
+    """본인 확인 뒤 사용자 소유 데이터와 계정을 삭제한다."""
     try:
         auth_service.delete_account(
             db,
@@ -169,5 +177,6 @@ def delete_account(
 
 @router.get("/me", response_model=AuthResponse)
 def me(response: Response, user: User = Depends(get_authenticated_user)) -> AuthResponse:
+    """현재 인증 사용자의 공개 정보를 반환한다."""
     response.headers["Cache-Control"] = "no-store"
     return AuthResponse(user=_user_response(user))

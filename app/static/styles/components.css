@@ -1,4 +1,5 @@
-/* Visual states for controls, messages, and panels. */
+/* 폼·메시지·패널 컴포넌트의 표시 상태 */
+/* 인증·계정 폼과 탭 */
 .auth-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -142,6 +143,7 @@
   line-height: 20px;
 }
 
+/* 작업공간 상단 계정·모델 제어 */
 .language-model-control {
   display: flex;
   align-items: center;
@@ -186,6 +188,7 @@
   color: var(--accent-strong);
 }
 
+/* 관리자 프리셋·알고리즘 선택 카드 */
 .preset-option,
 .algorithm-option {
   position: relative;
@@ -362,6 +365,7 @@
   content: "● ";
 }
 
+/* 문서 업로드·목록·상태 표시 */
 .upload-form {
   display: flex;
   min-height: 58px;
@@ -532,6 +536,7 @@
   color: var(--danger);
 }
 
+/* 패널 공통 빈 상태와 오류 복구 */
 .panel-empty-state,
 .chat-empty-state,
 .source-empty-state {
@@ -585,6 +590,7 @@
   place-items: center;
 }
 
+/* 채팅 메시지와 출처 참조 */
 .message {
   width: fit-content;
   max-width: min(760px, 84%);
@@ -735,6 +741,7 @@
   text-decoration: line-through;
 }
 
+/* 대화 이력과 질문 작성 제어 */
 .chat-header-actions {
   display: flex;
   min-width: 0;
@@ -855,6 +862,7 @@
   padding: 0 11px;
 }
 
+/* 출처 PDF와 전역 알림 */
 .pdf-frame {
   width: 100%;
   min-height: 0;
@@ -911,6 +919,7 @@
   background: var(--accent-soft);
 }
 
+/* 모바일 컴포넌트 배치 */
 @media (max-width: 900px) {
   .source-close-button {
     display: inline-flex;

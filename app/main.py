@@ -14,7 +14,8 @@ from app.services.runtime_service import initialize_runtime
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # Recover persisted work before the API starts accepting requests.
+    """API 수신 전 로깅과 중단 작업 복구를 준비한다."""
+    # 요청 수신 전에 저장된 작업을 복구한다.
     configure_logging(settings.log_level)
     initialize_runtime()
     yield
@@ -30,6 +31,7 @@ app.add_middleware(RequestObservabilityMiddleware)
 
 @app.middleware("http")
 async def prevent_stale_web_assets(request, call_next):
+    """웹 셸과 정적 자산이 이전 배포본으로 남지 않게 한다."""
     response = await call_next(request)
     if request.url.path == "/" or request.url.path.startswith("/static/"):
         response.headers["Cache-Control"] = "no-cache"
@@ -50,4 +52,5 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/", include_in_schema=False, response_class=FileResponse)
 def web_ui() -> FileResponse:
+    """브라우저 진입점인 웹 셸을 반환한다."""
     return FileResponse(STATIC_DIR / "index.html")

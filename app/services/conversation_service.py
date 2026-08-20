@@ -8,6 +8,7 @@ MAX_CONTEXT_CHARS = 8000
 
 
 def build_conversation_context(messages: Sequence[ChatMessage]) -> list[dict[str, str]]:
+    """최근 대화를 최신 내용 우선으로 8,000자 안에 맞춰 모델 이력으로 만든다."""
     selected: list[dict[str, str]] = []
     remaining_chars = MAX_CONTEXT_CHARS
 

@@ -1,4 +1,4 @@
-# vLLM image with the minimal Gemma 4 quantization compatibility patch.
+# Gemma 4 양자화 호환 패치만 더한 vLLM 이미지다.
 FROM vllm/vllm-openai:v0.25.0
 
 USER root

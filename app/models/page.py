@@ -9,6 +9,7 @@ from app.database import Base
 
 
 class DocumentPage(Base):
+    """문서에 종속되어 페이지별 원문과 이미지 정보를 보관한다."""
     __tablename__ = "document_pages"
     __table_args__ = (
         Index("document_pages_document_page_idx", "document_id", "page_number"),
@@ -19,6 +20,7 @@ class DocumentPage(Base):
     page_number: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str | None] = mapped_column(Text)
     image_path: Mapped[str | None] = mapped_column(Text)
+    # layout 품질과 Vision caption 결과는 metadata JSON에 함께 보존한다.
     page_metadata: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 

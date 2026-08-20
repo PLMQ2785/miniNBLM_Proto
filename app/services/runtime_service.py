@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def initialize_runtime() -> None:
+    """부팅 관리자를 보장하고 중단된 재인덱싱·문서 처리를 안전하게 재개한다."""
     db = SessionLocal()
     try:
         admin = auth_service.ensure_bootstrap_admin(db)

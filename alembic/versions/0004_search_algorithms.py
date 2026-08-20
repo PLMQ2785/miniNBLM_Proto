@@ -1,4 +1,4 @@
-"""separate search algorithms from chunking presets
+"""검색 알고리즘을 청킹 프리셋에서 분리한다.
 
 Revision ID: 0004_search_algorithms
 Revises: 0003_retrieval_presets
@@ -40,6 +40,7 @@ ALGORITHMS = (
 
 
 def upgrade() -> None:
+    """검색 알고리즘 설정과 전문·유사도 검색 인덱스를 추가한다."""
     op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
     op.create_table(
         "search_algorithms",
@@ -88,6 +89,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """검색 알고리즘 스키마를 제거하고 프리셋 설정으로 되돌린다."""
     op.drop_index("chunks_content_trgm_gist", table_name="chunks")
     op.drop_index("chunks_content_fts_gin", table_name="chunks")
     op.add_column(

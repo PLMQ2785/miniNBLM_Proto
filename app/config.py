@@ -12,6 +12,7 @@ from app.password_policy import validate_secure_password
 
 
 class LLMEndpoint(BaseModel):
+    """런타임 모델 호출에 필요한 검증된 엔드포인트 설정이다."""
     key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_.-]*$")
     display_name: str = Field(min_length=1, max_length=128)
     base_url: str
@@ -22,6 +23,7 @@ class LLMEndpoint(BaseModel):
     @field_validator("base_url")
     @classmethod
     def validate_base_url(cls, value: str) -> str:
+        """모델 서버 주소를 정규화하고 HTTP 계열만 허용한다."""
         normalized = value.strip().rstrip("/")
         if not re.fullmatch(r"https?://[^\s]+", normalized):
             raise ValueError("LLM endpoint base_url must be an HTTP(S) URL")
@@ -29,6 +31,7 @@ class LLMEndpoint(BaseModel):
 
 
 class LLMEndpointFileEntry(BaseModel):
+    """설정 파일에서 API 키 직접값 또는 환경 변수 참조를 받는다."""
     model_config = ConfigDict(extra="forbid")
     key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_.-]*$")
     display_name: str = Field(min_length=1, max_length=128)
@@ -45,11 +48,13 @@ class LLMEndpointFileEntry(BaseModel):
 
     @model_validator(mode="after")
     def validate_api_key_source(self) -> "LLMEndpointFileEntry":
+        """API 키 출처가 정확히 하나만 지정되었는지 확인한다."""
         if (self.api_key is None) == (self.api_key_env is None):
             raise ValueError("Configure exactly one of api_key or api_key_env")
         return self
 
     def resolve(self) -> LLMEndpoint:
+        """비밀 키 참조를 풀어 런타임 엔드포인트 설정으로 변환한다."""
         if self.api_key_env is not None:
             api_key = os.environ.get(self.api_key_env)
             if not api_key:
@@ -70,11 +75,13 @@ class LLMEndpointFileEntry(BaseModel):
 
 
 class LLMConfiguration(BaseModel):
+    """런타임에서 사용할 모델 엔드포인트 목록과 기본 선택을 묶는다."""
     default_endpoint: str = Field(min_length=1, max_length=64)
     endpoints: list[LLMEndpoint]
 
     @model_validator(mode="after")
     def validate_endpoint_keys(self) -> "LLMConfiguration":
+        """엔드포인트 키의 존재·고유성과 기본 선택을 검증한다."""
         endpoint_keys = [endpoint.key for endpoint in self.endpoints]
         if not endpoint_keys:
             raise ValueError("LLM endpoint configuration must contain at least one endpoint")
@@ -86,11 +93,13 @@ class LLMConfiguration(BaseModel):
 
 
 class LLMConfigurationFile(BaseModel):
+    """모델 엔드포인트 JSON 파일의 최상위 입력 경계다."""
     model_config = ConfigDict(extra="forbid")
     default_endpoint: str = Field(min_length=1, max_length=64)
     endpoints: list[LLMEndpointFileEntry]
 
     def resolve(self) -> LLMConfiguration:
+        """파일 입력을 비밀값이 해석된 런타임 설정으로 변환한다."""
         return LLMConfiguration(
             default_endpoint=self.default_endpoint,
             endpoints=[endpoint.resolve() for endpoint in self.endpoints],
@@ -98,6 +107,7 @@ class LLMConfigurationFile(BaseModel):
 
 
 class Settings(BaseSettings):
+    """환경 변수와 설정 파일을 합쳐 애플리케이션 실행값을 제공한다."""
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     database_url: str = "postgresql+psycopg://rag_user:rag_password@localhost:5433/rag_db"
@@ -128,7 +138,8 @@ class Settings(BaseSettings):
     @model_validator(mode="before")
     @classmethod
     def load_llm_configuration(cls, values: object) -> object:
-        # Treat endpoint configuration errors as startup errors, not runtime fallbacks.
+        """모델 설정 파일 오류를 시작 단계에서 검증해 런타임 우회를 막는다."""
+        # 엔드포인트 설정 오류는 런타임 대체 없이 시작 오류로 처리한다.
         if not isinstance(values, dict) or values.get("llm_configuration") is not None:
             return values
         path = Path(values.get("llm_endpoints_file", "config/llm-endpoints.json")).expanduser()
@@ -142,13 +153,15 @@ class Settings(BaseSettings):
     @field_validator("bootstrap_admin_username", "bootstrap_admin_password", mode="before")
     @classmethod
     def empty_bootstrap_values_are_disabled(cls, value: object) -> object:
+        """빈 부트스트랩 관리자 값을 미설정 상태로 정규화한다."""
         if isinstance(value, str) and not value.strip():
             return None
         return value
 
     @model_validator(mode="after")
     def validate_request_body_limit(self) -> "Settings":
-        # Multipart metadata needs a little room above the raw PDF limit.
+        """멀티파트 여유 공간을 포함하도록 요청 제한을 검증한다."""
+        # 원본 PDF 외 멀티파트 메타데이터가 들어갈 여유가 필요하다.
         if self.max_request_body_bytes <= self.max_upload_bytes:
             raise ValueError("MAX_REQUEST_BODY_BYTES must be greater than MAX_UPLOAD_BYTES")
         return self
@@ -156,6 +169,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_bootstrap_administrator(self) -> "Settings":
+        """부트스트랩 관리자 자격 증명의 쌍과 보안 정책을 검증한다."""
         username = self.bootstrap_admin_username
         password = self.bootstrap_admin_password
         if (username is None) != (password is None):
@@ -174,6 +188,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_llm_configuration(self) -> "Settings":
+        """비전 캡션 사용 시 기본 모델의 이미지 지원을 검증한다."""
         if (
             self.vision_caption_mode != "disabled"
             and not self.get_llm_endpoint().supports_vision
@@ -183,13 +198,16 @@ class Settings(BaseSettings):
 
     @property
     def llm_endpoints(self) -> list[LLMEndpoint]:
+        """설정된 모델 엔드포인트 목록을 노출한다."""
         return self.llm_configuration.endpoints
 
     @property
     def llm_default_endpoint(self) -> str:
+        """기본 모델 엔드포인트 키를 노출한다."""
         return self.llm_configuration.default_endpoint
 
     def get_llm_endpoint(self, key: str | None = None) -> LLMEndpoint:
+        """지정 키 또는 기본 키에 해당하는 모델 엔드포인트를 찾는다."""
         selected_key = key or self.llm_default_endpoint
         for endpoint in self.llm_endpoints:
             if endpoint.key == selected_key:
@@ -199,6 +217,7 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """프로세스에서 공유할 설정 인스턴스를 한 번만 생성한다."""
     return Settings()
 
 

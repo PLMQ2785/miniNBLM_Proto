@@ -32,6 +32,7 @@ GOAL_STATUSES = {"supported", "partial", "missing", "contradicted"}
 
 @dataclass(frozen=True)
 class EvidenceReference:
+    """목표 충족 판정이 인용한 실제 청크 위치를 보존한다."""
     chunk_id: int
     document_title: str
     page_start: int
@@ -40,6 +41,7 @@ class EvidenceReference:
 
 @dataclass(frozen=True)
 class GoalCoverage:
+    """목표별 근거 상태와 부족할 때의 재검색어를 전달한다."""
     goal_id: str
     description: str
     status: Literal["supported", "partial", "missing", "contradicted"]
@@ -49,15 +51,18 @@ class GoalCoverage:
 
 @dataclass(frozen=True)
 class EvidenceCoverageAssessment:
+    """계획된 모든 목표의 근거 충족 판정을 묶는다."""
     goals: tuple[GoalCoverage, ...]
 
     @property
     def sufficient(self) -> bool:
+        """모든 목표가 근거로 완전히 지원되는지 확인한다."""
         return bool(self.goals) and all(goal.status == "supported" for goal in self.goals)
 
 
 @dataclass(frozen=True)
 class EvidenceMatrixGoal:
+    """생성 프롬프트에 넣을 목표별 상태와 근거를 나타낸다."""
     goal_id: str
     description: str
     status: str
@@ -66,6 +71,7 @@ class EvidenceMatrixGoal:
 
 @dataclass(frozen=True)
 class EvidenceMatrix:
+    """최신 충족도 판정을 생성 단계가 소비할 행렬로 전달한다."""
     status: Literal["complete", "partial", "insufficient", "unchecked"]
     goals: tuple[EvidenceMatrixGoal, ...]
 
@@ -74,6 +80,7 @@ def assess_evidence_coverage(
     goals: tuple[EvidenceGoal, ...],
     chunks: list[RetrievedChunk],
 ) -> EvidenceCoverageAssessment | None:
+    """현재 청크가 각 근거 목표를 충족하는지 LLM으로 검증한다."""
     if not goals or not chunks:
         return None
 
@@ -111,7 +118,7 @@ def assess_evidence_coverage(
                 operation="evidence_coverage_repair",
                 response_format=JSON_OBJECT_RESPONSE_FORMAT,
             )
-            # Unknown IDs are never matched by position; an unchecked matrix is safer.
+            # 알 수 없는 ID를 위치로 맞추지 않고 미확인 행렬로 남기는 편이 안전하다.
             try:
                 assessment = _parse_coverage_response(repaired, goals, chunks)
             except (TypeError, ValueError, json.JSONDecodeError):
@@ -139,11 +146,12 @@ def complete_evidence_coverage(
     chunks: list[RetrievedChunk],
     trace: RetrievalTrace | None = None,
 ) -> list[RetrievedChunk]:
+    """계층 폴백과 목표 재검색을 합쳐 최대 두 동작으로 근거를 보완한다."""
     if not goals:
         return chunks
 
     current_chunks = chunks
-    # Hierarchical fallback and targeted retries share one bounded action budget.
+    # 계층 폴백과 목표 재검색은 두 번의 공용 동작 예산을 함께 쓴다.
     actions = 0
     if not current_chunks:
         hierarchy_queries = tuple(query for goal in goals for query in goal.queries)
@@ -189,7 +197,7 @@ def complete_evidence_coverage(
         RETRIEVAL_RETRIES.labels(
             status="success" if supplemental else "empty"
         ).inc()
-        # Empty retries preserve the context already found.
+        # 빈 재검색 결과는 이미 찾은 컨텍스트를 지우지 않는다.
         current_chunks = _merge_retry_chunks(current_chunks, supplemental)
         assessment = assess_evidence_coverage(goals, current_chunks)
         _record_assessment(trace, actions, goals, assessment)
@@ -203,6 +211,7 @@ def build_evidence_matrix(
     goals: tuple[EvidenceGoal, ...],
     trace: RetrievalTrace,
 ) -> EvidenceMatrix:
+    """추적의 최신 목표 판정을 생성용 근거 행렬로 확정한다."""
     if not goals:
         return EvidenceMatrix(status="unchecked", goals=())
 
@@ -261,6 +270,7 @@ def _coverage_request(
     goals: tuple[EvidenceGoal, ...],
     chunks: list[RetrievedChunk],
 ) -> str:
+    """목표와 제한된 청크 본문을 충족도 판정 요청으로 만든다."""
     goal_lines = "\n".join(
         f'- goal_id="{goal.goal_id}": {goal.description}' for goal in goals
     )
@@ -284,6 +294,7 @@ def _parse_coverage_response(
     goals: tuple[EvidenceGoal, ...],
     chunks: list[RetrievedChunk],
 ) -> EvidenceCoverageAssessment:
+    """모델 판정을 계획된 목표·청크 ID에 엄격히 연결한다."""
     payload = _parse_json_object(response)
     raw_results = payload.get("goals")
     if not isinstance(raw_results, list) or len(raw_results) != len(goals):
@@ -356,6 +367,7 @@ def _parse_coverage_response(
 
 
 def _parse_json_object(response: str) -> dict:
+    """충족도 응답이 단일 JSON 객체인지 검증한다."""
     candidate = response.strip()
     if candidate.startswith("```"):
         candidate = re.sub(r"^```(?:json)?\s*", "", candidate, flags=re.IGNORECASE)
@@ -367,6 +379,7 @@ def _parse_json_object(response: str) -> dict:
 
 
 def _normalize_retry_queries(raw_queries) -> tuple[str, ...]:
+    """재검색어를 중복 없이 목표당 세 개까지 정규화한다."""
     if not isinstance(raw_queries, list):
         raise ValueError("retry_queries must be an array")
     normalized: list[str] = []
@@ -388,6 +401,7 @@ def _retry_goals(
     planned_goals: tuple[EvidenceGoal, ...],
     assessment: EvidenceCoverageAssessment,
 ) -> tuple[EvidenceGoal, ...]:
+    """지원되지 않은 목표만 모델 후보를 우선해 재검색 계획으로 만든다."""
     planned_by_id = {goal.goal_id: goal for goal in planned_goals}
     retries: list[EvidenceGoal] = []
     for result in assessment.goals:
@@ -410,6 +424,7 @@ def _record_assessment(
     planned_goals: tuple[EvidenceGoal, ...],
     assessment: EvidenceCoverageAssessment | None,
 ) -> None:
+    """목표별 충족도와 근거를 이후 행렬 생성용 추적에 남긴다."""
     if trace is None:
         return
     if assessment is None:
@@ -448,6 +463,7 @@ def _merge_retry_chunks(
     original: list[RetrievedChunk],
     supplemental: list[RetrievedChunk],
 ) -> list[RetrievedChunk]:
+    """기존 청크를 먼저 보존하며 재검색 결과를 개수·문자 상한 안에서 합친다."""
     merged: list[RetrievedChunk] = []
     seen_ids: set[int] = set()
     used_chars = 0

@@ -36,6 +36,7 @@ def list_retrieval_traces(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_admin),
 ) -> RetrievalTraceListResponse:
+    """관리자가 최근 검색 추적 기록을 페이지 단위로 조회한다."""
     rows = chat_repository.list_retrieval_traces(db, limit=limit, offset=offset)
     return RetrievalTraceListResponse(
         traces=[
@@ -53,6 +54,7 @@ def list_retrieval_traces(
 
 
 def _preset_response(preset: RetrievalPresetRecord) -> RetrievalPresetResponse:
+    """검색 프리셋 DB 레코드를 관리자 응답으로 변환한다."""
     return RetrievalPresetResponse(
         key=preset.key,
         display_name=preset.display_name,
@@ -63,6 +65,7 @@ def _preset_response(preset: RetrievalPresetRecord) -> RetrievalPresetResponse:
 
 
 def _search_algorithm_response(algorithm: SearchAlgorithmRecord) -> SearchAlgorithmResponse:
+    """검색 알고리즘 DB 레코드를 관리자 응답으로 변환한다."""
     return SearchAlgorithmResponse(
         key=algorithm.key,
         display_name=algorithm.display_name,
@@ -71,6 +74,7 @@ def _search_algorithm_response(algorithm: SearchAlgorithmRecord) -> SearchAlgori
 
 
 def _job_response(job: ReindexJob) -> ReindexJobResponse:
+    """재인덱싱 작업의 진행 상태를 관리자 응답으로 변환한다."""
     return ReindexJobResponse(
         job_id=job.id,
         source_preset_key=job.source_preset_key,
@@ -95,6 +99,7 @@ def get_retrieval_state(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_admin),
 ) -> RetrievalAdminStateResponse:
+    """현재 검색 설정과 최신 유지보수 작업 상태를 반환한다."""
     configuration = retrieval_config_repository.get_configuration(db)
     latest_job = retrieval_config_repository.get_latest_reindex_job(db)
     return RetrievalAdminStateResponse(
@@ -121,6 +126,7 @@ def activate_search_algorithm(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_admin),
 ) -> SearchAlgorithmResponse:
+    """유지보수 중이 아닐 때 관리자가 검색 알고리즘을 전환한다."""
     try:
         algorithm = search_algorithm_service.activate_search_algorithm(db, algorithm_key)
     except SearchAlgorithmNotFoundError as exc:
@@ -141,6 +147,7 @@ def activate_preset(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin),
 ) -> ReindexJobResponse:
+    """프리셋 변경을 기록하고 필요하면 백그라운드 재인덱싱을 예약한다."""
     try:
         job, requires_background_work = reindex_service.start_preset_change(db, admin.id, preset_key)
     except PresetNotFoundError as exc:
@@ -161,6 +168,7 @@ def get_reindex_job(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_admin),
 ) -> ReindexJobResponse:
+    """관리자 화면에 지정 재인덱싱 작업 상태를 반환한다."""
     job = retrieval_config_repository.get_reindex_job(db, job_id)
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reindex job not found")
@@ -178,6 +186,7 @@ def retry_reindex_job(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin),
 ) -> ReindexJobResponse:
+    """실패한 재인덱싱 작업을 새 작업으로 만들어 다시 예약한다."""
     try:
         retry_job = reindex_service.retry_reindex_job(db, admin.id, job_id)
     except ReindexJobNotFoundError as exc:

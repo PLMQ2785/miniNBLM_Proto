@@ -10,6 +10,7 @@ SCRIPT = Path(__file__).parents[2] / "docker" / "prepare-model.sh"
 
 
 def _create_model_archive(tmp_path: Path) -> tuple[Path, str]:
+    """설치 테스트에 쓸 최소 모델 압축 파일과 해시를 만든다."""
     source = tmp_path / "source" / "model-release"
     source.mkdir(parents=True)
     (source / "config.json").write_text('{"model_type":"test"}', encoding="utf-8")
@@ -28,6 +29,7 @@ def _run_prepare(
     *,
     env_overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
+    """격리된 경로와 환경 변수로 모델 준비 스크립트를 실행한다."""
     env = os.environ.copy()
     env.update(
         {
@@ -49,6 +51,7 @@ def _run_prepare(
 
 
 def test_prepare_model_downloads_verifies_and_installs_atomically(tmp_path: Path) -> None:
+    """모델을 검증한 뒤 임시 흔적 없이 원자적으로 설치한다."""
     archive, digest = _create_model_archive(tmp_path)
 
     result = _run_prepare(tmp_path, archive, digest)
@@ -66,6 +69,7 @@ def test_prepare_model_downloads_verifies_and_installs_atomically(tmp_path: Path
 
 
 def test_prepare_model_reuses_complete_model_without_downloading(tmp_path: Path) -> None:
+    """완료 표식이 있는 모델은 원본 없이도 다시 내려받지 않는다."""
     archive, digest = _create_model_archive(tmp_path)
     assert _run_prepare(tmp_path, archive, digest).returncode == 0
     archive.unlink()
@@ -77,6 +81,7 @@ def test_prepare_model_reuses_complete_model_without_downloading(tmp_path: Path)
 
 
 def test_prepare_model_rejects_bad_checksum_without_partial_install(tmp_path: Path) -> None:
+    """체크섬 불일치 시 부분 모델과 다운로드 조각을 남기지 않는다."""
     archive, _ = _create_model_archive(tmp_path)
 
     result = _run_prepare(tmp_path, archive, "0" * 64)
@@ -88,6 +93,7 @@ def test_prepare_model_rejects_bad_checksum_without_partial_install(tmp_path: Pa
 
 
 def test_prepare_model_retries_with_doh_after_dns_failure(tmp_path: Path) -> None:
+    """일반 DNS 다운로드 실패 시 DNS-over-HTTPS로 한 번 재시도한다."""
     archive, digest = _create_model_archive(tmp_path)
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -125,6 +131,7 @@ exec {real_curl} "$@"
 
 
 def test_prepare_model_downloads_pinned_hugging_face_snapshot(tmp_path: Path) -> None:
+    """고정 리비전의 Hugging Face 스냅샷과 출처 표식을 설치한다."""
     source = tmp_path / "hf-source"
     source.mkdir()
     (source / "config.json").write_text('{"model_type":"test"}', encoding="utf-8")

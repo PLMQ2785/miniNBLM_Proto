@@ -5,11 +5,13 @@ from app.services.conversation_service import build_conversation_context
 
 @dataclass(frozen=True)
 class StubMessage:
+    """대화 문맥 입력을 흉내 내는 최소 메시지 객체다."""
     role: str
     content: str
 
 
 def test_build_conversation_context_keeps_recent_supported_messages() -> None:
+    """지원 역할의 최근 메시지만 원래 순서로 문맥에 남긴다."""
     messages = [
         StubMessage("system", "ignore"),
         StubMessage("user", "첫 질문"),
@@ -25,6 +27,7 @@ def test_build_conversation_context_keeps_recent_supported_messages() -> None:
 
 
 def test_build_conversation_context_limits_total_characters() -> None:
+    """대화 문맥은 최근 내용을 우선해 전체 문자 제한을 지킨다."""
     messages = [
         StubMessage("user", "가" * 6000),
         StubMessage("assistant", "나" * 6000),

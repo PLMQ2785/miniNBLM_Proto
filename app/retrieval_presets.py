@@ -4,6 +4,7 @@ from typing import Mapping
 
 @dataclass(frozen=True)
 class RetrievalPreset:
+    """청크 크기와 검색 문맥량을 함께 정하는 내장 프리셋이다."""
     key: str
     display_name: str
     chunk_size_chars: int
@@ -11,6 +12,7 @@ class RetrievalPreset:
     top_k: int
 
     def __post_init__(self) -> None:
+        """잘못된 프리셋이 초기 데이터에 들어가지 않도록 불변식을 검증한다."""
         normalized_key = self.key.replace("_", "")
         if (
             not normalized_key
@@ -32,16 +34,19 @@ class RetrievalPreset:
 
     @property
     def maximum_context_chars(self) -> int:
+        """한 번의 검색이 모델에 전달할 수 있는 최대 문자 수를 계산한다."""
         return self.chunk_size_chars * self.top_k
 
 
 @dataclass(frozen=True)
 class PresetChangePlan:
+    """프리셋 전환 시 재색인과 런타임 변경 필요 여부를 담는다."""
     reindex_documents: bool
     runtime_settings_changed: bool
 
 
 def plan_preset_change(current: RetrievalPreset, target: RetrievalPreset) -> PresetChangePlan:
+    """현재·대상 프리셋 차이로 필요한 전환 작업을 결정한다."""
     reindex_documents = (
         current.chunk_size_chars != target.chunk_size_chars
         or current.chunk_overlap_chars != target.chunk_overlap_chars
@@ -102,6 +107,7 @@ if DEFAULT_PRESET_KEY not in PRESETS_BY_KEY:
 
 
 def get_retrieval_preset(key: str) -> RetrievalPreset:
+    """등록된 키에 해당하는 내장 검색 프리셋을 반환한다."""
     try:
         return PRESETS_BY_KEY[key]
     except KeyError as exc:

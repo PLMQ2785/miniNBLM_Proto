@@ -1,3 +1,4 @@
+# API, 데이터베이스, 임베딩, LLM을 역할별 이미지로 분리해 실행한다.
 services:
   db:
     image: pgvector/pgvector:pg17
@@ -43,8 +44,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
-    # Native Docker bridge ports are not forwarded to Windows localhost in
-    # mirrored WSL networking. Host mode binds the API directly on WSL:8080.
+    # 미러드 WSL에서는 Docker 브리지 포트가 Windows localhost로 전달되지 않는다.
+    # 호스트 네트워크로 API를 WSL의 8080 포트에 직접 바인딩한다.
     network_mode: host
     volumes:
       - ./data:/app/data
@@ -88,7 +89,7 @@ services:
     ipc: host
     environment:
       HF_HOME: /root/.cache/huggingface
-      # vLLM disables pinned memory on WSL by default; Model Runner V2 needs it for UVA.
+      # WSL에서 vLLM의 고정 메모리를 켜 Model Runner V2의 UVA 요구를 충족한다.
       VLLM_WSL2_ENABLE_PIN_MEMORY: "1"
     command:
       - /models/gemma4

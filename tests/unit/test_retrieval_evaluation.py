@@ -16,6 +16,7 @@ from app.evaluation.retrieval_benchmark import _quality_failures, render_markdow
 
 
 def test_versioned_fixture_loads_and_references_known_document() -> None:
+    """버전 1 fixture는 존재하는 문서와 알려진 페이지를 참조한다."""
     fixture_path = Path("evaluation/retrieval_fall_prevention.json")
     fixture = load_evaluation_fixture(fixture_path)
 
@@ -34,6 +35,7 @@ def test_versioned_fixture_loads_and_references_known_document() -> None:
 
 
 def test_multihop_fixture_defines_evidence_facets_and_existing_pdf_pages() -> None:
+    """다중 홉 fixture는 근거 facet과 실제 PDF 페이지를 모두 갖춘다."""
     fixture_path = Path("evaluation/retrieval_multihop_oss.json")
     fixture = load_evaluation_fixture(fixture_path)
 
@@ -104,6 +106,7 @@ def test_work_education_fixture_covers_domains_languages_and_pdf_pages() -> None
 
 
 def test_schema_v2_requires_queries_facets_and_answer_claims() -> None:
+    """버전 2 fixture는 질의·근거 facet·필수 답변 주장을 요구한다."""
     with pytest.raises(ValidationError, match="require retrieval queries, evidence facets"):
         RetrievalEvaluationFixture.model_validate(
             {
@@ -122,6 +125,7 @@ def test_schema_v2_requires_queries_facets_and_answer_claims() -> None:
 
 
 def test_fixture_rejects_unknown_relevant_document() -> None:
+    """fixture에 등록되지 않은 문서를 근거로 참조할 수 없다."""
     with pytest.raises(ValidationError, match="unknown documents"):
         RetrievalEvaluationFixture.model_validate(
             {
@@ -140,6 +144,7 @@ def test_fixture_rejects_unknown_relevant_document() -> None:
 
 
 def test_retrieval_metrics_score_page_ranges_and_rank() -> None:
+    """검색 점수는 페이지 범위 일치와 최초 관련 순위를 반영한다."""
     score = score_retrieval(
         [
             RankedReference("lesson.pdf", 5, 5),
@@ -161,6 +166,7 @@ def test_retrieval_metrics_score_page_ranges_and_rank() -> None:
 
 
 def test_aggregate_scores_calculates_quality_and_latency_percentiles() -> None:
+    """집계 지표는 품질 평균과 지연 시간 백분위수를 계산한다."""
     metrics = aggregate_scores(
         [
             RetrievalScore(1.0, 1.0, 1.0, 1),
@@ -180,6 +186,7 @@ def test_aggregate_scores_calculates_quality_and_latency_percentiles() -> None:
 
 
 def test_markdown_report_and_recall_threshold_use_each_matrix_cell() -> None:
+    """보고서와 품질 임계값은 프리셋·알고리즘 조합별 점수를 사용한다."""
     report = {
         "fixture": {"name": "fixture", "case_count": 2},
         "run": {

@@ -18,6 +18,7 @@ LATIN_PATTERN = re.compile(r"[A-Za-z]")
 
 @dataclass(frozen=True)
 class ParsedPage:
+    """청킹과 시각 보강에 전달할 페이지 텍스트와 출처 메타데이터다."""
     page_number: int
     text: str
     metadata: dict
@@ -25,6 +26,7 @@ class ParsedPage:
 
 @dataclass(frozen=True)
 class _TextBlock:
+    """페이지 읽기 순서를 보존하기 위한 위치 기반 텍스트 조각이다."""
     y0: float
     y1: float
     text: str
@@ -32,6 +34,7 @@ class _TextBlock:
 
 @dataclass(frozen=True)
 class _RawPage:
+    """전 페이지 비교 전에 보관하는 원시 레이아웃과 시각 요소 통계다."""
     page_number: int
     width: float
     height: float
@@ -42,9 +45,10 @@ class _RawPage:
 
 
 def extract_pages(pdf_path: str) -> list[ParsedPage]:
+    """PDF 레이아웃을 읽고 반복 여백을 제거한 출처 보존 페이지를 만든다."""
     with fitz.open(pdf_path) as document:
         raw_pages = [_extract_raw_page(page, index) for index, page in enumerate(document, 1)]
-    # Repeated headers can only be identified after every page has been inspected.
+    # 반복 머리말과 꼬리말은 모든 페이지를 본 뒤에만 판별할 수 있다.
     repeated_margin_lines = _repeated_margin_lines(raw_pages)
     pages: list[ParsedPage] = []
     for raw_page in raw_pages:
@@ -57,7 +61,7 @@ def extract_pages(pdf_path: str) -> list[ParsedPage]:
             content_blocks.append(block)
 
         content_blocks.extend(raw_page.tables)
-        # Table rows rejoin the normal reading order by their vertical position.
+        # 표도 세로 위치에 따라 본문 읽기 순서에 다시 합친다.
         content_blocks.sort(key=lambda block: (block.y0, block.y1))
         text = "\n\n".join(block.text.strip() for block in content_blocks if block.text.strip())
         text = re.sub(r"\n{3,}", "\n\n", text).strip()
@@ -88,6 +92,7 @@ def extract_pages(pdf_path: str) -> list[ParsedPage]:
 
 
 def _extract_raw_page(page: fitz.Page, page_number: int) -> _RawPage:
+    """한 페이지에서 표와 중복되지 않는 본문 블록 및 시각 통계를 추출한다."""
     page_dict = page.get_text("dict", sort=True)
     image_count = sum(1 for block in page_dict.get("blocks", []) if block.get("type") == 1)
     tables, table_rects = _extract_tables(page)
@@ -119,6 +124,7 @@ def _extract_raw_page(page: fitz.Page, page_number: int) -> _RawPage:
 
 
 def _extract_tables(page: fitz.Page) -> tuple[list[_TextBlock], list[fitz.Rect]]:
+    """표 셀을 검색 가능한 행 텍스트로 바꾸고 원래 영역을 함께 반환한다."""
     blocks: list[_TextBlock] = []
     table_rects: list[fitz.Rect] = []
     try:
@@ -142,6 +148,7 @@ def _extract_tables(page: fitz.Page) -> tuple[list[_TextBlock], list[fitz.Rect]]
 
 
 def _mostly_overlaps(block: fitz.Rect, table: fitz.Rect) -> bool:
+    """본문 블록이 표 영역과 충분히 겹쳐 중복 추출됐는지 판별한다."""
     intersection = block & table
     if intersection.is_empty or block.get_area() <= 0:
         return False
@@ -149,6 +156,7 @@ def _mostly_overlaps(block: fitz.Rect, table: fitz.Rect) -> bool:
 
 
 def _repeated_margin_lines(raw_pages: list[_RawPage]) -> set[str]:
+    """여러 페이지 여백에 반복되는 문구를 머리말·꼬리말 후보로 모은다."""
     if len(raw_pages) < 2:
         return set()
     counts: Counter[str] = Counter()
@@ -171,6 +179,7 @@ def _should_remove_margin_block(
     page_height: float,
     repeated_margin_lines: set[str],
 ) -> bool:
+    """페이지 번호나 반복 여백만 담은 블록을 본문에서 제외할지 판별한다."""
     if not _is_margin_block(block, page_height):
         return False
     lines = [line.strip() for line in block.text.splitlines() if line.strip()]
@@ -182,6 +191,7 @@ def _should_remove_margin_block(
 
 
 def _is_margin_block(block: _TextBlock, page_height: float) -> bool:
+    """텍스트 블록이 페이지 상하단 여백 띠에 있는지 확인한다."""
     return (
         block.y0 <= page_height * HEADER_FOOTER_BAND_RATIO
         or block.y1 >= page_height * (1 - HEADER_FOOTER_BAND_RATIO)
@@ -189,6 +199,7 @@ def _is_margin_block(block: _TextBlock, page_height: float) -> bool:
 
 
 def _normalize_margin_line(line: str) -> str:
+    """여백 문구 비교를 위해 공백과 대소문자를 통일하고 페이지 번호를 버린다."""
     normalized = " ".join(line.casefold().split())
     if BARE_PAGE_NUMBER_PATTERN.fullmatch(normalized):
         return ""
@@ -196,6 +207,7 @@ def _normalize_margin_line(line: str) -> str:
 
 
 def _visual_evidence_risk(text_chars: int, has_visual_content: bool) -> str:
+    """텍스트 양과 시각 요소를 조합해 캡션 보강 필요도를 분류한다."""
     if text_chars < 20:
         return "empty_text" if has_visual_content else "empty"
     if has_visual_content and text_chars < 180:
@@ -206,6 +218,7 @@ def _visual_evidence_risk(text_chars: int, has_visual_content: bool) -> str:
 
 
 def _language_hint(text: str) -> str:
+    """추출 텍스트의 한글·라틴 문자 비율로 페이지 언어 힌트를 만든다."""
     hangul_count = len(HANGUL_PATTERN.findall(text))
     latin_count = len(LATIN_PATTERN.findall(text))
     if hangul_count and latin_count:

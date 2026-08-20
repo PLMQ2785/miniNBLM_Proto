@@ -1,4 +1,4 @@
-# Reasoning benchmark adds the local sample corpus as a read-only mount.
+# 추론 벤치마크에 로컬 샘플 말뭉치를 읽기 전용으로 연결한다.
 services:
   benchmark:
     environment:

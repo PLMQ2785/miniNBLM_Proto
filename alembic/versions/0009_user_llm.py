@@ -1,4 +1,4 @@
-"""add per-user language model selection
+"""사용자별 언어 모델 선택을 추가한다.
 
 Revision ID: 0009_user_llm
 Revises: 0008_page_search_indexes
@@ -17,6 +17,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """사용자에 활성 언어 모델 엔드포인트 선택을 추가한다."""
     op.add_column(
         "users",
         sa.Column("active_llm_endpoint_key", sa.Text(), nullable=True),
@@ -24,4 +25,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """사용자별 언어 모델 선택을 제거한다."""
     op.drop_column("users", "active_llm_endpoint_key")

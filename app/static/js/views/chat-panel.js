@@ -1,6 +1,8 @@
 import { formatPage } from "../formatters.js";
 
+// 작업공간 상태에 연결되어 대화 이력과 질문·답변 메시지를 렌더링한다.
 export class ChatPanel {
+  // 대화 패널 요소와 작성·출처·세션 이벤트를 연결한다.
   constructor({
     status,
     messageList,
@@ -38,7 +40,7 @@ export class ChatPanel {
         this.form.requestSubmit();
       }
     });
-    // Delegate clicks because message rows are replaced on every render.
+    // 메시지를 다시 그려도 동작하도록 목록 컨테이너에서 클릭을 위임받는다.
     this.messageList.addEventListener("click", (event) => {
       const loadOlderButton = event.target.closest("[data-load-older-messages]");
       if (loadOlderButton && this.loadOlderHandler) {
@@ -63,42 +65,52 @@ export class ChatPanel {
     this.deleteSessionButton.addEventListener("click", () => this.deleteSessionHandler?.());
   }
 
+  // 질문 전송을 처리할 상위 핸들러를 등록한다.
   onSubmit(handler) {
     this.submitHandler = handler;
   }
 
+  // 답변 출처 선택을 처리할 핸들러를 등록한다.
   onSourceSelect(handler) {
     this.sourceHandler = handler;
   }
 
+  // 실패한 질문의 재시도 핸들러를 등록한다.
   onRetry(handler) {
     this.retryHandler = handler;
   }
 
+  // 대화 이력 선택을 처리할 핸들러를 등록한다.
   onSessionSelect(handler) {
     this.sessionSelectHandler = handler;
   }
 
+  // 새 대화 요청을 처리할 핸들러를 등록한다.
   onNewSession(handler) {
     this.newSessionHandler = handler;
   }
 
+  // 현재 대화 삭제 요청을 처리할 핸들러를 등록한다.
   onDeleteSession(handler) {
     this.deleteSessionHandler = handler;
   }
 
+  // 이전 메시지 조회 요청을 처리할 핸들러를 등록한다.
   onLoadOlder(handler) {
     this.loadOlderHandler = handler;
   }
 
+  // 전송을 마친 질문 입력을 비운다.
   clearInput() {
     this.input.value = "";
   }
 
+  // 다음 질문을 위해 작성 영역에 초점을 둔다.
   focusComposer() {
     this.input.focus();
   }
 
+  // 문서와 대화 상태에 맞춰 작업공간 채팅을 다시 그린다.
   render(documents, messages, {
     isGenerating,
     isLoading,
@@ -162,6 +174,7 @@ export class ChatPanel {
     this.messageList.scrollTop = this.messageList.scrollHeight;
   }
 
+  // 이전 메시지 삽입 전 현재 스크롤 기준점을 저장한다.
   captureScrollPosition() {
     return {
       height: this.messageList.scrollHeight,
@@ -169,10 +182,12 @@ export class ChatPanel {
     };
   }
 
+  // 이전 메시지 삽입 뒤 사용자가 보던 위치를 복원한다.
   restoreScrollPosition({ height, top }) {
     this.messageList.scrollTop = top + this.messageList.scrollHeight - height;
   }
 
+  // 대화 목록과 생성·삭제 버튼의 사용 가능 상태를 렌더링한다.
   renderSessionControls(chatSessions, activeSessionId, {
     isGenerating,
     isLoadingSessions,
@@ -200,6 +215,7 @@ export class ChatPanel {
     this.deleteSessionButton.textContent = deletingSessionId === activeSessionId ? "삭제 중" : "삭제";
   }
 
+  // 문서 처리 상태를 채팅 헤더용 한 줄 문구로 만든다.
   workspaceStatus({ indexedCount, processingCount, failedCount, isLoading }) {
     const parts = [];
     if (indexedCount > 0) parts.push(`검색 가능 ${indexedCount}개`);
@@ -209,6 +225,7 @@ export class ChatPanel {
     return parts.join(" · ");
   }
 
+  // 역할·상태·출처를 포함한 대화 메시지 요소를 만든다.
   messageElement(message, messageIndex, isGenerating) {
     const article = document.createElement("article");
     article.className = `message message-${message.role}`;
@@ -269,6 +286,7 @@ export class ChatPanel {
     return article;
   }
 
+  // 스트리밍 중인 답변 내용을 기존 메시지에 반영한다.
   updateStreamingMessage(messageIndex, content) {
     const message = this.messageList.querySelector(`[data-message-index="${messageIndex}"]`);
     const contentElement = message?.querySelector(".message-content");
@@ -277,6 +295,7 @@ export class ChatPanel {
     this.messageList.scrollTop = this.messageList.scrollHeight;
   }
 
+  // 응답 완료 또는 오류 메시지로 키보드 초점을 옮긴다.
   focusMessage(messageIndex) {
     const message = this.messageList.querySelector(`[data-message-index="${messageIndex}"]`);
     if (!message) return;
@@ -284,6 +303,7 @@ export class ChatPanel {
     message.scrollIntoView({ block: "nearest" });
   }
 
+  // 답변 생성 중임을 알리는 대기 메시지를 만든다.
   pendingElement() {
     const element = document.createElement("div");
     element.className = "message message-assistant message-pending";
@@ -292,6 +312,7 @@ export class ChatPanel {
     return element;
   }
 
+  // 이전 메시지를 불러오는 버튼 영역을 만든다.
   loadOlderElement(isLoading) {
     const container = document.createElement("div");
     container.className = "load-older-messages";
@@ -304,6 +325,7 @@ export class ChatPanel {
     return container;
   }
 
+  // 대화 목록의 빈 상태 안내 요소를 만든다.
   emptyState(message) {
     const element = document.createElement("div");
     element.className = "chat-empty-state";

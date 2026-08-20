@@ -1,4 +1,4 @@
-# Real-model E2E uses isolated API/DB ports and a disposable upload directory.
+# 실제 모델을 격리된 API·DB 포트와 일회용 업로드 공간에서 점검한다.
 services:
   db-e2e:
     image: pgvector/pgvector:pg17

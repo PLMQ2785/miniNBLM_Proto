@@ -15,6 +15,7 @@ from app.services.retriever import RetrievedChunk
 
 
 def _chunk() -> RetrievedChunk:
+    """프롬프트 구성 검증에 쓸 기본 검색 청크를 만든다."""
     return RetrievedChunk(
         chunk_id=1,
         document_id=2,
@@ -28,6 +29,7 @@ def _chunk() -> RetrievedChunk:
 
 
 def test_build_role_messages_use_generic_rag_contract() -> None:
+    """역할 메시지가 도메인 중립 RAG 계약과 출처 형식을 지키는지 보장한다."""
     system_message = build_system_message()
     user_message = build_user_message("핵심은?", [_chunk()])
 
@@ -41,6 +43,7 @@ def test_build_role_messages_use_generic_rag_contract() -> None:
 
 
 def test_user_message_marks_vision_caption_evidence() -> None:
+    """시각 캡션 청크의 근거 유형을 사용자 메시지에 표시하는지 보장한다."""
     chunk = _chunk()
     vision_chunk = RetrievedChunk(
         **{**chunk.__dict__, "content_type": "vision_caption"},
@@ -52,6 +55,7 @@ def test_user_message_marks_vision_caption_evidence() -> None:
 
 
 def test_system_prompt_allows_only_fully_supported_multi_source_inference() -> None:
+    """여러 출처로 완전히 뒷받침된 추론만 시스템 프롬프트가 허용하는지 보장한다."""
     content = build_system_message()["content"]
 
     assert "여러 Context에 모두 명시" in content
@@ -67,6 +71,7 @@ def test_system_prompt_allows_only_fully_supported_multi_source_inference() -> N
 
 
 def test_build_rag_messages_places_history_before_current_question() -> None:
+    """대화 이력이 현재 질문이 담긴 RAG 메시지보다 앞서는지 보장한다."""
     messages = build_rag_messages(
         "그 다음은?",
         [_chunk()],
@@ -83,6 +88,7 @@ def test_build_rag_messages_places_history_before_current_question() -> None:
 
 
 def test_user_message_includes_partial_evidence_matrix() -> None:
+    """부분 근거 행렬의 상태와 참조가 사용자 메시지에 포함되는지 보장한다."""
     message = build_user_message(
         "감점을 구분해 주세요.",
         [_chunk()],
@@ -107,6 +113,7 @@ def test_user_message_includes_partial_evidence_matrix() -> None:
 
 
 def test_user_message_preserves_positionally_interpreted_literals() -> None:
+    """위치별 해석 대상 리터럴을 프롬프트가 그대로 보존하는지 보장한다."""
     message = build_user_message(
         "응답 `LB05 03 NLNNB`를 위치별로 해석해 주세요.",
         [_chunk()],
@@ -118,6 +125,7 @@ def test_user_message_preserves_positionally_interpreted_literals() -> None:
 
 
 def test_user_message_requires_exclusion_removal_before_workflow_commands() -> None:
+    """제외된 파일 작업에는 제외 해제 절차를 먼저 요구하는지 보장한다."""
     message = build_user_message(
         "secret.txt를 .gitignore에 넣었는데 stash하려면 어떻게 하나요?",
         [_chunk()],
@@ -129,6 +137,7 @@ def test_user_message_requires_exclusion_removal_before_workflow_commands() -> N
 
 
 def test_user_message_includes_insufficient_matrix_for_qualified_answers() -> None:
+    """근거 부족 행렬을 조건부 답변용 프롬프트에 포함하는지 보장한다."""
     message = build_user_message(
         "자료가 뒷받침하는 내용과 확정할 수 없는 부분을 구분해 주세요.",
         [_chunk()],
@@ -143,6 +152,7 @@ def test_user_message_includes_insufficient_matrix_for_qualified_answers() -> No
 
 
 def test_generation_context_is_bounded_and_prioritizes_matrix_evidence() -> None:
+    """생성 문맥이 길이 제한을 지키며 행렬 근거를 우선하는지 보장한다."""
     chunks = [
         RetrievedChunk(
             chunk_id=index,
@@ -177,6 +187,7 @@ def test_generation_context_is_bounded_and_prioritizes_matrix_evidence() -> None
 
 
 def test_generation_context_prefers_distinct_pages_before_adjacent_duplicates() -> None:
+    """인접 중복보다 서로 다른 페이지를 생성 문맥에 우선하는지 보장한다."""
     page_numbers = (7, 7, 6, 6, 5, 4)
     content_lengths = (3500, 2000, 3500, 1500, 3500, 1800)
     chunks = [

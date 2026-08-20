@@ -17,26 +17,32 @@ logger = logging.getLogger(__name__)
 
 
 class PresetNotFoundError(Exception):
+    """요청한 검색 프리셋이 없음을 관리자 API에 알린다."""
     pass
 
 
 class PresetChangeConflictError(Exception):
+    """인덱싱 중인 문서나 유지보수 작업과의 충돌을 알린다."""
     pass
 
 
 class PresetAlreadyActiveError(Exception):
+    """이미 활성화된 프리셋으로의 중복 전환을 막는다."""
     pass
 
 
 class ReindexJobNotFoundError(Exception):
+    """재시도 대상으로 요청한 재인덱싱 작업이 없음을 알린다."""
     pass
 
 
 class ReindexJobNotRetryableError(Exception):
+    """완료되지 않았거나 실패하지 않은 작업의 재시도를 막는다."""
     pass
 
 
 def start_reindex_worker(job_id: int) -> None:
+    """런타임 복구가 재인덱싱 작업을 독립 백그라운드 스레드로 재개하게 한다."""
     worker = threading.Thread(
         target=run_reindex_job,
         args=(job_id,),
@@ -47,6 +53,7 @@ def start_reindex_worker(job_id: int) -> None:
 
 
 def recover_interrupted_reindex_jobs(db: Session) -> list[int]:
+    """재시작 시 최신 미완료 작업만 유지보수 소유자로 복구한다."""
     configuration = retrieval_config_repository.get_configuration(db, for_update=True)
     unfinished_jobs = retrieval_config_repository.list_unfinished_reindex_jobs(db)
     now = datetime.now(UTC)
@@ -59,7 +66,7 @@ def recover_interrupted_reindex_jobs(db: Session) -> list[int]:
             db.commit()
         return []
 
-    # Only the newest unfinished job can own maintenance mode after a restart.
+    # 재시작 뒤에는 가장 최근의 미완료 작업만 유지보수 모드를 소유한다.
     job = unfinished_jobs[-1]
     for superseded_job in unfinished_jobs[:-1]:
         superseded_job.status = "failed"
@@ -81,6 +88,7 @@ def recover_interrupted_reindex_jobs(db: Session) -> list[int]:
 
 
 def _to_domain(record: RetrievalPresetRecord) -> RetrievalPreset:
+    """DB 프리셋 레코드를 변경 계획 계산용 도메인 값으로 변환한다."""
     return RetrievalPreset(
         key=record.key,
         display_name=record.display_name,
@@ -91,6 +99,7 @@ def _to_domain(record: RetrievalPresetRecord) -> RetrievalPreset:
 
 
 def start_preset_change(db: Session, requested_by: int, target_key: str) -> tuple[ReindexJob, bool]:
+    """프리셋 차이를 계산해 즉시 전환하거나 재인덱싱 작업을 생성한다."""
     configuration = retrieval_config_repository.get_configuration(db, for_update=True)
     if configuration.maintenance_mode:
         raise PresetChangeConflictError("Another retrieval maintenance job is running")
@@ -119,7 +128,7 @@ def start_preset_change(db: Session, requested_by: int, target_key: str) -> tupl
         runtime_settings_changed=change_plan.runtime_settings_changed,
     )
 
-    # A top-k-only change is immediate; chunk geometry requires a full rebuild.
+    # top-k만 바뀌면 즉시 반영하고 청크 구조가 바뀌면 전체를 다시 만든다.
     requires_background_work = change_plan.reindex_documents
     now = datetime.now(UTC)
     if requires_background_work:
@@ -137,6 +146,7 @@ def start_preset_change(db: Session, requested_by: int, target_key: str) -> tupl
 
 
 def retry_reindex_job(db: Session, requested_by: int, failed_job_id: int) -> ReindexJob:
+    """실패한 작업의 목표 프리셋으로 새 전체 재인덱싱 작업을 만든다."""
     configuration = retrieval_config_repository.get_configuration(db, for_update=True)
     if configuration.maintenance_mode:
         raise PresetChangeConflictError("Another retrieval maintenance job is running")
@@ -171,6 +181,7 @@ def retry_reindex_job(db: Session, requested_by: int, failed_job_id: int) -> Rei
 
 
 def run_reindex_job(job_id: int) -> None:
+    """모든 문서를 목표 프리셋으로 재처리하고 유지보수 상태를 확정한다."""
     db = SessionLocal()
     try:
         job = retrieval_config_repository.get_reindex_job(db, job_id)
@@ -188,7 +199,7 @@ def run_reindex_job(job_id: int) -> None:
         job.total_documents = len(document_ids)
         db.commit()
 
-        # Commit progress per document so a restart does not lose the audit trail.
+        # 재시작 후에도 진행 기록이 남도록 문서마다 처리 결과를 확정한다.
         for document_id in document_ids:
             succeeded = process_document(
                 document_id,
@@ -214,7 +225,7 @@ def run_reindex_job(job_id: int) -> None:
         job.completed_at = datetime.now(UTC)
         db.commit()
     except Exception as exc:
-        # Never leave writes blocked when the worker exits unexpectedly.
+        # 작업이 예기치 않게 끝나도 쓰기 차단 상태를 남기지 않는다.
         db.rollback()
         logger.exception("Reindex job failed: job_id=%s", job_id)
         job = retrieval_config_repository.get_reindex_job(db, job_id)

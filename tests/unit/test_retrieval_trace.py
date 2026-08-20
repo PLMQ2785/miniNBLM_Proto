@@ -5,6 +5,7 @@ from app.services.retriever import RetrievedChunk
 
 
 def test_retrieval_trace_serializes_goal_candidates_coverage_and_outcome() -> None:
+    """검색 추적이 계획·후보·근거 판정·최종 결과를 온전히 직렬화하는지 보장한다."""
     chunk = RetrievedChunk(
         chunk_id=10,
         document_id=20,

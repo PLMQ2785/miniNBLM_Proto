@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-import app.models  # noqa: F401 - register SQLAlchemy relationships
+import app.models  # noqa: F401 - SQLAlchemy 관계를 등록한다.
 from app.config import settings
 from app.database import SessionLocal
 from app.evaluation.reasoning_fixture import (
@@ -45,6 +45,7 @@ DEFAULT_OUTPUT_DIR = Path("benchmark_results/reasoning")
 
 
 def _resolve_document(fixture_path: Path, document: ReasoningDocument) -> Path:
+    """픽스처 기준으로 문서 경로를 해석하고 존재를 확인한다."""
     path = Path(document.path)
     if not path.is_absolute():
         path = fixture_path.parent / path
@@ -59,6 +60,7 @@ def _create_corpus(
     fixture_path: Path,
     documents: list[ReasoningDocument],
 ) -> tuple[User, list[Document], dict[str, Path]]:
+    """평가 전용 사용자와 문서 행을 만들어 코퍼스를 격리한다."""
     user = User(
         username=f"reasoning-benchmark-{uuid.uuid4().hex}",
         password_hash="reasoning-benchmark-account-has-no-login-secret",
@@ -86,6 +88,7 @@ def _create_corpus(
 
 
 def _delete_corpus(db: Session, user_id: int) -> None:
+    """평가 사용자에 속한 문서와 계정을 함께 제거한다."""
     db.rollback()
     documents = list(db.scalars(select(Document).where(Document.owner_id == user_id)))
     for document in documents:
@@ -98,6 +101,7 @@ def _delete_corpus(db: Session, user_id: int) -> None:
 
 
 def _chunk_source_keys(chunks: list[RetrievedChunk]) -> set[tuple[str, int]]:
+    """검색 청크가 포괄하는 문서·페이지 키를 펼친다."""
     return {
         (chunk.document_title, page)
         for chunk in chunks
@@ -107,12 +111,14 @@ def _chunk_source_keys(chunks: list[RetrievedChunk]) -> set[tuple[str, int]]:
 
 
 def _source_recall(case: ReasoningCase, chunks: list[RetrievedChunk]) -> float:
+    """사례의 정답 출처 중 검색된 비율을 계산한다."""
     expected = {(source.document, source.page) for source in case.relevant_sources}
     retrieved = _chunk_source_keys(chunks)
     return len(expected & retrieved) / len(expected)
 
 
 def _citation_metrics(case: ReasoningCase, sources: list[Any]) -> dict[str, Any]:
+    """생성 답변의 인용을 정답 출처와 비교한다."""
     expected = {(source.document, source.page) for source in case.relevant_sources}
     cited = {
         (source.document_title, source.page)
@@ -141,6 +147,7 @@ def _citation_metrics(case: ReasoningCase, sources: list[Any]) -> dict[str, Any]
 
 
 def _facet_recall(case: ReasoningCase, chunks: list[RetrievedChunk]) -> dict[str, bool]:
+    """각 근거 단위가 검색 결과에 포함됐는지 표시한다."""
     retrieved = _chunk_source_keys(chunks)
     return {
         facet.facet_id: any(
@@ -156,6 +163,7 @@ def _relevant_page_audit(
     owner_id: int,
     case: ReasoningCase,
 ) -> list[dict[str, Any]]:
+    """정답 페이지의 추출 텍스트와 시각 처리 상태를 수집한다."""
     requested = {(source.document, source.page) for source in case.relevant_sources}
     rows = db.execute(
         select(
@@ -194,6 +202,7 @@ def _automatic_gate(
     outcome_status: str,
     answer: str = "",
 ) -> str:
+    """예상 답변 행동과 실제 결과로 자동 판정 상태를 정한다."""
     if expected_behavior == "grounded_answer":
         return "review" if outcome_status == "grounded" else "fail"
     if expected_behavior == "qualified_answer":
@@ -217,6 +226,7 @@ def _failure_reason(
     citation_accuracy: dict[str, Any],
     answer: str = "",
 ) -> str | None:
+    """검색·추론·인용 단계 중 실패 원인을 우선순위로 분류한다."""
     if (
         case.expected_behavior == "abstain"
         and _automatic_gate(case.expected_behavior, outcome_status, answer) == "pass"
@@ -242,6 +252,7 @@ def _evaluate_case(
     iteration: int,
     corpus_mode: str,
 ) -> dict[str, Any]:
+    """검색부터 답변 생성까지 한 사례를 실행하고 추적 정보를 남긴다."""
     started = time.perf_counter()
     trace = RetrievalTrace(
         request_id=f"reasoning-{corpus_mode}-{case.case_id}-{iteration}-{uuid.uuid4().hex[:8]}"
@@ -350,6 +361,7 @@ def _selected_groups(
     fixture: ReasoningEvaluationFixture,
     requested: list[str] | None,
 ) -> list[str]:
+    """요청한 문서 그룹을 검증하고 픽스처 순서로 선택한다."""
     available = list(dict.fromkeys(document.group for document in fixture.documents))
     if not requested:
         return available
@@ -369,6 +381,7 @@ def run_benchmark(
     iterations: int = 1,
     corpus_mode: str = "isolated",
 ) -> dict[str, Any]:
+    """격리 코퍼스에서 추론 평가를 실행하고 설정과 데이터를 원복한다."""
     fixture_path = fixture_path.resolve()
     fixture = load_reasoning_fixture(fixture_path)
     selected_groups = _selected_groups(fixture, groups)
@@ -393,7 +406,7 @@ def run_benchmark(
         for case in fixture.cases
         if case.group in selected_groups and (not case_ids or case.case_id in case_ids)
     ]
-    # Combined mode exposes cross-document distractors; isolated mode diagnoses one group.
+    # 통합 모드는 문서 간 방해 요소를 드러내고, 격리 모드는 그룹별 원인을 좁힌다.
     started_at = datetime.now(UTC)
     db = SessionLocal()
     configuration = retrieval_config_repository.get_configuration(db)
@@ -405,6 +418,7 @@ def run_benchmark(
     group_results: list[dict[str, Any]] = []
 
     def evaluate_cases(owner_id: int, cases: list[ReasoningCase], top_k: int) -> list[dict[str, Any]]:
+        """선택한 사례를 지정 횟수만큼 평가한다."""
         return [
             _evaluate_case(
                 db,
@@ -422,6 +436,7 @@ def run_benchmark(
         documents: list[ReasoningDocument],
         paths: dict[str, Path],
     ) -> list[dict[str, str]]:
+        """평가 문서 경로와 내용 해시를 보고서에 기록한다."""
         return [
             {
                 "title": document.title,
@@ -436,6 +451,7 @@ def run_benchmark(
         *,
         target_index_version: int,
     ) -> None:
+        """임시 문서를 지정 인덱스 버전으로 처리한다."""
         for document in documents:
             if not process_document(
                 document.id,
@@ -444,7 +460,7 @@ def run_benchmark(
             ):
                 raise RuntimeError(f"Reasoning document indexing failed: {document.title}")
 
-    # The temporary user makes cleanup and ownership checks match production.
+    # 임시 사용자를 써야 삭제와 소유권 검사가 운영 경로와 같아진다.
     try:
         preset = retrieval_config_repository.get_preset(db, preset_key)
         if preset is None:
@@ -552,6 +568,7 @@ def run_benchmark(
 
 
 def render_markdown(report: dict[str, Any]) -> str:
+    """추론 평가 결과를 수동 검토용 마크다운으로 렌더링한다."""
     lines = [
         f"# Reasoning Benchmark: {report['fixture']['name']}",
         "",
@@ -618,6 +635,7 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 
 def _parse_args() -> argparse.Namespace:
+    """추론 벤치마크 명령행 옵션을 해석한다."""
     parser = argparse.ArgumentParser(
         description="Evaluate multi-layer reasoning over real PDF groups"
     )
@@ -637,6 +655,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    """추론 벤치마크를 실행해 JSON과 검토용 보고서를 저장한다."""
     args = _parse_args()
     report = run_benchmark(
         args.fixture,

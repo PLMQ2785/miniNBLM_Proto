@@ -10,6 +10,7 @@ from app.services.retrieval_trace import RetrievalTrace
 def test_hierarchical_retrieval_fuses_pages_and_returns_overlapping_chunks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """계층 검색이 페이지 결과를 융합해 겹치는 청크와 추적 기록을 반환하는지 보장한다."""
     relevant_page = SimpleNamespace(document_id=10, page_number=5)
     distractor_page = SimpleNamespace(document_id=10, page_number=2)
     relevant_chunk = SimpleNamespace(

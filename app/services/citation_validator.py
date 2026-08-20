@@ -42,9 +42,10 @@ def validate_answer_citations(
     answer: str,
     chunks: list[RetrievedChunk],
 ) -> str:
+    """답변의 Source 순서·페이지를 검사하고 필요한 경우만 인용을 고친다."""
     answer = _strip_answer_heading(answer)
     answer = _normalize_structural_citations(answer, chunks)
-    # Most answers are already valid; avoid another model call unless it is needed.
+    # 이미 유효한 답변에는 불필요한 모델 호출을 하지 않는다.
     if not chunks or NO_SOURCE_PATTERN.match(answer) or not answer_needs_citation_repair(answer, chunks):
         CITATION_VALIDATION_REQUESTS.labels(status="skipped").inc()
         return answer
@@ -74,7 +75,7 @@ def validate_answer_citations(
     if not repaired:
         CITATION_VALIDATION_REQUESTS.labels(status="invalid").inc()
         return answer
-    # Preserve valid cited sentences when a repair overreacts and rejects everything.
+    # 복구가 전부 거부해도 유효한 인용 문장은 보존한다.
     if NO_SOURCE_PATTERN.match(repaired):
         grounded_fallback = _grounded_claim_fallback(question, answer, chunks)
         if grounded_fallback is not None:
@@ -99,7 +100,9 @@ def _normalize_structural_citations(
     answer: str,
     chunks: list[RetrievedChunk],
 ) -> str:
+    """Source 순서를 유지하며 생략된 페이지와 잘못 붙은 청크 표기를 정리한다."""
     def add_page(match: re.Match) -> str:
+        """페이지 없는 Source 표기에 해당 순서의 청크 페이지를 붙인다."""
         source_index = int(match.group("source")) - 1
         if not 0 <= source_index < len(chunks):
             return match.group(0)
@@ -120,6 +123,7 @@ def _citation_with_chunk_page(
     match: re.Match,
     chunks: list[RetrievedChunk],
 ) -> str:
+    """인용 페이지를 Source 순서에 대응하는 실제 청크 범위로 맞춘다."""
     source_index = int(match.group("source")) - 1
     if not 0 <= source_index < len(chunks):
         return match.group(0)
@@ -133,6 +137,7 @@ def _citation_with_chunk_page(
 
 
 def answer_needs_citation_repair(answer: str, chunks: list[RetrievedChunk]) -> bool:
+    """모든 실질 주장에 유효한 Source·페이지 인용이 있는지 확인한다."""
     if _has_invalid_citation(answer, chunks):
         return True
     if not valid_cited_source_indexes(answer, chunks):
@@ -148,6 +153,7 @@ def answer_needs_citation_repair(answer: str, chunks: list[RetrievedChunk]) -> b
 
 
 def valid_cited_source_indexes(answer: str, chunks: list[RetrievedChunk]) -> list[int]:
+    """답변에서 실제 청크 페이지와 일치하는 Source 순번만 모은다."""
     indexes: list[int] = []
     seen: set[int] = set()
     for match in _citation_item_matches(answer):
@@ -171,6 +177,7 @@ def _page_matches(
     cited_start: int,
     cited_end: int | None,
 ) -> bool:
+    """인용 페이지 범위가 해당 Source 청크와 같은지 확인한다."""
     if chunk.page_start is None or cited_start != chunk.page_start:
         return False
     if cited_end is None:
@@ -180,6 +187,7 @@ def _page_matches(
 
 
 def _has_invalid_citation(answer: str, chunks: list[RetrievedChunk]) -> bool:
+    """그룹 밖 Source나 범위를 벗어난 인용이 하나라도 있는지 찾는다."""
     text_without_groups = CITATION_GROUP_PATTERN.sub("", answer)
     if SOURCE_TOKEN_PATTERN.search(text_without_groups):
         return True
@@ -202,11 +210,13 @@ def _has_invalid_citation(answer: str, chunks: list[RetrievedChunk]) -> bool:
 
 
 def _citation_item_matches(answer: str):
+    """대괄호 인용 그룹 안의 Source 항목을 순서대로 순회한다."""
     for group in CITATION_GROUP_PATTERN.finditer(answer):
         yield from CITATION_ITEM_PATTERN.finditer(group.group("body"))
 
 
 def _is_substantive_claim_line(line: str) -> bool:
+    """제목·코드가 아닌 인용 필요한 실질 주장인지 판정한다."""
     if not line or line.startswith("```"):
         return False
     if line.startswith("#"):
@@ -220,6 +230,7 @@ def _is_substantive_claim_line(line: str) -> bool:
 
 
 def _claim_segments(line: str) -> list[str]:
+    """한 줄을 문장 단위 주장으로 나눠 개별 인용을 검사하게 한다."""
     normalized = line.strip()
     if not normalized:
         return []
@@ -232,6 +243,7 @@ def _grounded_claim_fallback(
     answer: str,
     chunks: list[RetrievedChunk],
 ) -> str | None:
+    """과도한 복구가 NO_SOURCE를 내면 유효 인용 주장만 남긴다."""
     grounded_claims: list[str] = []
     seen: set[str] = set()
     for raw_line in answer.splitlines():
@@ -266,6 +278,7 @@ def _build_validation_request(
     answer: str,
     chunks: list[RetrievedChunk],
 ) -> str:
+    """질문·제한된 컨텍스트·초안을 인용 복구 요청으로 조립한다."""
     context = build_retrieval_context(chunks)[:MAX_VALIDATION_CONTEXT_CHARS]
     return (
         f"[Question]\n{question}\n\n"
@@ -276,6 +289,7 @@ def _build_validation_request(
 
 
 def _normalize_repaired_answer(response: str) -> str:
+    """모델 복구 응답의 코드 펜스와 답변 제목을 제거한다."""
     normalized = response.strip()
     if normalized.startswith("```"):
         normalized = re.sub(r"^```(?:markdown|text)?\s*", "", normalized, flags=re.IGNORECASE)
@@ -284,6 +298,7 @@ def _normalize_repaired_answer(response: str) -> str:
 
 
 def _strip_answer_heading(answer: str) -> str:
+    """모델이 덧붙인 ANSWER 계열 머리말을 제거한다."""
     normalized = re.sub(
         r"^\s*(?:#{1,6}\s*)?\[?\s*(?:REVISED\s+)?ANSWER\s*\]?\s*:?\s*",
         "",

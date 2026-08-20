@@ -1,4 +1,4 @@
-"""initial schema
+"""문서 검색과 대화의 초기 스키마를 만든다.
 
 Revision ID: 0001_initial_schema
 Revises:
@@ -18,6 +18,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """문서·페이지·청크·대화의 초기 테이블과 인덱스를 생성한다."""
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
     op.create_table(
@@ -92,6 +93,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """초기 스키마의 인덱스와 테이블을 역순으로 제거한다."""
     op.drop_index("chunks_embedding_hnsw", table_name="chunks")
     op.drop_index("chunks_page_idx", table_name="chunks")
     op.drop_index("chunks_document_idx", table_name="chunks")

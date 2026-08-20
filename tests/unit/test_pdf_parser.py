@@ -4,6 +4,7 @@ from app.services.pdf_parser import extract_pages
 
 
 def test_extract_pages_removes_repeated_margins_and_records_visual_risk(tmp_path) -> None:
+    """반복 여백은 제거하고 도형이 많은 페이지의 시각 위험을 기록한다."""
     pdf_path = tmp_path / "layout.pdf"
     document = fitz.open()
     for page_number in range(1, 4):

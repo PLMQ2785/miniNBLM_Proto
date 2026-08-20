@@ -1,4 +1,4 @@
-/* Shared design tokens and base accessibility rules. */
+/* 공통 디자인 토큰과 기본 접근성 규칙 */
 :root {
   color-scheme: light;
   --bg-app: #eef1f3;

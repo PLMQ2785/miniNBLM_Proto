@@ -86,7 +86,9 @@ CHAT_STREAMS = Counter(
 
 
 class JsonLogFormatter(logging.Formatter):
+    """요청 로그를 수집기가 읽는 JSON 한 줄 형식으로 만든다."""
     def format(self, record: logging.LogRecord) -> str:
+        """로그 레코드와 요청 문맥을 구조화된 JSON으로 직렬화한다."""
         payload = {
             "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
@@ -107,6 +109,7 @@ class JsonLogFormatter(logging.Formatter):
 
 
 def configure_logging(level: str) -> None:
+    """애플리케이션과 Uvicorn 로그를 단일 JSON 출력으로 통합한다."""
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonLogFormatter())
     root = logging.getLogger()
@@ -122,6 +125,7 @@ def configure_logging(level: str) -> None:
 
 
 def _request_id(headers: list[tuple[bytes, bytes]]) -> str:
+    """안전한 요청 식별자를 헤더에서 읽거나 새로 발급한다."""
     for name, value in headers:
         if name.lower() != b"x-request-id":
             continue
@@ -134,11 +138,14 @@ def _request_id(headers: list[tuple[bytes, bytes]]) -> str:
 
 
 class RequestObservabilityMiddleware:
+    """HTTP 요청에 식별자·구조화 로그·Prometheus 측정을 더한다."""
     def __init__(self, app) -> None:
+        """하위 ASGI 앱과 HTTP 전용 로거를 보관한다."""
         self.app = app
         self.logger = logging.getLogger("mininblm.http")
 
     async def __call__(self, scope, receive, send) -> None:
+        """HTTP 요청의 식별자와 지표 수명 주기를 감싼다."""
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
@@ -146,10 +153,11 @@ class RequestObservabilityMiddleware:
         request_id = _request_id(scope.get("headers", []))
         token = request_id_context.set(request_id)
         started_at = time.perf_counter()
-        # Exceptions keep the default 500 status for metrics and logs.
+        # 예외 요청도 로그와 지표에서 500으로 집계한다.
         status_code = 500
 
         async def send_with_request_id(message) -> None:
+            """응답에 요청 식별자를 싣고 최종 상태 코드를 기록한다."""
             nonlocal status_code
             if message["type"] == "http.response.start":
                 status_code = message["status"]

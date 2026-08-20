@@ -5,23 +5,27 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class ReasoningDocument(BaseModel):
+    """추론 평가 문서를 격리할 그룹과 경로로 지정한다."""
     group: str = Field(min_length=1)
     path: str = Field(min_length=1)
     title: str = Field(min_length=1)
 
 
 class ReasoningSource(BaseModel):
+    """추론 정답의 근거 문서와 페이지를 가리킨다."""
     document: str = Field(min_length=1)
     page: int = Field(ge=1)
 
 
 class ReasoningEvidenceFacet(BaseModel):
+    """추론 단계 하나를 뒷받침하는 정답 출처 묶음이다."""
     facet_id: str = Field(min_length=1, pattern=r"^[a-z0-9_-]+$")
     description: str = Field(min_length=1)
     relevant_sources: list[ReasoningSource] = Field(min_length=1)
 
 
 class ReasoningCase(BaseModel):
+    """질문별 추론 깊이와 답변·근거 계약을 정의한다."""
     case_id: str = Field(min_length=1, pattern=r"^[a-z0-9_-]+$")
     group: str = Field(min_length=1)
     question: str = Field(min_length=1)
@@ -38,6 +42,7 @@ class ReasoningCase(BaseModel):
 
 
 class ReasoningEvaluationFixture(BaseModel):
+    """그룹별 추론 코퍼스와 사례 참조의 무결성을 보장한다."""
     schema_version: Literal[1]
     name: str = Field(min_length=1)
     description: str = ""
@@ -46,6 +51,7 @@ class ReasoningEvaluationFixture(BaseModel):
 
     @model_validator(mode="after")
     def validate_references(self) -> "ReasoningEvaluationFixture":
+        """사례의 답변 요구와 그룹별 정답 출처가 일치하는지 확인한다."""
         document_titles = [document.title for document in self.documents]
         if len(document_titles) != len(set(document_titles)):
             raise ValueError("Reasoning document titles must be unique")
@@ -96,6 +102,7 @@ class ReasoningEvaluationFixture(BaseModel):
 
 
 def load_reasoning_fixture(path: Path) -> ReasoningEvaluationFixture:
+    """JSON 추론 픽스처를 읽고 평가 계약을 검증한다."""
     return ReasoningEvaluationFixture.model_validate_json(
         path.read_text(encoding="utf-8")
     )

@@ -11,6 +11,7 @@ MAX_TRACE_CANDIDATES = 20
 
 @dataclass
 class RetrievalTrace:
+    """검색 계획부터 최종 인용까지 채팅 행에 남길 진단 정보를 모은다."""
     request_id: str
     started_at: float = field(default_factory=time.perf_counter)
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
@@ -24,6 +25,7 @@ class RetrievalTrace:
         standalone_query: str,
         goals: tuple[EvidenceGoal, ...],
     ) -> None:
+        """독립 질문과 근거 목표를 실제 검색 계획 형태로 기록한다."""
         queries = list(
             dict.fromkeys(
                 [
@@ -54,7 +56,8 @@ class RetrievalTrace:
         rows,
         goal_ids: tuple[str | None, ...] = (),
     ) -> None:
-        # Traces are diagnostic metadata; cap snapshots so chat rows stay bounded.
+        """검색 단계의 후보 스냅샷을 제한된 크기로 기록한다."""
+        # 진단 메타데이터가 채팅 행을 키우지 않도록 후보 수를 제한한다.
         self.retrieval_events.append(
             {
                 "stage": stage,
@@ -75,6 +78,7 @@ class RetrievalTrace:
         rows,
         duration_seconds: float,
     ) -> None:
+        """검색 완료 결과와 소요 시간을 단계별로 기록한다."""
         self.retrieval_events.append(
             {
                 "stage": f"{stage}.complete",
@@ -93,6 +97,7 @@ class RetrievalTrace:
         algorithm: str,
         duration_seconds: float,
     ) -> None:
+        """실패한 검색 단계와 실패 전 소요 시간을 기록한다."""
         self.retrieval_events.append(
             {
                 "stage": f"{stage}.error",
@@ -108,6 +113,7 @@ class RetrievalTrace:
         status: str,
         goal_results: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
     ) -> None:
+        """근거 충족도 판정과 목표별 결과를 시도 순서대로 기록한다."""
         self.coverage_events.append(
             {
                 "attempt": attempt,
@@ -117,6 +123,7 @@ class RetrievalTrace:
         )
 
     def record_pages(self, *, stage: str, pages) -> None:
+        """계층 검색이 찾은 페이지 후보를 제한된 크기로 기록한다."""
         self.retrieval_events.append(
             {
                 "stage": stage,
@@ -134,7 +141,8 @@ class RetrievalTrace:
         )
 
     def complete(self, *, answer: str, chunks, sources) -> dict[str, Any]:
-        # Final chunk IDs and cited IDs are separate on purpose.
+        """최종 답변의 근거·인용 상태를 확정하고 직렬화한다."""
+        # 프롬프트에 쓴 청크와 실제 인용한 청크를 의도적으로 따로 남긴다.
         self.outcome = {
             "status": _answer_status(answer, chunks, sources),
             "final_chunk_ids": [chunk.chunk_id for chunk in chunks],
@@ -145,6 +153,7 @@ class RetrievalTrace:
         return self.to_dict()
 
     def to_dict(self) -> dict[str, Any]:
+        """저장 가능한 추적 메타데이터 사전으로 변환한다."""
         return {
             "schema_version": 4,
             "request_id": self.request_id,
@@ -157,6 +166,7 @@ class RetrievalTrace:
 
 
 def _candidate_snapshot(row) -> dict[str, Any]:
+    """저장 크기를 줄인 검색 후보 요약을 만든다."""
     if hasattr(row, "chunk_id") and hasattr(row, "document_title"):
         chunk = row
         score = getattr(row, "score", 0.0)
@@ -175,6 +185,7 @@ def _candidate_snapshot(row) -> dict[str, Any]:
 
 
 def _answer_status(answer: str, chunks, sources) -> str:
+    """최종 답변을 인용·컨텍스트 유무에 따라 분류한다."""
     if sources:
         return "grounded"
     if not chunks:

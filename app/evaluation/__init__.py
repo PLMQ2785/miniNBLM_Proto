@@ -1,1 +1,1 @@
-"""Retrieval quality evaluation helpers."""
+"""검색 품질 평가에서 공유하는 도구 모음."""

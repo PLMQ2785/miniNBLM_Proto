@@ -14,7 +14,9 @@ const JOB_STATUS_LABELS = {
   failed: "실패",
 };
 
+// 관리자 라우팅에 연결되어 검색 설정과 유지보수 상태를 렌더링한다.
 export class AdminView {
+  // 관리 화면 요소와 설정·재시도·비밀번호 초기화 이벤트를 연결한다.
   constructor({
     root,
     presetList,
@@ -100,30 +102,37 @@ export class AdminView {
     });
   }
 
+  // 청킹 프리셋 적용 요청을 처리할 핸들러를 등록한다.
   onActivate(handler) {
     this.activateHandler = handler;
   }
 
+  // 실패한 재인덱싱 작업의 재시도 핸들러를 등록한다.
   onRetry(handler) {
     this.retryHandler = handler;
   }
 
+  // 검색 알고리즘 적용 요청을 처리할 핸들러를 등록한다.
   onActivateAlgorithm(handler) {
     this.activateAlgorithmHandler = handler;
   }
 
+  // 사용자 임시 비밀번호 설정 핸들러를 등록한다.
   onPasswordReset(handler) {
     this.passwordResetHandler = handler;
   }
 
+  // 관리자 화면을 표시한다.
   show() {
     this.root.hidden = false;
   }
 
+  // 관리자 화면을 숨긴다.
   hide() {
     this.root.hidden = true;
   }
 
+  // 서버 관리 상태로 프리셋과 작업 현황을 다시 그린다.
   render(state) {
     this.state = state;
     this.selectedKey = state.pending_preset_key || state.active_preset_key;
@@ -169,6 +178,7 @@ export class AdminView {
     this.syncAlgorithmButton();
   }
 
+  // 선택 가능한 검색 알고리즘 카드를 렌더링한다.
   renderAlgorithms(state) {
     this.algorithmList.replaceChildren();
     for (const algorithm of state.search_algorithms) {
@@ -201,6 +211,7 @@ export class AdminView {
   }
 
 
+  // 최근 재인덱싱 작업의 진행 및 실패 상태를 표시한다.
   renderJob(job) {
     this.jobStatus.removeAttribute("title");
     this.retryButton.hidden = !job || !["failed", "completed_with_errors"].includes(job.status);
@@ -216,6 +227,7 @@ export class AdminView {
     if (job.error_message) this.jobStatus.title = job.error_message;
   }
 
+  // 설정 변경 중이거나 유지보수 중인 관리 입력을 잠근다.
   setBusy(isBusy) {
     const locked = isBusy || Boolean(this.state?.maintenance_mode);
     for (const input of this.presetList.querySelectorAll("input")) input.disabled = locked;
@@ -233,6 +245,7 @@ export class AdminView {
     }
   }
 
+  // 임시 비밀번호 적용 중 보안 입력을 잠근다.
   setPasswordResetBusy(isBusy) {
     this.resetUsername.disabled = isBusy;
     this.temporaryPassword.disabled = isBusy;
@@ -240,20 +253,24 @@ export class AdminView {
     this.passwordResetButton.disabled = isBusy;
   }
 
+  // 임시 비밀번호 설정 결과를 성공 또는 오류로 표시한다.
   showPasswordResetMessage(message, isError = false) {
     this.passwordResetMessage.textContent = message;
     this.passwordResetMessage.dataset.state = isError ? "error" : "success";
   }
 
+  // 임시 비밀번호 폼의 민감한 입력을 비운다.
   resetPasswordResetForm() {
     this.passwordResetForm.reset();
   }
 
+  // 관리 설정 오류를 화면에 표시한다.
   showError(message) {
     this.error.textContent = message;
   }
 
 
+  // 현재 프리셋과 선택값에 따라 적용 버튼을 동기화한다.
   syncActivateButton() {
     this.activateButton.disabled = !this.state
       || this.state.maintenance_mode
@@ -261,6 +278,7 @@ export class AdminView {
       || this.selectedKey === this.state.active_preset_key;
   }
 
+  // 현재 알고리즘과 선택값에 따라 적용 버튼을 동기화한다.
   syncAlgorithmButton() {
     this.activateAlgorithmButton.disabled = !this.state
       || this.state.maintenance_mode

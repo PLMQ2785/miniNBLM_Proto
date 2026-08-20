@@ -20,6 +20,7 @@ router = APIRouter(prefix="/language-models", tags=["language-models"])
 
 
 def _endpoint_response(endpoint: LLMEndpoint) -> LanguageModelEndpointResponse:
+    """내부 엔드포인트 설정을 공개 API 응답으로 변환한다."""
     return LanguageModelEndpointResponse(
         key=endpoint.key,
         display_name=endpoint.display_name,
@@ -29,6 +30,7 @@ def _endpoint_response(endpoint: LLMEndpoint) -> LanguageModelEndpointResponse:
 
 
 def _state_response(user: User) -> LanguageModelStateResponse:
+    """사용자의 활성 선택과 전체 모델 목록을 응답으로 묶는다."""
     return LanguageModelStateResponse(
         endpoints=[_endpoint_response(endpoint) for endpoint in settings.llm_endpoints],
         active_endpoint_key=language_model_service.get_user_endpoint_key(user),
@@ -39,6 +41,7 @@ def _state_response(user: User) -> LanguageModelStateResponse:
 def get_language_model_state(
     user: User = Depends(get_current_user),
 ) -> LanguageModelStateResponse:
+    """현재 사용자가 선택할 수 있는 모델과 활성 모델을 반환한다."""
     return _state_response(user)
 
 
@@ -51,6 +54,7 @@ def activate_language_model(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> LanguageModelStateResponse:
+    """모델 호환성과 가용성을 확인한 뒤 사용자 선택을 저장한다."""
     try:
         language_model_service.activate_endpoint(
             db,

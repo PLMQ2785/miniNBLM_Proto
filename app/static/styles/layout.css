@@ -1,9 +1,10 @@
-/* Page structure, panel sizing, and responsive geometry. */
+/* 화면 골격과 패널 크기, 반응형 배치 */
 .app-shell {
   height: 100dvh;
   overflow: hidden;
 }
 
+/* 인증·계정 화면의 전체 높이 틀 */
 .auth-view {
   display: grid;
   min-height: 100dvh;
@@ -18,6 +19,7 @@
   overflow-y: auto;
 }
 
+/* 관리자 설정 화면의 요약·선택 영역 */
 .admin-view {
   min-height: 100dvh;
   background: var(--bg-subtle);
@@ -169,6 +171,7 @@
   gap: 16px;
 }
 
+/* 관리자 화면의 좁은 폭 배치 */
 @media (max-width: 900px) {
   .preset-grid,
   .algorithm-grid {
@@ -222,6 +225,7 @@
   }
 }
 
+/* 인증·계정 카드 레이아웃 */
 .auth-panel {
   width: min(100%, 390px);
   overflow: hidden;
@@ -259,6 +263,7 @@
   display: none !important;
 }
 
+/* 작업공간 상단 바와 문서·채팅·출처 3단 패널 */
 .app-header {
   position: relative;
   z-index: 30;
@@ -442,6 +447,7 @@
   display: none;
 }
 
+/* 작업공간의 태블릿·모바일 서랍 배치 */
 @media (max-width: 1100px) {
   .workspace {
     grid-template-columns: 250px minmax(380px, 1fr) 340px;

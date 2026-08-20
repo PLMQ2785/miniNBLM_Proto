@@ -13,10 +13,12 @@ COMMON_WEAK_PASSWORDS = frozenset({
 
 
 class PasswordPolicyError(ValueError):
+    """가입·변경 비밀번호가 보안 정책을 어길 때 발생한다."""
     pass
 
 
 def validate_secure_password(password: str, username: str | None = None) -> None:
+    """길이·상용구·사용자명·문자 조합 기준으로 비밀번호를 검증한다."""
     if len(password) < MIN_SECURE_PASSWORD_LENGTH:
         raise PasswordPolicyError(
             f"Password must be at least {MIN_SECURE_PASSWORD_LENGTH} characters long"

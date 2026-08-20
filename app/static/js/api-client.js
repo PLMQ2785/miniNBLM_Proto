@@ -1,4 +1,6 @@
+// HTTP 실패의 상태와 상세 정보를 화면 계층까지 전달하는 오류다.
 export class ApiError extends Error {
+  // 사용자 메시지와 응답 메타데이터를 하나의 오류로 묶는다.
   constructor(message, { status = 0, detail = null } = {}) {
     super(message);
     this.name = "ApiError";
@@ -7,19 +9,24 @@ export class ApiError extends Error {
   }
 }
 
+// 인증·문서·대화 요청과 응답 오류 처리를 한곳에 모은 API 경계다.
 export class ApiClient {
+  // 배포 경로에 맞는 서버 기준 URL을 보관한다.
   constructor(baseUrl = "") {
     this.baseUrl = baseUrl;
   }
 
+  // 작업공간 시작 시 서버 연결 가능 여부를 확인한다.
   async health() {
     return this.request("/health");
   }
 
+  // 현재 세션의 인증 사용자 정보를 조회한다.
   async getCurrentUser() {
     return this.request("/auth/me");
   }
 
+  // 새 계정을 만들고 인증 결과를 반환한다.
   async register(username, password) {
     return this.request("/auth/register", {
       method: "POST",
@@ -28,6 +35,7 @@ export class ApiClient {
     });
   }
 
+  // 자격 증명으로 서버 세션을 시작한다.
   async login(username, password) {
     return this.request("/auth/login", {
       method: "POST",
@@ -36,10 +44,12 @@ export class ApiClient {
     });
   }
 
+  // 현재 서버 세션을 종료한다.
   async logout() {
     return this.request("/auth/logout", { method: "POST" });
   }
 
+  // 현재 비밀번호를 확인해 계정 비밀번호를 변경한다.
   async changePassword(currentPassword, newPassword) {
     return this.request("/auth/password", {
       method: "POST",
@@ -51,6 +61,7 @@ export class ApiClient {
     });
   }
 
+  // 비밀번호와 사용자명 확인을 거쳐 현재 계정을 삭제한다.
   async deleteAccount(currentPassword, usernameConfirmation) {
     return this.request("/auth/account", {
       method: "DELETE",
@@ -62,6 +73,7 @@ export class ApiClient {
     });
   }
 
+  // 관리자가 사용자에게 임시 비밀번호를 설정한다.
   async resetUserPassword(username, temporaryPassword) {
     return this.request("/admin/users/password-reset", {
       method: "POST",
@@ -72,10 +84,12 @@ export class ApiClient {
       }),
     });
   }
+  // 사용 가능한 언어모델과 현재 선택을 조회한다.
   async getLanguageModelState() {
     return this.request("/language-models");
   }
 
+  // 작업공간이 사용할 언어모델 엔드포인트를 전환한다.
   async activateLanguageModel(endpointKey) {
     return this.request(`/language-models/${encodeURIComponent(endpointKey)}/activate`, {
       method: "POST",
@@ -83,64 +97,77 @@ export class ApiClient {
   }
 
 
+  // 관리자 화면에 필요한 검색 설정과 작업 상태를 조회한다.
   async getRetrievalAdminState() {
     return this.request("/admin/retrieval");
   }
 
+  // 검색 프리셋을 적용하고 필요한 재인덱싱을 요청한다.
   async activateRetrievalPreset(presetKey) {
     return this.request(`/admin/retrieval/presets/${encodeURIComponent(presetKey)}/activate`, {
       method: "POST",
     });
   }
 
+  // 활성 검색 알고리즘을 전환한다.
   async activateSearchAlgorithm(algorithmKey) {
     return this.request(`/admin/retrieval/algorithms/${encodeURIComponent(algorithmKey)}/activate`, {
       method: "POST",
     });
   }
 
+  // 재인덱싱 작업의 현재 상태를 조회한다.
   async getReindexJob(jobId) {
     return this.request(`/admin/retrieval/jobs/${jobId}`);
   }
 
+  // 실패한 재인덱싱 작업을 다시 실행한다.
   async retryReindexJob(jobId) {
     return this.request(`/admin/retrieval/jobs/${jobId}/retry`, { method: "POST" });
   }
 
+  // 작업공간에 표시할 문서 목록만 추출해 반환한다.
   async listDocuments() {
     const response = await this.request("/documents");
     return response.documents;
   }
 
+  // 폴링과 업로드 후 갱신에 사용할 문서 상태를 조회한다.
   async getDocument(documentId) {
     return this.request(`/documents/${documentId}`);
   }
 
+  // PDF 파일을 멀티파트 요청으로 업로드한다.
   async uploadDocument(file) {
     const body = new FormData();
     body.append("file", file);
     return this.request("/documents", { method: "POST", body });
   }
 
+  // 문서와 서버의 인덱싱 데이터를 함께 삭제한다.
   async deleteDocument(documentId) {
     return this.request(`/documents/${documentId}`, { method: "DELETE" });
   }
 
+  // 대화 선택 목록에 표시할 세션을 조회한다.
   async listChatSessions() {
     const response = await this.request("/chat/sessions");
     return response.sessions;
   }
 
+  // 지정한 대화의 최신 또는 이전 메시지 구간을 조회한다.
   async getChatSession(sessionId, { limit = 100, beforeId = null } = {}) {
     const params = new URLSearchParams({ limit: String(limit) });
     if (beforeId !== null) params.set("before_id", String(beforeId));
     return this.request(`/chat/sessions/${sessionId}?${params}`);
   }
 
+  // 저장된 대화 세션과 메시지를 삭제한다.
   async deleteChatSession(sessionId) {
     return this.request(`/chat/sessions/${sessionId}`, { method: "DELETE" });
   }
 
+  // 스트리밍이 필요 없는 질문 요청을 전송한다.
   async sendQuestion(question, sessionId = null) {
     const payload = { question };
     if (sessionId !== null) payload.session_id = sessionId;
@@ -151,6 +178,7 @@ export class ApiClient {
     });
   }
 
+  // 질문을 SSE로 전송하고 이벤트별 결과를 누적해 반환한다.
   async streamQuestion(question, sessionId = null, onEvent = null) {
     const payload = { question };
     if (sessionId !== null) payload.session_id = sessionId;
@@ -191,7 +219,8 @@ export class ApiClient {
     const decoder = new TextDecoder();
     let buffer = "";
     let completed = false;
-    // Network chunks do not align with SSE blocks, so keep the unfinished tail.
+    // 네트워크 조각과 SSE 경계가 어긋나므로 미완성 꼬리를 보관한다.
+    // 하나의 SSE 블록을 해석해 누적 결과와 화면 콜백에 전달한다.
     const processBlock = (block) => {
       if (!block.trim()) return;
       let event = "message";
@@ -208,7 +237,7 @@ export class ApiClient {
       if (event === "session") result.session = data;
       else if (event === "delta") result.answer += data.text || "";
       else if (event === "revision") {
-        // Citation repair can replace the complete answer after token streaming.
+        // 인용 교정 결과는 토큰 스트림으로 만든 전체 답변을 대체한다.
         result.answer = data.text || "";
       } else if (event === "sources") result.sources = data;
       else if (event === "done") {
@@ -245,11 +274,13 @@ export class ApiClient {
     return result;
   }
 
+  // 원문 패널이 지정 페이지를 열 수 있는 PDF 주소를 만든다.
   getPdfUrl(documentId, page = null) {
     const base = `${this.baseUrl}/documents/${documentId}/file`;
     return page ? `${base}#page=${page}&view=FitH` : base;
   }
 
+  // 일반 API 요청의 인증 설정·응답 해석·오류 변환을 통일한다.
   async request(path, options = {}) {
     let response;
     try {
@@ -276,6 +307,7 @@ export class ApiClient {
     return payload;
   }
 
+  // HTTP 상태와 서버 상세 사유를 사용자용 한국어 메시지로 바꾼다.
   errorMessage(status, detail, path = "") {
     if (path === "/auth/password") {
       if (status === 409) return "현재 비밀번호와 다른 비밀번호를 사용해 주세요.";

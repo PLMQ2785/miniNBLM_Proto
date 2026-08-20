@@ -15,6 +15,7 @@ pytestmark = pytest.mark.integration
 
 
 def _pdf_bytes(*, password: str | None = None) -> bytes:
+    """업로드 검증에 사용할 정상 또는 암호화 PDF 바이트를 만든다."""
     document = fitz.open()
     page = document.new_page()
     page.insert_text((72, 72), "Valid test PDF")
@@ -31,6 +32,7 @@ def _pdf_bytes(*, password: str | None = None) -> bytes:
 
 
 def _register(client: TestClient) -> None:
+    """문서 API 호출에 사용할 일반 사용자를 가입시킨다."""
     response = client.post(
         "/auth/register",
         json={"username": "uploader", "password": "password123"},
@@ -43,6 +45,7 @@ def test_upload_processing_conflict_and_delete(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """업로드 상태·처리 중 삭제 충돌·최종 파일 삭제를 검증한다."""
     _register(client)
     monkeypatch.setattr(documents_api.document_processor, "process_document", lambda document_id: True)
 
@@ -71,6 +74,7 @@ def test_upload_processing_conflict_and_delete(
 
 
 def test_non_pdf_upload_is_rejected(client: TestClient) -> None:
+    """PDF가 아닌 업로드를 거부하는지 검증한다."""
     _register(client)
 
     response = client.post(
@@ -82,6 +86,7 @@ def test_non_pdf_upload_is_rejected(client: TestClient) -> None:
 
 
 def test_pdf_filename_extension_is_required(client: TestClient) -> None:
+    """PDF 본문이어도 파일명 확장자가 없으면 거부하는지 검증한다."""
     _register(client)
 
     response = client.post(
@@ -107,6 +112,7 @@ def test_invalid_pdf_upload_is_rejected_without_leaving_data(
     payload: bytes,
     expected_detail: str,
 ) -> None:
+    """손상·암호화 PDF 거부 시 DB와 파일이 남지 않는지 검증한다."""
     _register(client)
 
     response = client.post(
@@ -125,6 +131,7 @@ def test_oversized_pdf_is_rejected_without_leaving_data(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """용량 초과 PDF 거부 시 DB와 파일이 남지 않는지 검증한다."""
     _register(client)
     monkeypatch.setattr(settings, "max_upload_bytes", 100)
 
@@ -140,6 +147,7 @@ def test_oversized_pdf_is_rejected_without_leaving_data(
 
 
 def test_maintenance_blocks_document_upload(client: TestClient, db: Session) -> None:
+    """검색 유지보수 중에는 문서 업로드를 차단하는지 검증한다."""
     _register(client)
     from app.repositories import retrieval_config_repository
 

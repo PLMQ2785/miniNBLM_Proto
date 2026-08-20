@@ -23,6 +23,7 @@ def rerank_rows(
     queries=None,
     goal_query_groups: Sequence[tuple[str, Sequence[str]]] = (),
 ):
+    """검색 후보를 질문·목표 임베딩으로 재정렬하고 실패 시 원 순서를 보존한다."""
     if not rows:
         RERANK_REQUESTS.labels(status="empty").inc()
         return []
@@ -72,6 +73,7 @@ def rerank_rows(
 
 
 def _normalize_rerank_queries(question: str, queries) -> list[str]:
+    """원 질문을 첫 기준으로 유지하며 재순위화 쿼리의 중복을 없앤다."""
     normalized = [question.strip()]
     seen = {question.strip().casefold()}
     for candidate in queries or ():
@@ -88,6 +90,7 @@ def _goal_query_indexes(
     rerank_queries: Sequence[str],
     goal_query_groups: Sequence[tuple[str, Sequence[str]]],
 ) -> tuple[tuple[str, tuple[int, ...]], ...]:
+    """각 근거 목표가 참조할 재순위화 쿼리 위치를 연결한다."""
     indexes_by_query = {
         query.casefold(): index for index, query in enumerate(rerank_queries)
     }
@@ -112,6 +115,7 @@ def _rerank_with_embeddings(
     top_k: int,
     goal_query_indexes: Sequence[tuple[str, Sequence[int]]] = (),
 ):
+    """후보별 쿼리 유사도를 계산해 목표 보존 선택기로 넘긴다."""
     if not query_embeddings:
         raise ValueError("At least one query embedding is required")
     query_scores_by_row = [
@@ -158,6 +162,7 @@ def _select_rows(
     top_k: int,
     goal_query_indexes: Sequence[tuple[str, Sequence[int]]] = (),
 ):
+    """의미 점수와 검색 순위를 합치고 목표마다 후보 하나를 먼저 확보한다."""
     if len(query_scores_by_row) != len(rows):
         raise ValueError("Reranker score rows do not match candidate rows")
     row_count = len(rows)
@@ -171,7 +176,7 @@ def _select_rows(
         if len(query_scores) == 1:
             semantic_score = query_scores[0]
         else:
-            # The original question stays dominant; facet queries recover narrow evidence.
+            # 원 질문을 주축으로 두고 세부 쿼리는 좁은 근거를 복구한다.
             semantic_score = (
                 ORIGINAL_QUERY_SHARE * query_scores[0]
                 + FACET_QUERY_SHARE * max(query_scores[1:])
@@ -183,7 +188,7 @@ def _select_rows(
         scored_rows.append((chunk, combined_score, document_title, rank, query_scores))
 
     scored_rows.sort(key=lambda row: (-row[1], row[3], row[0].id))
-    # Reserve one strong candidate per goal before filling by overall score.
+    # 전체 점수로 채우기 전에 목표별 강한 후보 하나를 예약한다.
     selected_ids: set[int] = set()
     for _, query_indexes in goal_query_indexes:
         best_for_goal = max(
@@ -210,6 +215,7 @@ def _select_rows(
 
 
 def _cosine_similarity(left: list[float], right) -> float:
+    """두 임베딩의 코사인 유사도를 안전하게 계산한다."""
     if right is None or len(left) != len(right) or not left:
         return 0.0
     dot_product = sum(a * b for a, b in zip(left, right, strict=True))

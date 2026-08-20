@@ -1,4 +1,4 @@
-"""Generate compact PDF sources for multi-hop RAG regression evaluation."""
+"""멀티홉 RAG 회귀 평가용 소형 PDF 자료를 생성한다."""
 
 from pathlib import Path
 
@@ -62,6 +62,7 @@ DOCUMENTS = {
 
 
 def generate_document(output: Path, pages: tuple[tuple[str, str], ...]) -> None:
+    """페이지 자료를 PDF로 저장하고 열린 문서를 닫는다."""
     output.parent.mkdir(parents=True, exist_ok=True)
     document = fitz.open()
     for page_number, (title, body) in enumerate(pages, start=1):

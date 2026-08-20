@@ -950,5 +950,15 @@ DB `documents.status`와 `error_message`, 원본 `file_path`, page/chunk row 개
 | 평가 | `app/evaluation/`, `evaluation/`, `scripts/benchmark-*.sh` |
 | 테스트 | `tests/unit/`, `tests/integration/`, `tests/e2e/` |
 
+---
+
+## 16. 주석 유지 규칙
+
+- 클래스는 어디에서 쓰이고 왜 분리됐는지 한두 줄로 설명한다.
+- 함수와 메서드는 정의부에서 역할을 바로 알 수 있게 짧은 한국어 docstring을 둔다.
+- 인라인 주석은 코드가 이미 보여 주는 동작보다 이유·불변조건·fallback을 설명한다.
+- 동작이 바뀌면 같은 commit에서 주석을 고치고, 더 이상 맞지 않으면 삭제한다.
+- `noqa`, shebang처럼 도구가 읽는 지시문은 번역하지 않는다.
+
 이 문서가 코드보다 오래되면 문서를 믿지 말고 코드와 test를 source of truth로 삼는다.
 구조나 핵심 flow를 바꾸는 변경은 같은 commit에서 이 문서도 갱신한다.

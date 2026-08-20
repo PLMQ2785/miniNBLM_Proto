@@ -8,6 +8,7 @@ cd "$PROJECT_DIR"
 COMPOSE=(docker compose --profile llm)
 STARTUP_TIMEOUT="${STARTUP_TIMEOUT:-900}"
 
+# 컨테이너 실행 명령을 안내한다.
 usage() {
   cat <<'EOF'
 Usage:
@@ -24,6 +25,7 @@ Environment:
 EOF
 }
 
+# 실행에 필요한 명령이 설치되어 있는지 확인한다.
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "오류: '$1' 명령을 찾을 수 없습니다." >&2
@@ -31,6 +33,7 @@ require_command() {
   fi
 }
 
+# 서비스 컨테이너의 현재 상태를 읽는다.
 container_state() {
   local service="$1"
   local container_id
@@ -42,6 +45,7 @@ container_state() {
   docker inspect --format '{{.State.Status}}' "$container_id" 2>/dev/null || printf 'unknown'
 }
 
+# 컨테이너 상태와 HTTP 준비 상태를 함께 기다린다.
 wait_for_endpoint() {
   local service="$1"
   local url="$2"
@@ -77,7 +81,7 @@ wait_for_endpoint() {
   echo " 완료"
 }
 
-# Fail early when the configured model mount is incomplete.
+# 기동 전에 Docker 환경과 모델 마운트를 검증한다.
 ensure_environment() {
   require_command docker
   docker compose version >/dev/null
@@ -103,6 +107,7 @@ ensure_environment() {
   fi
 }
 
+# 준비된 서비스의 접속 주소를 안내한다.
 print_access_urls() {
   echo
   echo "서비스가 준비되었습니다."

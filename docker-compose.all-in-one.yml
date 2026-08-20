@@ -1,4 +1,4 @@
-# Single-container deployment; persistent state and downloaded models live under /data.
+# 영속 데이터와 내려받은 모델만 /data에 두는 단일 컨테이너 배포다.
 services:
   mininblm:
     build:

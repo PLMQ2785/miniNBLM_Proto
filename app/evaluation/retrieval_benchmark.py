@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-import app.models  # noqa: F401 - register all SQLAlchemy relationships
+import app.models  # noqa: F401 - SQLAlchemy 관계 전체를 등록한다.
 from app.config import settings
 from app.database import SessionLocal
 from app.evaluation.fixture import (
@@ -43,6 +43,7 @@ DEFAULT_OUTPUT_DIR = Path("benchmark_results/retrieval")
 
 
 def _positive_integer(value: str) -> int:
+    """양의 정수 명령행 값을 검증한다."""
     parsed = int(value)
     if parsed < 1:
         raise argparse.ArgumentTypeError("value must be at least 1")
@@ -50,6 +51,7 @@ def _positive_integer(value: str) -> int:
 
 
 def _non_negative_integer(value: str) -> int:
+    """0 이상의 정수 명령행 값을 검증한다."""
     parsed = int(value)
     if parsed < 0:
         raise argparse.ArgumentTypeError("value must be at least 0")
@@ -57,6 +59,7 @@ def _non_negative_integer(value: str) -> int:
 
 
 def _unit_interval(value: str) -> float:
+    """0과 1 사이의 실수 명령행 값을 검증한다."""
     parsed = float(value)
     if not 0 <= parsed <= 1:
         raise argparse.ArgumentTypeError("value must be between 0 and 1")
@@ -67,6 +70,7 @@ def _resolve_documents(
     fixture_path: Path,
     fixture: RetrievalEvaluationFixture,
 ) -> list[tuple[str, Path]]:
+    """픽스처 기준으로 평가 문서 경로를 해석하고 확인한다."""
     resolved = []
     for document in fixture.documents:
         path = Path(document.path)
@@ -80,6 +84,7 @@ def _resolve_documents(
 
 
 def _select_keys(requested: list[str] | None, available: list[str], label: str) -> list[str]:
+    """요청한 키가 허용 목록에 있는지 확인하고 중복을 제거한다."""
     if not requested:
         return available
     unknown = sorted(set(requested) - set(available))
@@ -89,6 +94,7 @@ def _select_keys(requested: list[str] | None, available: list[str], label: str) 
 
 
 def _create_corpus(db: Session, documents: list[tuple[str, Path]]) -> tuple[User, list[Document]]:
+    """평가 전용 사용자와 문서 행을 만들어 코퍼스를 격리한다."""
     user = User(
         username=f"retrieval-benchmark-{uuid.uuid4().hex}",
         password_hash="benchmark-account-has-no-login-secret",
@@ -111,6 +117,7 @@ def _create_corpus(db: Session, documents: list[tuple[str, Path]]) -> tuple[User
 
 
 def _delete_corpus(db: Session, user_id: int) -> None:
+    """평가 사용자에 속한 문서와 계정을 함께 제거한다."""
     db.rollback()
     documents = list(db.scalars(select(Document).where(Document.owner_id == user_id)))
     for document in documents:
@@ -123,6 +130,7 @@ def _delete_corpus(db: Session, user_id: int) -> None:
 
 
 def _references(results: list[RetrievedChunk]) -> list[RankedReference]:
+    """검색 청크를 순위 지표 계산용 참조로 변환한다."""
     return [
         RankedReference(
             document=result.document_title,
@@ -134,6 +142,7 @@ def _references(results: list[RetrievedChunk]) -> list[RankedReference]:
 
 
 def _relevant_sources(case: EvaluationCase) -> set[tuple[str, int]]:
+    """사례의 정답 출처를 비교용 키 집합으로 만든다."""
     return {(source.document, source.page) for source in case.relevant_sources}
 
 
@@ -146,6 +155,7 @@ def _case_result(
     warmup: int,
     iterations: int,
 ) -> tuple[dict[str, Any], list[float]]:
+    """한 사례를 예열·반복 실행해 품질과 지연 시간을 측정한다."""
     goals = tuple(
         EvidenceGoal(f"g{index}", query, (query,))
         for index, query in enumerate(case.retrieval_queries or [case.question], start=1)
@@ -216,6 +226,7 @@ def _evaluate_algorithm(
     warmup: int,
     iterations: int,
 ) -> dict[str, Any]:
+    """검색 알고리즘 하나를 모든 사례에 적용해 결과를 집계한다."""
     if warmup < 0:
         raise ValueError("warmup must be non-negative")
     if iterations < 1:
@@ -275,6 +286,7 @@ def run_benchmark(
     iterations: int = 3,
     evaluation_k: int = 5,
 ) -> dict[str, Any]:
+    """임시 코퍼스로 검색 조합을 평가하고 전역 설정과 데이터를 원복한다."""
     fixture_path = fixture_path.resolve()
     fixture = load_evaluation_fixture(fixture_path)
     documents = _resolve_documents(fixture_path, fixture)
@@ -292,7 +304,7 @@ def run_benchmark(
         configuration.active_search_algorithm_key,
         configuration.index_version,
     )
-    # Benchmarks borrow global retrieval settings and restore them in finally.
+    # 벤치마크가 빌린 전역 검색 설정은 finally에서 되돌린다.
     preset_results = []
     try:
         user, corpus_documents = _create_corpus(db, documents)
@@ -301,7 +313,7 @@ def run_benchmark(
             if preset is None:
                 raise RuntimeError(f"Preset is missing from the database: {preset_key}")
 
-            # Every preset gets a fresh index version over the same temporary corpus.
+            # 각 프리셋은 같은 임시 코퍼스에 새 인덱스 버전을 사용한다.
             target_index_version = original_configuration[2] + preset_index
             indexing_started = time.perf_counter()
             for document in corpus_documents:
@@ -355,7 +367,7 @@ def run_benchmark(
                 }
             )
     finally:
-        # Evaluation data and configuration must not leak into later runs.
+        # 평가 데이터와 설정이 다음 실행에 남지 않게 모두 정리한다.
         try:
             configuration = retrieval_config_repository.get_configuration(db)
             configuration.active_preset_key = original_configuration[0]
@@ -399,6 +411,7 @@ def run_benchmark(
 
 
 def render_markdown(report: dict[str, Any]) -> str:
+    """검색 평가 결과를 비교용 마크다운 표로 렌더링한다."""
     lines = [
         f"# Retrieval Benchmark: {report['fixture']['name']}",
         "",
@@ -425,6 +438,7 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 
 def _quality_failures(report: dict[str, Any], minimum_recall: float) -> list[str]:
+    """최소 재현율을 넘지 못한 프리셋과 알고리즘을 나열한다."""
     return [
         f"{preset['preset']}/{algorithm['algorithm']}={algorithm['metrics']['recall_at_k']:.3f}"
         for preset in report["presets"]
@@ -434,6 +448,7 @@ def _quality_failures(report: dict[str, Any], minimum_recall: float) -> list[str
 
 
 def _parse_args() -> argparse.Namespace:
+    """검색 벤치마크 명령행 옵션을 해석한다."""
     parser = argparse.ArgumentParser(description="Benchmark retrieval quality across presets and algorithms")
     parser.add_argument("--fixture", type=Path, default=DEFAULT_FIXTURE)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
@@ -447,6 +462,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    """검색 벤치마크를 실행하고 보고서와 품질 종료 코드를 낸다."""
     args = _parse_args()
     report = run_benchmark(
         args.fixture,

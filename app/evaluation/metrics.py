@@ -7,11 +7,13 @@ SourceKey = tuple[str, int]
 
 @dataclass(frozen=True)
 class RankedReference:
+    """검색 결과 한 건이 포괄하는 문서 페이지 범위를 나타낸다."""
     document: str
     page_start: int | None
     page_end: int | None
 
     def sources(self) -> set[SourceKey]:
+        """페이지 범위를 정답 비교용 출처 키 집합으로 펼친다."""
         if self.page_start is None:
             return set()
         page_end = self.page_end if self.page_end is not None else self.page_start
@@ -25,6 +27,7 @@ class RankedReference:
 
 @dataclass(frozen=True)
 class RetrievalScore:
+    """검색 사례 하나의 순위 기반 품질 지표를 담는다."""
     recall_at_k: float
     hit_at_k: float
     reciprocal_rank: float
@@ -36,6 +39,7 @@ def score_retrieval(
     relevant_sources: set[SourceKey],
     top_k: int,
 ) -> RetrievalScore:
+    """상위 검색 결과를 정답 출처와 비교해 품질을 계산한다."""
     if not relevant_sources:
         raise ValueError("At least one relevant source is required")
     if top_k < 1:
@@ -60,6 +64,7 @@ def score_retrieval(
 
 
 def percentile(values: list[float], quantile: float) -> float:
+    """표본 사이를 선형 보간해 지정 분위수를 구한다."""
     if not values:
         raise ValueError("At least one value is required")
     if not 0 <= quantile <= 1:
@@ -77,6 +82,7 @@ def aggregate_scores(
     scores: list[RetrievalScore],
     latency_ms: list[float],
 ) -> dict[str, float | int]:
+    """사례별 품질과 지연 시간을 벤치마크 요약으로 집계한다."""
     if not scores:
         raise ValueError("At least one retrieval score is required")
     if not latency_ms:

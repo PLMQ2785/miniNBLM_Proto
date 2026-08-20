@@ -4,6 +4,7 @@ import fitz
 
 
 def render_pdf_page_data_url(pdf_path: str, page_number: int, dpi: int = 144) -> str:
+    """시각 모델 입력용으로 지정 PDF 페이지를 PNG 데이터 URL로 렌더링한다."""
     if page_number < 1:
         raise ValueError("page_number must be at least 1")
 

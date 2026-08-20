@@ -21,6 +21,7 @@ def test_all_search_algorithms_return_the_matching_chunk(
     document_factory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """모든 검색 알고리즘이 동일한 소유자 문서의 정답 청크를 우선하는지 검증한다."""
     user = user_factory("searcher")
     document = document_factory(user)
     target_embedding = [1.0] + [0.0] * 1023
@@ -75,6 +76,7 @@ def test_keyword_search_matches_partial_terms_in_a_natural_language_question(
     user_factory,
     document_factory,
 ) -> None:
+    """자연어 질문의 부분 용어로 키워드 청크를 찾는지 검증한다."""
     user = user_factory("keyword-natural-language")
     document = document_factory(user)
     target = Chunk(
@@ -108,6 +110,7 @@ def test_keyword_search_preserves_vision_caption_modality(
     user_factory,
     document_factory,
 ) -> None:
+    """키워드 검색 결과가 비전 캡션 출처 유형을 보존하는지 검증한다."""
     user = user_factory("vision-caption-searcher")
     document = document_factory(user, title="manual.pdf")
     visual_chunk = Chunk(
@@ -143,6 +146,7 @@ def test_multi_query_search_combines_evidence_for_different_facets(
     user_factory,
     document_factory,
 ) -> None:
+    """다중 검색어가 서로 다른 관점의 근거를 합치는지 검증한다."""
     user = user_factory("multi-query-searcher")
     document = document_factory(user, title="git-collaboration.pdf")
     reset_chunk = Chunk(
@@ -186,6 +190,7 @@ def test_retrieval_appends_adjacent_chunks_without_changing_the_seed_rank(
     user_factory,
     document_factory,
 ) -> None:
+    """인접 문맥 확장이 기준 청크 순위를 유지하는지 검증한다."""
     user = user_factory("adjacent-context-searcher")
     document = document_factory(user, title="git-history.pdf")
     previous = Chunk(
@@ -246,6 +251,7 @@ def test_adjacent_expansion_excludes_deleted_chunks(
     user_factory,
     document_factory,
 ) -> None:
+    """인접 문맥 확장에서 삭제된 청크를 제외하는지 검증한다."""
     user = user_factory("deleted-adjacent-searcher")
     document = document_factory(user, title="deleted-neighbor.pdf")
     anchor = Chunk(
@@ -289,6 +295,7 @@ def test_all_search_algorithms_are_scoped_to_the_owners_indexed_documents(
     document_factory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """모든 검색 알고리즘이 소유자의 색인 완료 문서로 범위를 제한하는지 검증한다."""
     user = user_factory("scope-user")
     other_user = user_factory("other-user")
     first_document = document_factory(user, title="first.pdf")
@@ -363,6 +370,7 @@ def test_hierarchical_fallback_searches_pages_then_scopes_chunks_to_owner(
     document_factory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """계층 검색이 페이지를 찾은 뒤 소유자 청크만 반환하는지 검증한다."""
     user = user_factory("hierarchical-owner")
     other_user = user_factory("hierarchical-other")
     document = document_factory(user, title="git-pages.pdf")

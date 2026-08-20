@@ -18,6 +18,7 @@ def create_chunks(
     chunks: list[TextChunk],
     embeddings: list[list[float]],
 ) -> list[Chunk]:
+    """문서 소유 청크를 일괄 추가하고 호출자 트랜잭션에서 확정한다."""
     rows = [
         Chunk(
             document_id=document_id,
@@ -38,6 +39,7 @@ def create_chunks(
 
 
 def delete_chunks(db: Session, document_id: int) -> None:
+    """문서 소유 청크를 현재 트랜잭션에서 모두 삭제한다."""
     db.execute(delete(Chunk).where(Chunk.document_id == document_id))
 
 
@@ -46,6 +48,7 @@ def get_chunks_by_document_indexes(
     owner_id: int,
     locations: set[tuple[int, int]],
 ) -> list[tuple[Chunk, str]]:
+    """사용자 소유 문서의 지정 위치 청크만 조회한다."""
     if not locations:
         return []
     return (
@@ -69,7 +72,8 @@ def search_chunks_by_embedding(
     query_embedding: list[float],
     top_k: int,
 ) -> list[tuple[Chunk, float, str]]:
-    # Joining Document enforces tenant and index-state boundaries for every search.
+    """사용자 소유의 색인된 청크를 벡터 거리로 검색한다."""
+    # 문서 조인으로 모든 검색에 소유권과 색인 상태를 강제한다.
     distance = Chunk.embedding.cosine_distance(query_embedding).label("distance")
     rows = (
         db.query(Chunk, distance, Document.title)
@@ -94,6 +98,7 @@ def search_chunks_by_keyword(
     question: str,
     top_k: int,
 ) -> list[tuple[Chunk, float, str]]:
+    """사용자 소유의 색인된 청크를 키워드 순위로 검색한다."""
     document_vector = func.to_tsvector("simple", Chunk.content)
     query = build_keyword_query(question)
     rank = func.ts_rank_cd(document_vector, query).label("rank")
@@ -115,6 +120,7 @@ def search_chunks_by_keyword(
 
 
 def build_keyword_query(question: str):
+    """검색어를 중복·개수 제한이 적용된 PostgreSQL 질의로 만든다."""
     terms: list[str] = []
     seen: set[str] = set()
     for term in KEYWORD_TERM_PATTERN.findall(question):
@@ -140,6 +146,7 @@ def get_chunks_by_document_pages(
     owner_id: int,
     locations: set[tuple[int, int]],
 ) -> list[tuple[Chunk, str]]:
+    """사용자 소유 문서의 지정 페이지에 걸친 청크를 조회한다."""
     if not locations:
         return []
     page_conditions = [
@@ -171,6 +178,7 @@ def search_chunks_by_substring(
     question: str,
     top_k: int,
 ) -> list[tuple[Chunk, float, str]]:
+    """사용자 소유의 색인된 청크를 부분 문자열 유사도로 검색한다."""
     similarity = func.greatest(
         func.similarity(Chunk.content, question),
         func.word_similarity(question, Chunk.content),

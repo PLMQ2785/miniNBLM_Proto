@@ -51,6 +51,7 @@ def enrich_pages_with_vision_captions(
     *,
     mode: str | None = None,
 ) -> list[ParsedPage]:
+    """선별한 PDF 페이지에 시각 근거와 모델 출처를 덧붙인다."""
     selected_mode = mode or settings.vision_caption_mode
     if selected_mode == "disabled":
         return pages
@@ -79,7 +80,7 @@ def enrich_pages_with_vision_captions(
                 page.page_number,
             )
         except Exception as exc:
-            # A caption failure must not discard otherwise searchable page text.
+            # 캡션 실패가 이미 검색 가능한 페이지 텍스트까지 버리게 해서는 안 된다.
             logger.warning(
                 "Vision caption failed; preserving text-only page",
                 extra={"page_number": page.page_number, "error_type": type(exc).__name__},
@@ -106,6 +107,7 @@ def enrich_pages_with_vision_captions(
 
 
 def should_caption_page(page: ParsedPage, mode: str) -> bool:
+    """설정 모드와 추출 위험도에 따라 시각 캡션 대상 페이지를 고른다."""
     if mode == "disabled":
         return False
     metadata = page.metadata
@@ -130,6 +132,7 @@ def _request_vision_caption(
     image_url: str,
     page_number: int,
 ) -> tuple[dict[str, Any], bool]:
+    """페이지 이미지를 모델에 보내고 형식 오류 응답은 한 번 복구한다."""
     response = client.chat_completion(
         [
             {"role": "system", "content": system_prompt},
@@ -173,6 +176,7 @@ def _request_vision_caption(
 
 
 def parse_vision_caption(response: str) -> dict[str, Any]:
+    """모델 응답을 검증해 정규화된 시각 근거 구조로 변환한다."""
     normalized = response.strip()
     if normalized.startswith("```"):
         normalized = re.sub(r"^```(?:json)?\s*", "", normalized, flags=re.IGNORECASE)
@@ -201,6 +205,7 @@ def parse_vision_caption(response: str) -> dict[str, Any]:
 
 
 def build_vision_search_text(caption: dict[str, Any]) -> str:
+    """구조화된 시각 근거를 출처가 드러나는 검색용 텍스트로 직렬화한다."""
     sections: list[str] = ["[Vision evidence]"]
     if caption["summary"]:
         sections.append(f"Summary: {caption['summary']}")
@@ -219,6 +224,7 @@ def build_vision_search_text(caption: dict[str, Any]) -> str:
 
 
 def _normalize_text(value: object) -> str:
+    """모델의 문자열 값을 안전한 단일 공백 텍스트로 정규화한다."""
     if not isinstance(value, str):
         return ""
     valid_unicode = value.encode("utf-8", errors="replace").decode("utf-8")
@@ -226,6 +232,7 @@ def _normalize_text(value: object) -> str:
 
 
 def _normalize_string_list(value: object) -> list[str]:
+    """모델 응답 목록에서 유효한 문자열 항목만 정규화한다."""
     if not isinstance(value, list):
         return []
     normalized: list[str] = []

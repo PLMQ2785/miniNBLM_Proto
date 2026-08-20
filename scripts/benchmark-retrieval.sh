@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Measure retrieval quality without touching the application database.
+# 애플리케이션 데이터베이스를 건드리지 않고 검색 품질을 측정한다.
 
 set -Eeuo pipefail
 
@@ -8,6 +8,7 @@ cd "$PROJECT_DIR"
 
 COMPOSE=(docker compose -p mininblm-benchmark -f docker-compose.benchmark.yml)
 
+# 측정용 격리 컨테이너와 네트워크를 정리한다.
 cleanup() {
   "${COMPOSE[@]}" down --remove-orphans >/dev/null 2>&1 || true
 }
