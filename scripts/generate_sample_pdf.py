@@ -1,4 +1,4 @@
-"""Generate a Korean multi-page PDF for upload and RAG citation testing."""
+"""업로드와 RAG 인용 점검용 한국어 다중 페이지 PDF를 생성한다."""
 
 from __future__ import annotations
 
@@ -102,6 +102,7 @@ PAGES = [
 
 
 def add_text(page: fitz.Page, rect: fitz.Rect, text: str, size: float, color=INK) -> None:
+    """지정 영역에 텍스트를 넣고 넘침을 즉시 알린다."""
     remaining = page.insert_textbox(
         rect,
         text,
@@ -115,6 +116,7 @@ def add_text(page: fitz.Page, rect: fitz.Rect, text: str, size: float, color=INK
 
 
 def render_page(doc: fitz.Document, content: dict[str, object], page_number: int) -> None:
+    """샘플 내용을 한 장의 간호 교육 페이지로 그린다."""
     page = doc.new_page(width=PAGE.width, height=PAGE.height)
     page.draw_rect(page.rect, color=WHITE, fill=WHITE)
     page.draw_rect(fitz.Rect(0, 0, PAGE.width, 118), color=NAVY, fill=NAVY)
@@ -143,6 +145,7 @@ def render_page(doc: fitz.Document, content: dict[str, object], page_number: int
 
 
 def generate(output: Path) -> None:
+    """샘플 페이지를 PDF로 저장하고 열린 문서를 닫는다."""
     output.parent.mkdir(parents=True, exist_ok=True)
     doc = fitz.open()
     for number, content in enumerate(PAGES, start=1):
@@ -160,6 +163,7 @@ def generate(output: Path) -> None:
 
 
 def main() -> None:
+    """출력 경로를 받아 샘플 PDF 생성을 실행한다."""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "output",

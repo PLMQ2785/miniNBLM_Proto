@@ -17,10 +17,12 @@ MAX_GENERATION_CONTEXT_CHARS = 14_000
 
 
 def load_rag_system_prompt() -> str:
+    """모든 RAG 답변에 공통으로 적용할 시스템 지침을 읽는다."""
     return RAG_SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
 
 
 def _format_chunk_section(index: int, chunk: RetrievedChunk) -> str:
+    """인용 번호와 메타데이터를 포함한 완전한 Source 블록을 만든다."""
     page = _format_page(chunk)
     return "\n".join(
         [
@@ -41,6 +43,7 @@ def select_generation_chunks(
     chunks: list[RetrievedChunk],
     evidence_matrix: EvidenceMatrix | None = None,
 ) -> list[RetrievedChunk]:
+    """근거 행렬 우선순위와 Source 순서를 지키며 컨텍스트를 14,000자로 고른다."""
     evidence_chunk_ids = (
         {
             reference.chunk_id
@@ -50,7 +53,7 @@ def select_generation_chunks(
         if evidence_matrix is not None
         else set()
     )
-    # Matrix-referenced evidence comes first, then distinct pages, then nearby duplicates.
+    # 행렬 근거, 서로 다른 페이지, 같은 페이지의 인접 청크 순으로 Source를 둔다.
     evidence_chunks = [
         chunk for chunk in chunks if chunk.chunk_id in evidence_chunk_ids
     ]
@@ -74,7 +77,7 @@ def select_generation_chunks(
         *distinct_page_chunks,
         *repeated_page_chunks,
     ]
-    # Whole source blocks are kept so citations never point at truncated evidence.
+    # 인용 대상이 잘리지 않도록 Source 블록은 통째로 포함하거나 제외한다.
     selected: list[RetrievedChunk] = []
     used_chars = 0
     for chunk in prioritized:
@@ -88,6 +91,7 @@ def select_generation_chunks(
 
 
 def build_retrieval_context(chunks: list[RetrievedChunk]) -> str:
+    """선택된 청크 순서를 그대로 Source 번호가 있는 컨텍스트로 만든다."""
     return "\n\n".join(
         _format_chunk_section(index, chunk)
         for index, chunk in enumerate(chunks, start=1)
@@ -95,6 +99,7 @@ def build_retrieval_context(chunks: list[RetrievedChunk]) -> str:
 
 
 def build_system_message() -> dict[str, str]:
+    """RAG 시스템 프롬프트를 모델 메시지 형식으로 감싼다."""
     return {"role": "system", "content": load_rag_system_prompt()}
 
 
@@ -103,6 +108,7 @@ def build_user_message(
     chunks: list[RetrievedChunk],
     evidence_matrix: EvidenceMatrix | None = None,
 ) -> dict[str, str]:
+    """컨텍스트·근거 행렬·질문 제약을 한 사용자 메시지로 조립한다."""
     context = build_retrieval_context(chunks)
     matrix = _format_evidence_matrix(evidence_matrix)
     literals = _format_literal_constraints(question)
@@ -120,6 +126,7 @@ def build_rag_messages(
     history: list[dict[str, str]] | None = None,
     evidence_matrix: EvidenceMatrix | None = None,
 ) -> list[dict[str, str]]:
+    """시스템 지침, 대화 이력, 현재 RAG 질문을 호출 순서로 묶는다."""
     return [
         build_system_message(),
         *(history or []),
@@ -128,6 +135,7 @@ def build_rag_messages(
 
 
 def _format_page(chunk: RetrievedChunk) -> str:
+    """청크의 페이지 범위를 인용 표기에 맞게 표시한다."""
     if chunk.page_start is None:
         return "unknown"
     if chunk.page_end is None or chunk.page_end == chunk.page_start:
@@ -136,6 +144,7 @@ def _format_page(chunk: RetrievedChunk) -> str:
 
 
 def _format_evidence_quality(chunk: RetrievedChunk) -> str:
+    """시각 자료 누락 위험을 모델이 판단할 수 있는 문구로 바꾼다."""
     metadata = chunk.source_refs.get("page_metadata", {})
     if not isinstance(metadata, dict):
         return "unknown"
@@ -150,6 +159,7 @@ def _format_evidence_quality(chunk: RetrievedChunk) -> str:
 
 
 def _format_literal_constraints(question: str) -> str:
+    """질문의 백틱 리터럴을 원문 그대로 보존하도록 제약을 만든다."""
     literals = tuple(dict.fromkeys(BACKTICK_LITERAL_PATTERN.findall(question)))
     if not literals:
         return ""
@@ -163,6 +173,7 @@ def _format_literal_constraints(question: str) -> str:
 
 
 def _format_evidence_matrix(matrix: EvidenceMatrix | None) -> str:
+    """목표별 충족 상태와 근거 청크를 프롬프트용 행렬로 표시한다."""
     if matrix is None or matrix.status == "unchecked":
         return ""
     lines = [f"Coverage: {matrix.status.upper()}"]
@@ -184,6 +195,7 @@ def _format_evidence_matrix(matrix: EvidenceMatrix | None) -> str:
 
 
 def _format_workflow_constraints(question: str) -> str:
+    """제외 상태를 먼저 해제해야 하는 작업 순서 제약을 추가한다."""
     if not EXCLUDED_STATE_PATTERN.search(question):
         return ""
     return (

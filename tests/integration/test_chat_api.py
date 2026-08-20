@@ -16,9 +16,10 @@ from app.services.retriever import RetrievedChunk
 pytestmark = pytest.mark.integration
 
 
-# Keep API persistence tests deterministic; planner and coverage have their own unit tests.
+# 플래너 단위 계약과 분리해 API 저장 동작을 결정적으로 검증한다.
 @pytest.fixture(autouse=True)
 def stub_query_planner(monkeypatch: pytest.MonkeyPatch) -> None:
+    """채팅 API 검증에서 검색 계획과 근거 보강을 고정한다."""
     monkeypatch.setattr(
         chat_api,
         "plan_retrieval_queries",
@@ -40,6 +41,7 @@ def test_chat_persists_messages_and_returns_sources(
     document_factory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """채팅 답변·출처·검색 추적·대화 이력이 함께 저장되는지 검증한다."""
     assert client.post(
         "/auth/register",
         json={"username": "student", "password": "password123"},
@@ -61,12 +63,14 @@ def test_chat_persists_messages_and_returns_sources(
     rewritten_query = "낙상 후 손상 여부를 확인한 다음 조치"
 
     def retrieve_for_workspace(**kwargs):
+        """현재 사용자 작업공간의 검색 호출 인자를 기록한다."""
         retrieval_calls.append(kwargs)
         return [retrieved]
 
     monkeypatch.setattr(chat_api, "retrieve_chunks", retrieve_for_workspace)
 
     def plan_for_retrieval(question, history):
+        """후속 질문만 대화 이력을 반영한 검색어로 바꾼다."""
         query = rewritten_query if history else question
         return RetrievalQueryPlan(
             query,
@@ -76,6 +80,7 @@ def test_chat_persists_messages_and_returns_sources(
     monkeypatch.setattr(chat_api, "plan_retrieval_queries", plan_for_retrieval)
 
     def generate_with_history(**kwargs):
+        """생성기에 전달된 이력과 질문을 기록해 답변을 고정한다."""
         generation_calls.append(kwargs)
         return GeneratedAnswer(
             answer="손상 여부를 먼저 확인합니다.",
@@ -174,6 +179,7 @@ def test_chat_sessions_are_isolated_and_can_be_deleted(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """대화 세션 접근이 사용자별로 격리되고 삭제가 전파되는지 검증한다."""
     assert client.post(
         "/auth/register",
         json={"username": "session-owner", "password": "password123"},
@@ -208,6 +214,7 @@ def test_legacy_chat_history_filters_retrieval_candidates_by_citation(
     db: Session,
     document_factory,
 ) -> None:
+    """기존 대화 출처 중 실제 인용된 항목만 노출하는지 검증한다."""
     assert client.post(
         "/auth/register",
         json={"username": "legacy-sources", "password": "password123"},
@@ -257,6 +264,7 @@ def test_chat_returns_a_grounded_empty_result_without_document_selection(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """선택 문서가 없어도 출처 없는 근거 제한 답변을 반환하는지 검증한다."""
     assert client.post(
         "/auth/register",
         json={"username": "empty-workspace", "password": "password123"},
@@ -279,6 +287,7 @@ def test_chat_streams_answer_and_persists_only_after_completion(
     document_factory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """SSE 완료 뒤에만 답변과 출처가 저장되는지 검증한다."""
     assert client.post(
         "/auth/register",
         json={"username": "stream-user", "password": "password123"},
@@ -326,6 +335,7 @@ def test_chat_stream_hides_fragmented_no_source_marker(
     document_factory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """분할된 무출처 표식이 SSE와 저장 답변에 노출되지 않는지 검증한다."""
     assert client.post(
         "/auth/register",
         json={"username": "no-source-stream", "password": "password123"},
@@ -374,6 +384,7 @@ def test_chat_stream_revises_and_persists_citation_repair(
     document_factory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """SSE 인용 보정 결과가 revision 이벤트와 DB에 동일하게 남는지 검증한다."""
     assert client.post(
         "/auth/register",
         json={"username": "citation-revision", "password": "password123"},
@@ -422,6 +433,7 @@ def test_failed_new_chat_stream_removes_empty_session(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """신규 SSE 생성 실패가 빈 대화 세션과 메시지를 남기지 않는지 검증한다."""
     assert client.post(
         "/auth/register",
         json={"username": "failed-stream", "password": "password123"},
@@ -439,6 +451,7 @@ def test_failed_new_chat_stream_removes_empty_session(
     monkeypatch.setattr(chat_api, "retrieve_chunks", lambda **kwargs: [retrieved])
 
     def fail_stream(*args, **kwargs):
+        """실제 모델 스트림 실패를 재현한다."""
         raise RuntimeError("vLLM failed")
 
     monkeypatch.setattr(LLMClient, "stream_chat_completion", fail_stream)

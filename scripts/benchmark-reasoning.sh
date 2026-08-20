@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run repeated reasoning cases over the read-only sample corpus.
+# 읽기 전용 샘플 말뭉치로 추론 사례를 반복 측정한다.
 
 set -Eeuo pipefail
 
@@ -13,6 +13,7 @@ COMPOSE=(
   -f docker-compose.reasoning.yml
 )
 
+# 측정용 격리 컨테이너와 네트워크를 정리한다.
 cleanup() {
   "${COMPOSE[@]}" down --remove-orphans >/dev/null 2>&1 || true
 }

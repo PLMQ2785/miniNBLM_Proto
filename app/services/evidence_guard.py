@@ -23,6 +23,7 @@ EXACT_VISUAL_TASK_PATTERN = re.compile(
 
 @dataclass(frozen=True)
 class EvidenceGuardDecision:
+    """시각 자료 질문을 현재 컨텍스트로 답할 수 있는지 전달한다."""
     answerable: bool
     reason: str | None = None
     pages: tuple[int, ...] = ()
@@ -32,7 +33,8 @@ def assess_evidence_answerability(
     question: str,
     chunks: list[RetrievedChunk],
 ) -> EvidenceGuardDecision:
-    # Ordinary text questions pass; this guard targets exact visual transcription tasks.
+    """정확한 시각 전사가 필요한 질문에 캡션 근거가 있는지 판정한다."""
+    # 일반 텍스트 질문은 통과시키고 정확한 시각 전사 요청만 막는다.
     if not VISUAL_TERM_PATTERN.search(question) or not EXACT_VISUAL_TASK_PATTERN.search(question):
         return EvidenceGuardDecision(True)
 
@@ -62,7 +64,7 @@ def assess_evidence_answerability(
         for page in _chunk_pages(chunk)
         if not requested_pages or page in requested_pages
     }
-    # Visual pages are answerable only when their caption chunk reached this context.
+    # 시각 페이지는 해당 캡션 청크가 컨텍스트에 들어와야 답할 수 있다.
     risky_pages = sorted(visual_pages - captioned_pages)
     if requested_pages and risky_pages:
         return EvidenceGuardDecision(
@@ -82,6 +84,7 @@ def assess_evidence_answerability(
 
 
 def _requested_pages(question: str) -> set[int]:
+    """질문에 명시된 페이지 번호를 모두 추출한다."""
     return {
         int(match.group(1))
         for pattern in PAGE_PATTERNS
@@ -90,6 +93,7 @@ def _requested_pages(question: str) -> set[int]:
 
 
 def _chunk_pages(chunk: RetrievedChunk) -> set[int]:
+    """청크가 덮는 페이지 범위를 집합으로 펼친다."""
     if chunk.page_start is None:
         return set()
     end = chunk.page_end if chunk.page_end is not None else chunk.page_start
@@ -97,15 +101,18 @@ def _chunk_pages(chunk: RetrievedChunk) -> set[int]:
 
 
 def _page_metadata(chunk: RetrievedChunk) -> dict:
+    """시각 근거 판정에 쓰는 페이지 메타데이터를 안전하게 읽는다."""
     metadata = chunk.source_refs.get("page_metadata", {})
     return metadata if isinstance(metadata, dict) else {}
 
 
 def _visual_risk(chunk: RetrievedChunk) -> str:
+    """페이지 메타데이터의 시각 자료 위험 등급을 읽는다."""
     return str(_page_metadata(chunk).get("visual_evidence_risk", "unknown"))
 
 
 def _has_visual_content(chunk: RetrievedChunk) -> bool:
+    """청크 페이지가 텍스트만으로 설명하기 어려운 시각 자료인지 판정한다."""
     metadata = _page_metadata(chunk)
     return bool(metadata.get("has_visual_content")) or _visual_risk(chunk) in {
         "empty_text",

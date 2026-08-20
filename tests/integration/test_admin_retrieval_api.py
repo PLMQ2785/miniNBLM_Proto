@@ -12,6 +12,7 @@ pytestmark = pytest.mark.integration
 
 
 def _login_admin(client: TestClient) -> None:
+    """관리자 검색 API 검증에 필요한 강제 비밀번호 변경을 마친다."""
     bootstrap_password = "Test!Bootstrap2026"
     response = client.post(
         "/auth/login",
@@ -29,6 +30,7 @@ def _login_admin(client: TestClient) -> None:
 
 
 def test_admin_state_and_role_boundary(client: TestClient) -> None:
+    """검색 관리 상태가 인증과 관리자 역할로 보호되는지 검증한다."""
     assert client.get("/admin/retrieval").status_code == 401
 
     assert client.post(
@@ -52,6 +54,7 @@ def test_algorithm_change_is_immediate_and_does_not_reindex(
     client: TestClient,
     db: Session,
 ) -> None:
+    """검색 알고리즘 변경이 재색인 없이 즉시 반영되는지 검증한다."""
     _login_admin(client)
 
     response = client.post("/admin/retrieval/algorithms/hybrid/activate")
@@ -66,6 +69,7 @@ def test_algorithm_change_is_immediate_and_does_not_reindex(
 
 
 def test_chunking_preset_change_completes_reindex_job(client: TestClient, db: Session) -> None:
+    """청킹 프리셋 변경이 재색인 작업 완료까지 이어지는지 검증한다."""
     _login_admin(client)
 
     response = client.post("/admin/retrieval/presets/standard/activate")
@@ -79,6 +83,7 @@ def test_chunking_preset_change_completes_reindex_job(client: TestClient, db: Se
 
 
 def test_unknown_algorithm_is_rejected(client: TestClient) -> None:
+    """등록되지 않은 검색 알고리즘 활성화를 거부하는지 검증한다."""
     _login_admin(client)
 
     assert client.post("/admin/retrieval/algorithms/not-real/activate").status_code == 404
@@ -89,6 +94,7 @@ def test_admin_can_list_stored_retrieval_traces(
     db: Session,
     user_factory,
 ) -> None:
+    """관리자만 저장된 검색 추적 기록을 조회할 수 있는지 검증한다."""
     owner = user_factory("trace-owner")
     session = ChatSession(owner_id=owner.id, title="trace session")
     db.add(session)

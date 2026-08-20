@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 def _session_summary(session: ChatSession) -> ChatSessionSummary:
+    """세션 목록과 완료 이벤트에 쓰는 공통 요약 응답을 만든다."""
     return ChatSessionSummary(
         session_id=session.id,
         title=session.title or "제목 없는 대화",
@@ -42,6 +43,7 @@ def _session_summary(session: ChatSession) -> ChatSessionSummary:
 
 
 def _source_document_ids(messages: list[ChatMessage]) -> set[int]:
+    """메시지 메타데이터에서 출처 문서 ID를 모아 제목 조회를 제한한다."""
     document_ids: set[int] = set()
     for message in messages:
         for source in (message.message_metadata or {}).get("sources", []):
@@ -52,6 +54,7 @@ def _source_document_ids(messages: list[ChatMessage]) -> set[int]:
 
 
 def _message_response(message: ChatMessage, document_titles: dict[int, str]) -> ChatMessageResponse:
+    """저장 메시지를 현재 문서 가용성과 실제 인용 출처가 반영된 응답으로 바꾼다."""
     metadata = message.message_metadata or {}
     raw_sources = metadata.get("sources", [])
     if not isinstance(raw_sources, list):
@@ -98,7 +101,8 @@ def _persist_exchange(
     sources: list[SourceRef],
     trace: RetrievalTrace | None = None,
 ) -> None:
-    # Persist only the final post-processed answer and the sources it actually cited.
+    """최종 후처리 답변과 실제 인용 출처만 대화 기록에 함께 저장한다."""
+    # 스트림 중간값이 아닌 최종 보정 답변과 실제 인용 출처만 저장한다.
     trace_metadata = (
         trace.complete(answer=answer, chunks=chunks, sources=sources)
         if trace is not None
@@ -123,11 +127,13 @@ def _persist_exchange(
 
 
 def _sse(event: str, payload: dict | list) -> str:
+    """이벤트와 JSON 데이터를 SSE 프레임 하나로 직렬화한다."""
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 def _cleanup_empty_session(session_id: int, owner_id: int) -> None:
-    # Failed brand-new streams should not leave empty conversations behind.
+    """새 스트림이 실패했을 때 메시지 없는 세션만 제거한다."""
+    # 실패한 새 스트림이 빈 대화만 남기지 않게 한다.
     with SessionLocal() as db:
         session = chat_repository.get_session(db, session_id, owner_id)
         if session is not None and not session.messages:
@@ -146,7 +152,8 @@ def _chat_event_stream(
     evidence_matrix,
     endpoint_key: str,
 ):
-    # Streaming outlives the request-scoped DB session, so each DB phase opens its own.
+    """생성 델타·revision·출처·완료를 보내고 최종 교환을 별도 세션에 저장한다."""
+    # 스트림은 요청 DB 세션보다 오래 살아 각 DB 단계가 자체 세션을 연다.
     try:
         with SessionLocal() as db:
             session = chat_repository.get_session(db, session_id, owner_id)
@@ -170,7 +177,7 @@ def _chat_event_stream(
             yield _sse("delta", {"text": delta})
         if streamed.generated is None:
             raise RuntimeError("Streaming answer completed without a final result")
-        # A revision replaces deltas already shown after citation and literal repairs.
+        # 인용·리터럴 보정 뒤 revision은 이미 보낸 델타 전체를 교체한다.
         if streamed.revision is not None:
             yield _sse("revision", {"text": streamed.revision})
 
@@ -223,6 +230,7 @@ def list_chat_sessions(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ChatSessionListResponse:
+    """현재 사용자의 대화 세션을 최신순 페이지로 반환한다."""
     sessions = chat_repository.list_sessions(db, user.id, limit=limit, offset=offset)
     return ChatSessionListResponse(sessions=[_session_summary(session) for session in sessions])
 
@@ -235,6 +243,7 @@ def get_chat_session(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ChatSessionDetail:
+    """현재 사용자의 세션과 페이지 단위 메시지·출처 상태를 반환한다."""
     session = chat_repository.get_session(db, session_id, user.id)
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
@@ -264,6 +273,7 @@ def delete_chat_session(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Response:
+    """현재 사용자 소유의 대화 세션을 삭제한다."""
     session = chat_repository.get_session(db, session_id, user.id)
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
@@ -278,6 +288,7 @@ def chat(
     user: User = Depends(get_current_user_with_language_model),
     _: None = Depends(ensure_retrieval_writes_available),
 ) -> ChatResponse:
+    """검색 계획부터 생성·인용 저장까지 동기 RAG 요청을 처리한다."""
     if request.session_id is None:
         session = chat_repository.create_session(
             db,
@@ -296,7 +307,7 @@ def chat(
         )
         history = build_conversation_context(recent_messages)
 
-    # Sync and SSE share this retrieval pipeline; only generation transport differs.
+    # 동기와 SSE는 같은 검색 파이프라인을 쓰고 생성 전달 방식만 다르다.
     retrieval_plan = plan_retrieval_queries(request.question, history)
     trace = RetrievalTrace(request_id=request_id_context.get())
     goals = retrieval_plan.goals
@@ -350,6 +361,7 @@ def chat_stream(
     user: User = Depends(get_current_user_with_language_model),
     _: None = Depends(ensure_retrieval_writes_available),
 ) -> StreamingResponse:
+    """동기와 같은 검색을 마친 뒤 생성 결과를 SSE로 전달한다."""
     owner_id = user.id
     session_created = request.session_id is None
     if session_created:
@@ -386,7 +398,7 @@ def chat_stream(
         trace=trace,
     )
     evidence_matrix = build_evidence_matrix(goals, trace)
-    # Create a new session only after retrieval succeeds.
+    # 검색 성공 뒤에만 새 세션을 만들어 실패한 빈 대화를 피한다.
     if session is None:
         session = chat_repository.create_session(
             db,
@@ -398,7 +410,7 @@ def chat_stream(
 
     stream_session_id = session.id
     endpoint_key = language_model_service.get_user_endpoint_key(user)
-    # The generator runs after the request-scoped session is closed.
+    # 생성기는 요청 범위 DB 세션을 닫은 뒤 실행된다.
     db.close()
     return StreamingResponse(
         _chat_event_stream(

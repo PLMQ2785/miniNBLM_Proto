@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Keep the API image small while confirming the embedding image owns ML dependencies.
+# ML 의존성이 임베딩 이미지에만 있는지 확인해 API 이미지를 가볍게 유지한다.
 
 set -Eeuo pipefail
 

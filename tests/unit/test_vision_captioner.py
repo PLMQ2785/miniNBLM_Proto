@@ -10,6 +10,7 @@ from app.services.vision_captioner import (
 
 
 def _page(**metadata) -> ParsedPage:
+    """Vision 설명 대상이 되는 시각 중심 페이지를 만든다."""
     return ParsedPage(
         page_number=19,
         text="통신 상태 화면",
@@ -25,6 +26,7 @@ def _page(**metadata) -> ParsedPage:
 
 
 def test_parse_caption_and_build_search_text() -> None:
+    """Vision JSON을 정규화하고 검색 가능한 텍스트로 펼친다."""
     caption = parse_vision_caption(
         """```json
         {
@@ -45,6 +47,7 @@ def test_parse_caption_and_build_search_text() -> None:
 
 
 def test_parse_caption_replaces_invalid_unicode_surrogates() -> None:
+    """잘못된 유니코드 서로게이트를 안전한 문자로 치환한다."""
     caption = parse_vision_caption(
         '{"summary":"diagram \\udbcb","visible_text":["value \\udbcb"],"tables":[],'
         '"diagram_relations":[],"key_values":[],"limitations":[],'
@@ -57,6 +60,7 @@ def test_parse_caption_replaces_invalid_unicode_surrogates() -> None:
 
 
 def test_risk_only_selection_skips_low_risk_mixed_page() -> None:
+    """위험 기반 모드는 불완전하지 않은 혼합 페이지를 건너뛴다."""
     page = _page(
         visual_evidence_risk="mixed",
         text_only_incomplete=False,
@@ -70,6 +74,7 @@ def test_risk_only_selection_skips_low_risk_mixed_page() -> None:
 def test_enrich_page_stores_caption_without_image_data(
     monkeypatch,
 ) -> None:
+    """완성된 Vision 설명만 메타데이터에 남기고 이미지 원문은 버린다."""
     monkeypatch.setattr(
         vision_captioner,
         "render_pdf_page_data_url",
@@ -96,6 +101,7 @@ def test_enrich_page_stores_caption_without_image_data(
 
 
 def test_caption_failure_preserves_page_for_text_only_indexing(monkeypatch) -> None:
+    """Vision 실패에도 텍스트 페이지를 색인 가능한 상태로 보존한다."""
     monkeypatch.setattr(
         vision_captioner,
         "render_pdf_page_data_url",
@@ -115,6 +121,7 @@ def test_caption_failure_preserves_page_for_text_only_indexing(monkeypatch) -> N
 
 
 def test_invalid_caption_is_repaired_once(monkeypatch) -> None:
+    """형식이 잘못된 Vision 응답은 JSON 스키마로 한 번만 복구한다."""
     monkeypatch.setattr(
         vision_captioner,
         "render_pdf_page_data_url",
@@ -132,6 +139,7 @@ def test_invalid_caption_is_repaired_once(monkeypatch) -> None:
     )
 
     def respond(*args, **kwargs):
+        """복구 요청의 JSON 스키마 사용을 확인하고 다음 응답을 반환한다."""
         assert kwargs["response_format"]["type"] == "json_schema"
         return next(responses)
 

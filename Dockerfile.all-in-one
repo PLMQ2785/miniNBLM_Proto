@@ -1,3 +1,4 @@
+# API, 데이터베이스, 임베딩, LLM을 한 컨테이너에서 실행하는 통합 이미지다.
 FROM vllm/vllm-openai:v0.25.0
 
 USER root
@@ -51,9 +52,8 @@ RUN patch --forward --batch \
 WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
-# Reuse the CUDA 13 Torch runtime already supplied by the pinned vLLM image.
-# Installing the embedding lock first preserves its validated Python dependencies;
-# removing only its CUDA 12 runtime in this same layer avoids a second 5+ GB stack.
+# 고정된 vLLM 이미지의 CUDA 13 Torch를 재사용한다.
+# 검증된 임베딩 의존성을 먼저 설치한 뒤 같은 계층에서 CUDA 12 런타임만 제거해 중복 용량을 피한다.
 RUN --mount=type=cache,target=/tmp/uv-cache \
     uv venv --system-site-packages "${UV_PROJECT_ENVIRONMENT}" \
     && UV_CACHE_DIR=/tmp/uv-cache uv sync \

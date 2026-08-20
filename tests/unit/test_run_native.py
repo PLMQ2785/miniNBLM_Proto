@@ -7,6 +7,7 @@ SCRIPT = Path(__file__).parents[2] / "run-native.sh"
 
 
 def test_prepare_postgres_storage_uses_mapped_volume_owner(tmp_path: Path) -> None:
+    """매핑 볼륨의 소유권 변경이 막히면 실제 소유 사용자로 전환한다."""
     data_dir = tmp_path / "postgres"
     socket_dir = tmp_path / "socket"
     log_dir = tmp_path / "logs"

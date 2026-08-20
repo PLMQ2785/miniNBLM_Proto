@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run fast tests against a disposable PostgreSQL project.
+# 일회용 PostgreSQL 환경에서 빠른 테스트를 실행한다.
 
 set -Eeuo pipefail
 
@@ -8,6 +8,7 @@ cd "$PROJECT_DIR"
 
 COMPOSE=(docker compose -p mininblm-test -f docker-compose.test.yml)
 
+# 테스트용 격리 컨테이너와 네트워크를 정리한다.
 cleanup() {
   "${COMPOSE[@]}" down --remove-orphans >/dev/null 2>&1 || true
 }

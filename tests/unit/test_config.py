@@ -7,12 +7,14 @@ from app.config import Settings
 
 
 def _write_configuration(tmp_path, payload: dict) -> str:
+    """테스트용 모델 엔드포인트 설정 파일을 기록한다."""
     path = tmp_path / "llm-endpoints.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
     return str(path)
 
 
 def test_settings_load_language_models_from_json_file(tmp_path) -> None:
+    """JSON 파일의 기본 엔드포인트와 모델 설정을 불러온다."""
     path = _write_configuration(
         tmp_path,
         {
@@ -41,6 +43,7 @@ def test_settings_resolve_endpoint_api_key_from_environment(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """환경 변수로 지정한 엔드포인트 API 키를 실제 값으로 해석한다."""
     monkeypatch.setenv("REMOTE_MODEL_API_KEY", "secret-from-environment")
     path = _write_configuration(
         tmp_path,
@@ -65,6 +68,7 @@ def test_settings_resolve_endpoint_api_key_from_environment(
 
 
 def test_settings_reject_missing_api_key_environment_variable(tmp_path) -> None:
+    """API 키 환경 변수가 없으면 설정 로드를 거부한다."""
     path = _write_configuration(
         tmp_path,
         {
@@ -86,6 +90,7 @@ def test_settings_reject_missing_api_key_environment_variable(tmp_path) -> None:
 
 
 def test_settings_reject_invalid_default_endpoint_in_file(tmp_path) -> None:
+    """등록되지 않은 기본 엔드포인트를 가리키는 설정은 거부한다."""
     path = _write_configuration(
         tmp_path,
         {
@@ -107,6 +112,7 @@ def test_settings_reject_invalid_default_endpoint_in_file(tmp_path) -> None:
 
 
 def test_settings_reject_unknown_endpoint_fields(tmp_path) -> None:
+    """오타를 포함한 알 수 없는 엔드포인트 필드는 허용하지 않는다."""
     path = _write_configuration(
         tmp_path,
         {

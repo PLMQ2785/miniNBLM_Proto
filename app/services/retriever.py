@@ -27,6 +27,7 @@ RERANK_CANDIDATE_MULTIPLIER = 3
 
 @dataclass(frozen=True)
 class RetrievedChunk:
+    """검색부터 프롬프트·인용까지 공유하는 청크 표현이다."""
     chunk_id: int
     document_id: int
     document_title: str
@@ -48,6 +49,7 @@ def retrieve_chunks(
     trace: RetrievalTrace | None = None,
     trace_stage: str = "initial",
 ) -> list[RetrievedChunk]:
+    """활성 검색 설정으로 목표별 후보를 찾고 재순위화·인접 확장을 적용한다."""
     configuration = retrieval_config_repository.get_configuration(db)
     active_preset = retrieval_config_repository.get_preset(db, configuration.active_preset_key)
     if active_preset is None:
@@ -55,7 +57,7 @@ def retrieve_chunks(
     requested_limit = top_k if top_k is not None else active_preset.top_k
     algorithm = SearchAlgorithmKey(configuration.active_search_algorithm_key)
     goal_query_groups = _normalize_goal_query_groups(goals)
-    # A multi-goal question must keep room for at least one result per goal.
+    # 다중 목표 질문은 목표마다 최소 한 결과가 들어갈 자리를 보장한다.
     result_limit = max(requested_limit, len(goal_query_groups))
     search_queries = _normalize_search_queries(
         question,
@@ -72,7 +74,7 @@ def retrieve_chunks(
             if goal_id not in goal_ids:
                 goal_ids.append(goal_id)
     rerank_enabled = algorithm in {SearchAlgorithmKey.DENSE, SearchAlgorithmKey.HYBRID}
-    # Over-fetch before semantic reranking; only the final limit reaches the prompt.
+    # 의미 재순위화 전에 넉넉히 찾고 최종 상한만 프롬프트로 보낸다.
     final_candidate_limit = (
         result_limit * RERANK_CANDIDATE_MULTIPLIER if rerank_enabled else result_limit
     )
@@ -119,7 +121,7 @@ def retrieve_chunks(
                             goal_ids_by_query.get(query.casefold(), ())
                         ),
                     )
-            # Query anchors stop RRF from erasing a narrow but necessary facet.
+            # 쿼리별 앵커가 좁지만 필요한 목표를 RRF에서 잃지 않게 한다.
             fused_rows = _reciprocal_rank_fusion(result_sets, final_candidate_limit)
             rows = _merge_query_anchors(
                 result_sets,
@@ -149,7 +151,7 @@ def retrieve_chunks(
                     rows=rows,
                     goal_ids=tuple(goal_id for goal_id, _ in goal_query_groups),
                 )
-        # Add local continuity only after the ranked anchors are fixed.
+        # 순위 앵커를 확정한 뒤에만 주변 문맥을 덧붙인다.
         rows = _expand_with_adjacent_chunks(db, owner_id, rows)
     except Exception:
         RETRIEVAL_REQUESTS.labels(algorithm=algorithm.value, status="error").inc()
@@ -192,6 +194,7 @@ def retrieve_chunks(
 
 
 def _normalize_search_queries(question: str, queries: Sequence[str] | None) -> list[str]:
+    """검색 쿼리를 입력 순서대로 중복 제거하고 원 질문으로 폴백한다."""
     candidates = queries if queries is not None else (question,)
     normalized: list[str] = []
     seen: set[str] = set()
@@ -208,6 +211,7 @@ def _normalize_search_queries(question: str, queries: Sequence[str] | None) -> l
 def _normalize_goal_query_groups(
     goals: Sequence[EvidenceGoal] | None,
 ) -> list[tuple[str, tuple[str, ...]]]:
+    """근거 목표를 고유 ID와 정규화된 쿼리 묶음으로 바꾼다."""
     groups: list[tuple[str, tuple[str, ...]]] = []
     seen_ids: set[str] = set()
     for goal in goals or ():
@@ -222,6 +226,7 @@ def _normalize_goal_query_groups(
 
 
 def _expand_with_adjacent_chunks(db: Session, owner_id: int, rows):
+    """순위 후보 주변 청크를 개수·문자 예산 안에서 뒤에 덧붙인다."""
     if not rows:
         return rows
 
@@ -270,6 +275,7 @@ def _search(
     top_k: int,
     algorithm: SearchAlgorithmKey,
 ):
+    """선택된 알고리즘으로 단일 쿼리 후보를 검색한다."""
     if algorithm == SearchAlgorithmKey.DENSE:
         return _dense_search(db, owner_id, question, top_k)
     if algorithm == SearchAlgorithmKey.KEYWORD:
@@ -289,6 +295,7 @@ def _search(
 
 
 def _dense_search(db: Session, owner_id: int, question: str, top_k: int):
+    """질문 임베딩으로 소유자 범위의 유사 청크를 찾는다."""
     query_embedding = EmbeddingClient().embed_query(question)
     return search_chunks_by_embedding(
         db=db,
@@ -299,6 +306,7 @@ def _dense_search(db: Session, owner_id: int, question: str, top_k: int):
 
 
 def _reciprocal_rank_fusion(result_sets, top_k: int):
+    """여러 검색 결과의 순위를 RRF 점수로 합친다."""
     chunks_by_id = {}
     titles_by_id = {}
     scores: dict[int, float] = {}
@@ -316,6 +324,7 @@ def _reciprocal_rank_fusion(result_sets, top_k: int):
 
 
 def _merge_query_anchors(result_sets, fused_rows, limit: int):
+    """각 쿼리의 첫 후보를 보존한 뒤 융합 순위로 상한을 채운다."""
     merged_rows = []
     seen_ids: set[int] = set()
     for rows in result_sets:

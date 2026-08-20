@@ -9,6 +9,7 @@ import fitz
 
 
 def audit_pdf(path: Path, root: Path) -> dict:
+    """PDF 페이지별 추출 텍스트와 시각 자료 위험도를 기록한다."""
     pages = []
     with fitz.open(path) as document:
         for page_number, page in enumerate(document, start=1):
@@ -38,6 +39,7 @@ def audit_pdf(path: Path, root: Path) -> dict:
 
 
 def audit_root(root: Path) -> dict:
+    """그룹별 PDF를 감사해 코퍼스 전체 요약을 만든다."""
     resolved_root = root.resolve()
     documents = [
         audit_pdf(path, resolved_root)
@@ -53,6 +55,7 @@ def audit_root(root: Path) -> dict:
 
 
 def _page_risk(text_chars: int, image_count: int, drawing_count: int) -> str:
+    """텍스트 양과 시각 요소 수로 페이지의 검토 우선순위를 분류한다."""
     if text_chars == 0:
         return "empty_text"
     if text_chars < 100 and (image_count > 0 or drawing_count >= 10):
@@ -65,6 +68,7 @@ def _page_risk(text_chars: int, image_count: int, drawing_count: int) -> str:
 
 
 def _parse_args() -> argparse.Namespace:
+    """PDF 감사 명령행 인자를 해석한다."""
     parser = argparse.ArgumentParser(
         description="Audit extractable text and visual-risk indicators in PDF pages"
     )
@@ -74,6 +78,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    """감사 보고서를 파일이나 표준 출력으로 내보낸다."""
     args = _parse_args()
     report = audit_root(args.root)
     payload = json.dumps(report, ensure_ascii=False, indent=2) + "\n"

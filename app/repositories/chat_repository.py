@@ -14,6 +14,7 @@ def create_session(
     document_id: int | None = None,
     title: str | None = None,
 ) -> ChatSession:
+    """사용자 소유 대화 세션을 추가하고 호출자 트랜잭션에서 확정한다."""
     session = ChatSession(owner_id=owner_id, document_id=document_id, title=title)
     db.add(session)
     db.flush()
@@ -21,6 +22,7 @@ def create_session(
 
 
 def get_session(db: Session, session_id: int, owner_id: int) -> ChatSession | None:
+    """세션 식별자와 소유자를 함께 제한해 대화를 조회한다."""
     return db.scalar(
         select(ChatSession).where(
             ChatSession.id == session_id,
@@ -30,6 +32,7 @@ def get_session(db: Session, session_id: int, owner_id: int) -> ChatSession | No
 
 
 def list_sessions(db: Session, owner_id: int, *, limit: int, offset: int) -> list[ChatSession]:
+    """사용자 소유 대화 세션을 최근 활동순으로 나눠 조회한다."""
     return list(
         db.scalars(
             select(ChatSession)
@@ -49,6 +52,7 @@ def create_message(
     retrieved_chunk_ids: list[int] | None = None,
     metadata: dict | None = None,
 ) -> ChatMessage:
+    """세션 소유 메시지를 추가하고 호출자 트랜잭션에서 확정한다."""
     message = ChatMessage(
         session_id=session_id,
         role=role,
@@ -62,6 +66,7 @@ def create_message(
 
 
 def touch_session(session: ChatSession) -> None:
+    """새 메시지 뒤 정렬 기준이 되도록 세션 활동 시각을 갱신한다."""
     session.updated_at = datetime.now(timezone.utc)
 
 
@@ -72,6 +77,7 @@ def list_messages(
     limit: int,
     before_id: int | None = None,
 ) -> tuple[list[ChatMessage], bool]:
+    """세션 메시지를 커서 방식으로 조회하고 다음 페이지 여부를 돌려준다."""
     query = select(ChatMessage).where(ChatMessage.session_id == session_id)
     if before_id is not None:
         query = query.where(ChatMessage.id < before_id)
@@ -81,6 +87,7 @@ def list_messages(
 
 
 def list_recent_messages(db: Session, session_id: int, *, limit: int) -> list[ChatMessage]:
+    """모델 문맥에 쓸 최근 세션 메시지를 시간순으로 조회한다."""
     rows = list(
         db.scalars(
             select(ChatMessage)
@@ -97,6 +104,7 @@ def get_source_document_titles(
     owner_id: int,
     document_ids: set[int],
 ) -> dict[int, str]:
+    """사용자 소유 문서만 허용해 출처 제목을 조회한다."""
     if not document_ids:
         return {}
     rows = db.execute(
@@ -109,11 +117,13 @@ def get_source_document_titles(
 
 
 def delete_session(db: Session, session: ChatSession) -> None:
+    """대화 세션을 삭제하고 이 저장소 경계에서 즉시 커밋한다."""
     db.delete(session)
     db.commit()
 
 
 def delete_sessions_for_document(db: Session, document_id: int) -> None:
+    """문서에 종속된 대화 세션을 삭제하고 커밋은 호출자에게 맡긴다."""
     sessions = list(db.scalars(select(ChatSession).where(ChatSession.document_id == document_id)))
     for chat_session in sessions:
         db.delete(chat_session)
@@ -125,6 +135,7 @@ def list_retrieval_traces(
     limit: int,
     offset: int,
 ) -> list[tuple[ChatMessage, int, str]]:
+    """관리 화면용 검색 추적을 사용자 정보와 함께 조회한다."""
     return list(
         db.execute(
             select(ChatMessage, ChatSession.owner_id, User.username)

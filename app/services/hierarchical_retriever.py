@@ -24,7 +24,8 @@ def retrieve_hierarchical_chunks(
     trace: RetrievalTrace | None = None,
     trace_stage: str = "hierarchical_fallback",
 ) -> list[RetrievedChunk]:
-    # Fall back to page search first, then recover chunks that overlap those pages.
+    """청크 검색이 부족할 때 페이지 검색을 거쳐 겹치는 청크를 복구한다."""
+    # 페이지를 먼저 찾은 뒤 그 페이지와 겹치는 청크를 복구한다.
     search_queries = _normalize_queries(question, queries)
     per_query_results = []
     for query in search_queries:
@@ -47,7 +48,7 @@ def retrieve_hierarchical_chunks(
             )
         )
 
-    # Keep each query's best page so broad RRF results cannot erase a narrow facet.
+    # 넓은 RRF 결과가 좁은 쿼리의 핵심 페이지를 지우지 않게 앵커를 보존한다.
     pages = _merge_page_anchors(
         per_query_results,
         _fuse_page_results(per_query_results, MAX_PAGE_CANDIDATES),
@@ -98,6 +99,7 @@ def retrieve_hierarchical_chunks(
 
 
 def _normalize_queries(question: str, queries: Sequence[str]) -> list[str]:
+    """계획 쿼리와 원 질문을 중복 없이 검색 상한에 맞춘다."""
     normalized: list[str] = []
     seen: set[str] = set()
     for candidate in [*queries, question]:
@@ -111,6 +113,7 @@ def _normalize_queries(question: str, queries: Sequence[str]) -> list[str]:
 
 
 def _fuse_page_results(result_sets, limit: int):
+    """여러 페이지 검색 순위를 RRF 점수로 합친다."""
     pages_by_key = {}
     titles_by_key = {}
     scores: dict[tuple[int, int], float] = {}
@@ -128,6 +131,7 @@ def _fuse_page_results(result_sets, limit: int):
 
 
 def _merge_page_anchors(per_query_results, fused_results, limit: int):
+    """각 쿼리의 상위 페이지를 먼저 보존하고 융합 결과로 채운다."""
     merged = []
     seen: set[tuple[int, int]] = set()
     for rows in per_query_results:
@@ -153,6 +157,7 @@ def _merge_page_anchors(per_query_results, fused_results, limit: int):
 
 
 def _best_page_score(chunk, page_rank: dict[tuple[int, int], int]) -> float:
+    """청크와 겹치는 페이지 중 가장 높은 순위를 점수로 바꾼다."""
     if chunk.page_start is None:
         return 0.0
     end = chunk.page_end if chunk.page_end is not None else chunk.page_start

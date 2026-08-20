@@ -17,6 +17,7 @@ def test_interrupted_documents_are_requeued_or_failed(
     user_factory,
     document_factory,
 ) -> None:
+    """중단 문서를 원본 파일 유무에 따라 재대기 또는 실패 처리하는지 검증한다."""
     user = user_factory("recovery-user")
     recoverable = document_factory(user, title="recoverable.pdf", status="processing")
     missing = document_factory(
@@ -42,6 +43,7 @@ def test_document_recovery_is_deferred_during_reindex(
     user_factory,
     document_factory,
 ) -> None:
+    """재색인 중에는 중단 문서 복구를 미루고 상태를 보존하는지 검증한다."""
     user = user_factory("maintenance-user")
     document = document_factory(user, status="processing")
     configuration = retrieval_config_repository.get_configuration(db)
@@ -58,6 +60,7 @@ def test_running_reindex_job_is_reset_for_startup_retry(
     db: Session,
     user_factory,
 ) -> None:
+    """실행 중 끊긴 재색인 작업을 시작 시 재시도 상태로 되돌리는지 검증한다."""
     admin = user_factory("recovery-admin", role="admin")
     configuration = retrieval_config_repository.get_configuration(db)
     configuration.pending_preset_key = "standard"
@@ -98,6 +101,7 @@ def test_running_reindex_job_is_reset_for_startup_retry(
 
 
 def test_stale_maintenance_state_is_cleared_without_jobs(db: Session) -> None:
+    """작업 없는 낡은 유지보수 상태를 시작 시 해제하는지 검증한다."""
     configuration = retrieval_config_repository.get_configuration(db)
     configuration.pending_preset_key = "standard"
     configuration.maintenance_mode = True

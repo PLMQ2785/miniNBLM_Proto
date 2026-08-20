@@ -8,6 +8,7 @@ from app.services.pdf_parser import ParsedPage
 
 
 def create_pages(db: Session, document_id: int, pages: list[ParsedPage]) -> list[DocumentPage]:
+    """문서 소유 페이지를 일괄 추가하고 호출자 트랜잭션에서 확정한다."""
     rows = [
         DocumentPage(
             document_id=document_id,
@@ -23,6 +24,7 @@ def create_pages(db: Session, document_id: int, pages: list[ParsedPage]) -> list
 
 
 def delete_pages(db: Session, document_id: int) -> None:
+    """문서 소유 페이지를 현재 트랜잭션에서 모두 삭제한다."""
     db.execute(delete(DocumentPage).where(DocumentPage.document_id == document_id))
 
 
@@ -32,6 +34,7 @@ def search_pages_by_keyword(
     query_text: str,
     limit: int,
 ) -> list[tuple[DocumentPage, float, str]]:
+    """사용자 소유 문서의 페이지를 키워드 순위로 검색한다."""
     document_vector = func.to_tsvector("simple", DocumentPage.text)
     query = build_keyword_query(query_text)
     rank = func.ts_rank_cd(document_vector, query).label("rank")
@@ -58,6 +61,7 @@ def search_pages_by_substring(
     query_text: str,
     limit: int,
 ) -> list[tuple[DocumentPage, float, str]]:
+    """사용자 소유 문서의 페이지를 부분 문자열 유사도로 검색한다."""
     similarity = func.greatest(
         func.similarity(DocumentPage.text, query_text),
         func.word_similarity(query_text, DocumentPage.text),

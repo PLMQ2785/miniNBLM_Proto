@@ -1,6 +1,8 @@
 import { formatDate, formatStatus } from "../formatters.js";
 
+// 작업공간 문서 상태에 연결되어 업로드 목록과 작업 버튼을 렌더링한다.
 export class DocumentPanel {
+  // 문서 패널 요소와 업로드·새로고침·삭제 이벤트를 연결한다.
   constructor({ listRoot, uploadForm, fileInput, uploadStatus, refreshButton }) {
     this.listRoot = listRoot;
     this.uploadForm = uploadForm;
@@ -19,7 +21,7 @@ export class DocumentPanel {
     this.refreshButton.addEventListener("click", () => {
       if (this.refreshHandler) this.refreshHandler();
     });
-    // Delegate row actions because the document list is rendered from scratch.
+    // 목록을 매번 다시 그리므로 행 동작은 컨테이너에서 위임받는다.
     this.listRoot.addEventListener("click", (event) => {
       const refreshButton = event.target.closest("[data-refresh-documents]");
       if (refreshButton && this.refreshHandler) {
@@ -34,22 +36,27 @@ export class DocumentPanel {
     });
   }
 
+  // 선택한 파일을 전달할 업로드 핸들러를 등록한다.
   onUpload(handler) {
     this.uploadHandler = handler;
   }
 
+  // 문서 삭제 요청을 처리할 핸들러를 등록한다.
   onDelete(handler) {
     this.deleteHandler = handler;
   }
 
+  // 목록 새로고침 요청을 처리할 핸들러를 등록한다.
   onRefresh(handler) {
     this.refreshHandler = handler;
   }
 
+  // 재선택할 수 있도록 브라우저 파일 선택값을 비운다.
   clearFileInput() {
     this.fileInput.value = "";
   }
 
+  // 로딩·오류·업로드 상태에 맞춰 문서 목록을 다시 그린다.
   render(documents, {
     isLoading,
     loadError,
@@ -122,6 +129,7 @@ export class DocumentPanel {
     }
   }
 
+  // 문서 목록의 빈 상태 안내 요소를 만든다.
   emptyState(message) {
     const element = document.createElement("p");
     element.className = "panel-empty-state";
@@ -129,6 +137,7 @@ export class DocumentPanel {
     return element;
   }
 
+  // 새로고침 동작이 포함된 목록 오류 요소를 만든다.
   errorState(message) {
     const element = document.createElement("div");
     element.className = "panel-error-state";
@@ -145,6 +154,7 @@ export class DocumentPanel {
     return element;
   }
 
+  // 목록 로드 오류로 키보드 초점을 옮긴다.
   focusLoadError() {
     this.listRoot.querySelector(".panel-error-state")?.focus();
   }

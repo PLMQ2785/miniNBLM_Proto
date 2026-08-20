@@ -9,11 +9,13 @@ from app.services.retriever import _merge_query_anchors, _reciprocal_rank_fusion
 
 @dataclass(frozen=True)
 class StubChunk:
+    """검색 융합과 재정렬 입력을 단순화한 청크 대역이다."""
     id: int
     embedding: list[float] | None = None
 
 
 def test_reciprocal_rank_fusion_combines_and_deduplicates_results() -> None:
+    """상호 순위 융합이 중복을 제거하고 누적 순위로 정렬하는지 보장한다."""
     first = StubChunk(1)
     second = StubChunk(2)
     third = StubChunk(3)
@@ -33,10 +35,12 @@ def test_reciprocal_rank_fusion_combines_and_deduplicates_results() -> None:
 
 
 def test_reciprocal_rank_fusion_handles_empty_sources() -> None:
+    """빈 검색 결과 묶음이 빈 융합 결과를 내는지 보장한다."""
     assert _reciprocal_rank_fusion(([], []), top_k=3) == []
 
 
 def test_multi_query_fusion_preserves_each_query_top_candidate() -> None:
+    """다중 질의 병합이 각 질의의 최상위 후보를 보존하는지 보장한다."""
     shared = StubChunk(1)
     first_facet = StubChunk(2)
     second_facet = StubChunk(3)
@@ -54,6 +58,7 @@ def test_multi_query_fusion_preserves_each_query_top_candidate() -> None:
 def test_semantic_reranker_promotes_candidate_matching_the_original_question(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """의미 재정렬이 원 질문과 가까운 후보를 우선하는지 보장한다."""
     lexical_first = StubChunk(1, [0.0, 1.0])
     semantic_match = StubChunk(2, [1.0, 0.0])
     monkeypatch.setattr(
@@ -78,10 +83,12 @@ def test_semantic_reranker_promotes_candidate_matching_the_original_question(
 def test_semantic_reranker_falls_back_to_retrieval_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """임베딩 실패 시 기존 검색 순위로 안전하게 대체하는지 보장한다."""
     first = StubChunk(1, [1.0, 0.0])
     second = StubChunk(2, [0.0, 1.0])
 
     def fail(*args, **kwargs):
+        """임베딩 서비스 장애를 재현한다."""
         raise RuntimeError("embedding unavailable")
 
     monkeypatch.setattr(EmbeddingClient, "embed_query", fail)
@@ -98,6 +105,7 @@ def test_semantic_reranker_falls_back_to_retrieval_order(
 def test_semantic_reranker_preserves_the_best_candidate_for_each_goal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """제한된 결과에서도 각 근거 목표의 최상위 후보를 보존하는지 보장한다."""
     overall = StubChunk(1, [1.0, 0.0, 0.0])
     reset = StubChunk(2, [0.0, 1.0, 0.0])
     collaboration = StubChunk(3, [0.0, 0.0, 1.0])

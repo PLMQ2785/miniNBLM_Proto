@@ -19,6 +19,7 @@ pytestmark = [
 
 
 def _wait_until_indexed(client: httpx.Client, document_id: int, timeout: float = 240.0) -> dict:
+    """실제 문서가 색인 완료 또는 실패할 때까지 API 상태를 확인한다."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         response = client.get(f"/documents/{document_id}")
@@ -33,6 +34,7 @@ def _wait_until_indexed(client: httpx.Client, document_id: int, timeout: float =
 
 
 def _ask(client: httpx.Client, question: str) -> dict:
+    """실제 비스트리밍 모델 답변이 비어 있지 않은지 확인한다."""
     response = client.post(
         "/chat",
         json={"question": question},
@@ -45,6 +47,7 @@ def _ask(client: httpx.Client, question: str) -> dict:
 
 
 def _ask_stream(client: httpx.Client, question: str) -> dict:
+    """실제 SSE 이벤트를 조립하고 완료·분할 전송 계약을 확인한다."""
     answer_parts: list[str] = []
     sources: list[dict] = []
     session: dict | None = None
@@ -91,6 +94,7 @@ def _ask_stream(client: httpx.Client, question: str) -> dict:
 
 
 def _has_metric_sample(metrics_text: str, name: str, labels: dict[str, str]) -> bool:
+    """노출된 메트릭에 이름과 라벨이 일치하는 표본이 있는지 확인한다."""
     return any(
         sample.name == name and labels.items() <= sample.labels.items()
         for family in text_string_to_metric_families(metrics_text)
@@ -99,6 +103,7 @@ def _has_metric_sample(metrics_text: str, name: str, labels: dict[str, str]) -> 
 
 
 def test_real_pdf_embedding_retrieval_generation_and_grounding() -> None:
+    """실제 PDF·임베딩·검색·생성·근거 제한과 정리를 끝까지 검증한다."""
     base_url = os.environ["E2E_BASE_URL"]
     pdf_path = Path(os.environ["E2E_PDF_PATH"])
     database_dsn = os.environ["E2E_DATABASE_DSN"]
@@ -119,7 +124,7 @@ def test_real_pdf_embedding_retrieval_generation_and_grounding() -> None:
         upload.raise_for_status()
         document_id = upload.json()["document_id"]
 
-        # Cleanup runs even when a real model assertion fails midway.
+        # 실제 모델 검증이 중간에 실패해도 업로드 문서는 반드시 정리한다.
         try:
             _wait_until_indexed(client, document_id)
 

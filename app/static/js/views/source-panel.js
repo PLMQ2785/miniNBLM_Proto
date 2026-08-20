@@ -1,6 +1,8 @@
 import { formatPage } from "../formatters.js";
 
+// 채팅 출처 선택에 연결되어 원문 PDF 패널을 렌더링한다.
 export class SourcePanel {
+  // 출처 패널 요소와 데스크톱·모바일 닫기 동작을 연결한다.
   constructor({ root, title, pageLabel, content, closeButton, mobileToggle }) {
     this.root = root;
     this.title = title;
@@ -15,10 +17,12 @@ export class SourcePanel {
     this.mobileToggle.addEventListener("click", () => this.root.classList.add("is-mobile-open"));
   }
 
+  // 출처 닫기 요청을 처리할 상위 핸들러를 등록한다.
   onClose(handler) {
     this.closeHandler = handler;
   }
 
+  // 선택한 출처의 문서 제목과 PDF를 패널에 표시한다.
   render(source, pdfUrl, documentTitle = "") {
     this.mobileToggle.hidden = !source;
     if (!source) {
@@ -37,7 +41,7 @@ export class SourcePanel {
     this.title.textContent = documentTitle || "출처";
     this.pageLabel.textContent = formatPage(source.page);
 
-    // Keep the iframe alive when only surrounding UI state changes.
+    // 주변 UI만 바뀔 때는 PDF iframe을 다시 불러오지 않는다.
     if (this.currentUrl === pdfUrl) return;
     this.currentUrl = pdfUrl;
     this.content.replaceChildren();
@@ -58,11 +62,13 @@ export class SourcePanel {
     this.root.classList.add("has-source");
   }
 
+  // 모바일 출처 서랍을 열고 가시성 변경을 알린다.
   openMobile() {
     this.root.classList.add("is-mobile-open");
     this.root.dispatchEvent(new CustomEvent("panelvisibilitychange", { bubbles: true }));
   }
 
+  // 모바일 출처 서랍을 닫고 가시성 변경을 알린다.
   closeMobile() {
     this.root.classList.remove("is-mobile-open");
     this.root.dispatchEvent(new CustomEvent("panelvisibilitychange", { bubbles: true }));

@@ -5,6 +5,7 @@ from app.observability import JsonLogFormatter, _request_id, request_id_context
 
 
 def test_json_log_formatter_includes_request_context() -> None:
+    """JSON 로그에는 요청 식별자와 HTTP 문맥이 함께 기록된다."""
     token = request_id_context.set("request-123")
     try:
         record = logging.LogRecord(
@@ -31,6 +32,7 @@ def test_json_log_formatter_includes_request_context() -> None:
 
 
 def test_request_id_accepts_safe_header_and_replaces_invalid_value() -> None:
+    """안전한 요청 식별자는 유지하고 잘못된 값은 새 값으로 대체한다."""
     assert _request_id([(b"x-request-id", b"client-request_1")]) == "client-request_1"
     generated = _request_id([(b"x-request-id", b"invalid request id")])
 

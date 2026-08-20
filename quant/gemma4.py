@@ -1,3 +1,5 @@
+"""Gemma 4를 보정 데이터로 W4A16 양자화해 압축 저장한다."""
+
 import os
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -15,9 +17,7 @@ from transformers import (
     Gemma4UnifiedForConditionalGeneration,
 )
 
-# ──────────────────────────────────────────────
-# 설정 (Gemma 4 12B Unified)
-# ──────────────────────────────────────────────
+# Gemma 4 12B Unified 양자화 설정
 MODEL_ID = os.getenv("QUANT_MODEL_ID", "google/gemma-4-12B-it")
 OUTPUT_DIR = os.getenv(
     "QUANT_OUTPUT_DIR", "./google/gemma-4-12B-it-W4A16-vllm"
@@ -40,7 +40,7 @@ with load_offloaded_model(model_class=Gemma4UnifiedForConditionalGeneration):
         device_map="auto_offload",
         torch_dtype=torch.bfloat16,
         trust_remote_code=True,
-        # max_memory={"cpu": 14 * 1024**3},
+        # max_memory={"cpu": 14 * 1024**3},  # CPU 메모리 상한이 필요할 때 사용
         offload_folder="./offload",
     )
 processor = AutoProcessor.from_pretrained(MODEL_ID, trust_remote_code=True)
@@ -53,6 +53,7 @@ ds = ds.shuffle(seed=42).select(range(NUM_CALIBRATION_SAMPLES))
 
 
 def preprocess_fn(example):
+    """대화 표본을 Gemma 채팅 템플릿의 보정 텍스트로 바꾼다."""
     return {
         "text": tokenizer.apply_chat_template(
             example["messages"], tokenize=False, add_generation_prompt=False
@@ -62,9 +63,8 @@ def preprocess_fn(example):
 
 ds = ds.map(preprocess_fn, remove_columns=ds.column_names)
 
-# 4. W4A16 레시피 설정 (비전 타워 보호 필히 포함)
-# AWQ(Activation-Weighted Quantization) 방식을 적용합니다.
-# Gemma 4의 슬라이딩(sliding) 및 전역(full) 어텐션 레이어 구성을 파악하여 적절한 AWQ 맵핑을 생성합니다.
+# 4. 비전 타워를 보존하는 W4A16 AWQ 레시피 구성
+# 레이어별 전역·슬라이딩 어텐션 구조에 맞춰 균형 조정 대상을 만든다.
 config = AutoConfig.from_pretrained(MODEL_ID)
 layer_types = config.text_config.layer_types
 num_layers = len(layer_types)
@@ -73,9 +73,9 @@ awq_mappings = []
 for i in range(num_layers):
     layer_prefix = f"re:.*layers\\.{i}\\."
     
-    # 1. Attention block mapping
+    # 어텐션 블록 매핑
     if layer_types[i] == "full_attention":
-        # Full attention has k_proj, but no v_proj (attention_k_eq_v=True)
+        # 전역 어텐션은 k_proj가 있고 v_proj는 공유한다.
         awq_mappings.append(
             AWQMapping(
                 smooth_layer=f"{layer_prefix}input_layernorm$",
@@ -83,7 +83,7 @@ for i in range(num_layers):
             )
         )
     else:
-        # Sliding attention has q_proj, k_proj, v_proj
+        # 슬라이딩 어텐션은 q_proj, k_proj, v_proj를 모두 쓴다.
         awq_mappings.append(
             AWQMapping(
                 smooth_layer=f"{layer_prefix}input_layernorm$",
@@ -95,15 +95,14 @@ for i in range(num_layers):
             )
         )
 
-    # 2. MLP block mappings
-    # pre_feedforward_layernorm -> gate_proj, up_proj
+    # MLP 블록에서 정규화 출력을 gate_proj와 up_proj에 맞춘다.
     awq_mappings.append(
         AWQMapping(
             smooth_layer=f"{layer_prefix}pre_feedforward_layernorm$",
             balance_layers=[f"{layer_prefix}mlp.gate_proj$", f"{layer_prefix}mlp.up_proj$"]
         )
     )
-    # up_proj -> down_proj
+    # up_proj 출력을 down_proj에 맞춘다.
     awq_mappings.append(
         AWQMapping(
             smooth_layer=f"{layer_prefix}mlp.up_proj$",
@@ -118,7 +117,7 @@ recipe = [
         scheme="W4A16",
         ignore=[
             "lm_head",
-            # vLLM builds Unified multimodal connectors as BF16 ReplicatedLinear.
+            # vLLM은 Unified 멀티모달 연결부를 BF16 ReplicatedLinear로 만든다.
             r"re:.*embed_audio.*",
             r"re:.*embed_vision.*",
             r"re:.*vision_embedder.*",
@@ -145,7 +144,7 @@ oneshot(
     pipeline="sequential",
 )
 
-# 메모리 확보를 위해 불필요한 개체 삭제 및 가비지 컬렉션 수행
+# 저장 전에 보정 데이터와 레시피가 점유한 GPU 메모리를 회수한다.
 import gc
 del ds
 del recipe

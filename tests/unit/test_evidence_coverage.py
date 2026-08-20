@@ -22,6 +22,7 @@ def _chunk(
     page: int,
     document_title: str = "git.pdf",
 ) -> RetrievedChunk:
+    """근거 범위 검증에 쓸 검색 청크를 만든다."""
     return RetrievedChunk(
         chunk_id=chunk_id,
         document_id=10,
@@ -35,6 +36,7 @@ def _chunk(
 
 
 def _goals() -> tuple[EvidenceGoal, ...]:
+    """reset과 revert 비교에 필요한 근거 목표를 만든다."""
     return (
         EvidenceGoal("reset", "reset의 이력 변경 특성", ("git reset history",)),
         EvidenceGoal("revert", "revert의 공유 이력 안전성", ("git revert shared history",)),
@@ -42,12 +44,14 @@ def _goals() -> tuple[EvidenceGoal, ...]:
 
 
 def _response(*goals: dict) -> str:
+    """근거 판정 응답 형식의 JSON 문자열을 만든다."""
     return json.dumps({"goals": list(goals)}, ensure_ascii=False)
 
 
 def test_coverage_maps_each_goal_to_verified_source_page_and_chunk(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """각 목표가 검증된 문서·페이지·청크에 연결되는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
@@ -89,9 +93,11 @@ def test_coverage_maps_each_goal_to_verified_source_page_and_chunk(
 def test_unknown_chunk_id_is_repaired_once_and_json_mode_is_requested(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """알 수 없는 청크 ID를 JSON 모드로 한 번만 복구하는지 보장한다."""
     calls: list[dict] = []
 
     def assess(self, messages, **kwargs):
+        """첫 판정에는 잘못된 ID, 복구 판정에는 유효한 ID를 반환한다."""
         calls.append(kwargs)
         chunk_id = 999 if len(calls) == 1 else 11
         return _response(
@@ -120,10 +126,11 @@ def test_unknown_chunk_id_is_repaired_once_and_json_mode_is_requested(
 
 
 
-# Guessing unknown IDs would attach a claim to the wrong source.
+# 알 수 없는 ID를 추측하면 주장이 잘못된 출처에 연결된다.
 def test_failed_repair_uses_unchecked_matrix_instead_of_guessing_identifiers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """식별자 복구 실패 시 추측 대신 미검증 행렬을 쓰는지 보장한다."""
     calls = 0
     malformed = _response(
         {
@@ -141,6 +148,7 @@ def test_failed_repair_uses_unchecked_matrix_instead_of_guessing_identifiers(
     )
 
     def assess(*args, **kwargs):
+        """호출 횟수를 세며 같은 잘못된 판정을 반환한다."""
         nonlocal calls
         calls += 1
         return malformed
@@ -159,6 +167,7 @@ def test_failed_repair_uses_unchecked_matrix_instead_of_guessing_identifiers(
 def test_duplicate_or_omitted_goal_after_repair_returns_unchecked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """복구 뒤에도 목표가 중복·누락되면 미검증으로 처리하는지 보장한다."""
     invalid = _response(
         {
             "goal_id": "reset",
@@ -175,6 +184,7 @@ def test_duplicate_or_omitted_goal_after_repair_returns_unchecked(
 def test_targeted_retry_searches_only_unresolved_goal_and_merges_evidence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """미해결 목표만 재검색하고 새 근거를 기존 결과에 합치는지 보장한다."""
     assessments = iter(
         [
             EvidenceCoverageAssessment(
@@ -204,6 +214,7 @@ def test_targeted_retry_searches_only_unresolved_goal_and_merges_evidence(
     )
 
     def retrieve(**kwargs):
+        """재검색 목표를 기록하고 해당 목표의 근거를 반환한다."""
         captured.append(kwargs["goals"])
         return [_chunk(12, "revert는 역커밋을 생성한다.", 8)]
 
@@ -225,6 +236,7 @@ def test_targeted_retry_searches_only_unresolved_goal_and_merges_evidence(
 def test_unresolved_evidence_uses_exactly_two_bounded_retrieval_actions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """미해결 근거에 허용된 검색 동작을 정확히 두 번만 쓰는지 보장한다."""
     unresolved = EvidenceCoverageAssessment(
         (
             GoalCoverage("reset", "reset의 이력 변경 특성", "supported"),
@@ -258,6 +270,7 @@ def test_unresolved_evidence_uses_exactly_two_bounded_retrieval_actions(
 def test_empty_initial_context_uses_hierarchical_fallback_before_targeted_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """초기 문맥이 비면 목표 재검색보다 계층 검색을 먼저 쓰는지 보장한다."""
     recovered = [_chunk(21, "hierarchical evidence", 4)]
     monkeypatch.setattr(
         evidence_coverage,
@@ -289,6 +302,7 @@ def test_empty_initial_context_uses_hierarchical_fallback_before_targeted_retry(
 def test_empty_hierarchical_result_uses_remaining_targeted_action(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """계층 검색이 비면 남은 목표 검색 기회를 사용하는지 보장한다."""
     recovered = [_chunk(22, "targeted evidence", 5)]
     monkeypatch.setattr(
         evidence_coverage,
@@ -327,6 +341,7 @@ def test_empty_hierarchical_result_uses_remaining_targeted_action(
 
 
 def test_evidence_matrix_preserves_goal_status_and_verified_references() -> None:
+    """근거 행렬이 목표 상태와 검증된 출처 참조를 보존하는지 보장한다."""
     trace = RetrievalTrace(request_id="req")
     trace.record_coverage(
         attempt=1,
@@ -371,6 +386,7 @@ def test_evidence_matrix_preserves_goal_status_and_verified_references() -> None
 
 
 def test_unchecked_matrix_never_reuses_stale_goal_results() -> None:
+    """미검증 행렬이 이전 시도의 목표 판정을 재사용하지 않는지 보장한다."""
     trace = RetrievalTrace(request_id="req")
     trace.record_coverage(
         attempt=0,

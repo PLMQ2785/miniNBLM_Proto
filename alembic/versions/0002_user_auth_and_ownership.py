@@ -1,4 +1,4 @@
-"""add user authentication and data ownership
+"""사용자 인증과 데이터 소유권을 추가한다.
 
 Revision ID: 0002_user_auth_and_ownership
 Revises: 0001_initial_schema
@@ -16,6 +16,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """사용자 테이블을 만들고 기존 문서와 대화에 소유자를 연결한다."""
     op.create_table(
         "users",
         sa.Column("id", sa.BigInteger(), primary_key=True),
@@ -99,6 +100,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """소유권 제약과 사용자 테이블을 제거해 이전 구조로 되돌린다."""
     op.drop_index("chat_sessions_owner_idx", table_name="chat_sessions")
     op.drop_index("documents_owner_idx", table_name="documents")
     op.drop_constraint("chat_sessions_owner_id_fkey", "chat_sessions", type_="foreignkey")

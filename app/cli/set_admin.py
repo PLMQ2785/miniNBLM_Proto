@@ -5,6 +5,7 @@ from app.repositories import user_repository
 
 
 def main() -> None:
+    """기존 계정의 관리자 역할과 비밀번호 변경 의무를 설정한다."""
     parser = argparse.ArgumentParser(description="Grant or revoke the miniNBLM administrator role")
     parser.add_argument("username", help="Existing username")
     parser.add_argument("--revoke", action="store_true", help="Change the account back to the user role")

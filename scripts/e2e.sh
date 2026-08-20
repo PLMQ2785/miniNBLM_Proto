@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Exercise the real embedding and LLM services with isolated API data.
+# 격리된 API 데이터로 실제 임베딩 및 LLM 서비스를 점검한다.
 
 set -Eeuo pipefail
 
@@ -8,6 +8,7 @@ cd "$PROJECT_DIR"
 
 COMPOSE=(docker compose -p mininblm-e2e -f docker-compose.e2e.yml)
 
+# E2E용 격리 컨테이너와 네트워크를 정리한다.
 cleanup() {
   "${COMPOSE[@]}" down --remove-orphans >/dev/null 2>&1 || true
 }

@@ -7,6 +7,7 @@ from app.services.language_model_service import LanguageModelEndpointUnavailable
 
 
 def _settings() -> Settings:
+    """엔드포인트 검증에 사용할 다중 모델 설정을 만든다."""
     return Settings(
         _env_file=None,
         llm_configuration=LLMConfiguration(
@@ -34,6 +35,7 @@ def _settings() -> Settings:
 
 
 def test_endpoint_verification_requires_configured_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """엔드포인트 검증은 선택한 모델과 인증 정보를 기준으로 요청한다."""
     configured = _settings()
     response = httpx.Response(
         200,
@@ -43,6 +45,7 @@ def test_endpoint_verification_requires_configured_model(monkeypatch: pytest.Mon
     called = {}
 
     def fake_get(url, **kwargs):
+        """검증 요청 인자를 기록하고 준비된 모델 목록을 반환한다."""
         called.update(url=url, **kwargs)
         return response
 
@@ -56,6 +59,7 @@ def test_endpoint_verification_requires_configured_model(monkeypatch: pytest.Mon
 
 
 def test_endpoint_verification_rejects_wrong_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """엔드포인트가 설정 모델을 제공하지 않으면 사용 불가로 처리한다."""
     configured = _settings()
     response = httpx.Response(
         200,

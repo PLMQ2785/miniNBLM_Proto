@@ -15,6 +15,7 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 
 def _to_response(document) -> DocumentResponse:
+    """문서 모델을 API 응답 형식으로 변환한다."""
     return DocumentResponse(
         document_id=document.id,
         title=document.title,
@@ -32,6 +33,7 @@ async def upload_document(
     user: User = Depends(get_current_user),
     _: None = Depends(ensure_retrieval_writes_available),
 ) -> DocumentUploadResponse:
+    """PDF를 저장한 뒤 복구 가능한 백그라운드 인덱싱을 예약한다."""
     if file.content_type not in {"application/pdf", "application/x-pdf"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only PDF uploads are supported")
     if not (file.filename or "").lower().endswith(".pdf"):
@@ -45,7 +47,7 @@ async def upload_document(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except InvalidPDFError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    # The durable row exists before indexing starts, so startup recovery can resume it.
+    # 인덱싱 전에 DB 행을 확정해 재시작 시 이어서 처리할 수 있게 한다.
     background_tasks.add_task(document_processor.process_document, document.id)
     return DocumentUploadResponse(document_id=document.id, status=document.status)
 
@@ -55,6 +57,7 @@ def list_documents(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DocumentListResponse:
+    """현재 사용자가 소유한 문서 목록을 반환한다."""
     documents = document_service.list_documents(db, user.id)
     return DocumentListResponse(documents=[_to_response(document) for document in documents])
 
@@ -65,6 +68,7 @@ def get_document_file(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> FileResponse:
+    """소유권을 확인한 원본 PDF를 인라인 응답으로 제공한다."""
     try:
         document = document_service.get_document(db, document_id, user.id)
     except DocumentNotFoundError as exc:
@@ -89,6 +93,7 @@ def get_document(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DocumentResponse:
+    """현재 사용자가 소유한 문서 상태를 반환한다."""
     try:
         document = document_service.get_document(db, document_id, user.id)
     except DocumentNotFoundError as exc:
@@ -103,6 +108,7 @@ def delete_document(
     user: User = Depends(get_current_user),
     _: None = Depends(ensure_retrieval_writes_available),
 ) -> Response:
+    """처리 중이 아닌 사용자 문서와 저장 파일을 함께 삭제한다."""
     try:
         document_service.delete_document(db, document_id, user.id)
     except DocumentNotFoundError as exc:

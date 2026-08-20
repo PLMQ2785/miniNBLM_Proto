@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def start_document_worker(document_id: int, *, reset_existing: bool = False) -> None:
+    """복구 작업이 문서 인덱싱을 독립 백그라운드 스레드로 재개하게 한다."""
     worker = threading.Thread(
         target=process_document,
         kwargs={"document_id": document_id, "reset_existing": reset_existing},
@@ -36,6 +37,7 @@ def process_document(
     index_version: int | None = None,
     reset_existing: bool = False,
 ) -> bool:
+    """PDF에서 텍스트·시각 근거를 추출해 페이지와 검색 청크를 원자적으로 인덱싱한다."""
     db = SessionLocal()
     try:
         document = document_repository.get_document_by_id(db, document_id)
@@ -51,7 +53,7 @@ def process_document(
         if preset is None:
             raise ValueError(f"Unknown retrieval preset: {preset_key}")
 
-        # Reindexing replaces derived pages and chunks, never the original PDF.
+        # 재인덱싱은 파생 데이터만 교체하고 원본 PDF는 보존한다.
         if reset_existing:
             chat_repository.delete_sessions_for_document(db, document.id)
             chunk_repository.delete_chunks(db, document.id)
@@ -64,7 +66,7 @@ def process_document(
         owner = user_repository.get_user_by_id(db, document.owner_id)
         if owner is None:
             raise ValueError("Document owner not found")
-        # Vision captions use the document owner's selected endpoint.
+        # 시각 캡션에는 문서 소유자가 선택한 모델 엔드포인트를 쓴다.
         endpoint_key = language_model_service.get_user_endpoint_key(owner)
         with language_model_service.use_endpoint(endpoint_key):
             pages = enrich_pages_with_vision_captions(document.file_path, pages)
@@ -86,11 +88,11 @@ def process_document(
 
         document_repository.update_index_metadata(db, document, preset_key, index_version)
         document_repository.update_status(db, document, "indexed")
-        # Pages, chunks, and final status become visible together.
+        # 페이지·청크·최종 상태는 한 트랜잭션으로 함께 공개한다.
         db.commit()
         return True
     except Exception as exc:
-        # Keep a durable failure reason for polling and restart recovery.
+        # 조회와 재시작 복구에 쓸 실패 사유를 DB에 남긴다.
         db.rollback()
         document = document_repository.get_document_by_id(db, document_id)
         if document is not None:

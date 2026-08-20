@@ -31,6 +31,7 @@ if [[ -z "$DB_PASSWORD" && -f .env ]]; then
 fi
 DB_PASSWORD="${DB_PASSWORD:-rag_password}"
 
+# 일관된 백업을 위해 API 쓰기를 잠시 중단한다.
 stop_api() {
   if [[ "$RUNTIME_MODE" == "native" ]]; then
     "$PROJECT_DIR/run-native.sh" stop-api >/dev/null
@@ -39,6 +40,7 @@ stop_api() {
   fi
 }
 
+# 백업 뒤 원래 실행 중이던 API를 다시 기동한다.
 start_api() {
   if [[ "$RUNTIME_MODE" == "native" ]]; then
     "$PROJECT_DIR/run-native.sh" start-api >/dev/null
@@ -47,6 +49,7 @@ start_api() {
   fi
 }
 
+# 실행 방식에 맞는 도구로 데이터베이스를 덤프한다.
 dump_database() {
   if [[ "$RUNTIME_MODE" == "native" ]]; then
     PGPASSWORD="$DB_PASSWORD" pg_dump \
@@ -59,6 +62,7 @@ dump_database() {
   fi
 }
 
+# 백업 명령 사용법을 안내한다.
 usage() {
   cat <<'EOF'
 Usage:
@@ -111,7 +115,7 @@ else
   }
 fi
 
-# Build in a private staging directory and publish with one final rename.
+# 비공개 임시 디렉터리에서 만든 뒤 완성된 백업만 공개한다.
 mkdir -p "$BACKUP_DIR"
 staging_dir="$(mktemp -d "$BACKUP_DIR/.backup-staging.XXXXXX")"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -119,6 +123,7 @@ archive="$BACKUP_DIR/mininblm-backup-$timestamp.tar.gz"
 temporary_archive="$archive.tmp"
 api_was_stopped=false
 
+# 임시 파일을 지우고 중단했던 API를 복구한다.
 cleanup() {
   local exit_code=$?
   rm -rf -- "$staging_dir" "$temporary_archive"
@@ -147,7 +152,7 @@ fi
 echo "PostgreSQL을 백업합니다."
 dump_database >"$staging_dir/database.dump"
 
-# Refuse symlinks so a backup cannot escape the upload tree.
+# 업로드 트리 밖을 포함하지 않도록 심볼릭 링크를 거부한다.
 echo "업로드 PDF를 백업합니다."
 if [[ -d "$UPLOADS_DIR" ]]; then
   if find "$UPLOADS_DIR" -type l -print -quit | grep . >/dev/null; then

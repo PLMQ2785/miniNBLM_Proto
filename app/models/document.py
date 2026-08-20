@@ -7,6 +7,7 @@ from app.database import Base
 
 
 class Document(Base):
+    """사용자가 소유하며 페이지·청크·대화를 묶는 업로드 문서다."""
     __tablename__ = "documents"
     __table_args__ = (Index("documents_owner_idx", "owner_id", "created_at"),)
 
@@ -15,9 +16,11 @@ class Document(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
     mime_type: Mapped[str | None] = mapped_column(Text)
+    # uploaded → processing → indexed/failed 상태를 polling과 재시작 복구가 함께 쓴다.
     status: Mapped[str] = mapped_column(Text, nullable=False, default="uploaded", server_default="uploaded")
     error_message: Mapped[str | None] = mapped_column(Text)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    # 어떤 chunk 설정과 전체 index version으로 만들어졌는지 기록한다.
     indexed_preset_key: Mapped[str | None] = mapped_column(
         Text,
         ForeignKey("retrieval_presets.key", ondelete="SET NULL"),

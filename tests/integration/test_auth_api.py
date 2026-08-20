@@ -24,6 +24,7 @@ NEW_ADMIN_PASSWORD = "General!Secure2026"
 def test_bootstrap_admin_must_change_password_and_old_secret_is_not_restored(
     reset_database,
 ) -> None:
+    """초기 관리자 비밀이 변경 후 재시작에도 복원되지 않는지 검증한다."""
     with TestClient(app) as client, TestClient(app) as other_session:
         admin_login = client.post(
             "/auth/login",
@@ -94,7 +95,7 @@ def test_bootstrap_admin_must_change_password_and_old_secret_is_not_restored(
             json={"username": "admin", "password": NEW_ADMIN_PASSWORD},
         ).status_code == 200
 
-    # A later application startup must not restore the environment bootstrap secret.
+    # 앱을 다시 시작해도 환경 변수의 초기 비밀을 복원하면 안 된다.
     with TestClient(app) as restarted_client:
         assert restarted_client.post(
             "/auth/login",
@@ -109,6 +110,7 @@ def test_bootstrap_admin_must_change_password_and_old_secret_is_not_restored(
 
 
 def test_registration_login_and_logout(client: TestClient) -> None:
+    """가입·로그인·로그아웃의 인증 세션 계약을 검증한다."""
     admin_login = client.post(
         "/auth/login",
         json={"username": "admin", "password": BOOTSTRAP_PASSWORD},
@@ -137,6 +139,7 @@ def test_registration_login_and_logout(client: TestClient) -> None:
 def test_regular_user_can_change_password_and_other_sessions_are_revoked(
     reset_database,
 ) -> None:
+    """일반 사용자 비밀번호 변경이 다른 세션과 이전 비밀을 폐기하는지 검증한다."""
     new_password = "Changed!Secure2026"
     with TestClient(app) as client, TestClient(app) as other_session:
         assert client.post(
@@ -174,6 +177,7 @@ def test_account_deletion_removes_owned_data_files_and_sessions(
     db: Session,
     document_factory,
 ) -> None:
+    """계정 삭제가 소유 데이터·파일·세션을 함께 제거하는지 검증한다."""
     with TestClient(app) as client, TestClient(app) as other_session:
         registration = client.post(
             "/auth/register",
@@ -276,6 +280,7 @@ def test_account_deletion_is_blocked_while_a_document_is_processing(
     db: Session,
     document_factory,
 ) -> None:
+    """처리 중 문서가 있으면 계정과 소유 데이터를 보존하는지 검증한다."""
     assert client.post(
         "/auth/register",
         json={"username": "busy-member", "password": "password123"},
@@ -301,6 +306,7 @@ def test_account_deletion_is_blocked_while_a_document_is_processing(
 
 
 def test_documents_are_isolated_by_user(reset_database, db: Session, document_factory) -> None:
+    """문서 목록·조회·삭제가 사용자 소유권으로 격리되는지 검증한다."""
     with TestClient(app) as first, TestClient(app) as second:
         assert first.post(
             "/auth/register",
@@ -331,6 +337,7 @@ def test_documents_are_isolated_by_user(reset_database, db: Session, document_fa
 def test_admin_password_reset_revokes_sessions_and_forces_password_change(
     reset_database,
 ) -> None:
+    """관리자 비밀번호 초기화가 세션 폐기와 재변경을 강제하는지 검증한다."""
     temporary_password = "Temporary!Reset2026"
     final_password = "Final!Member2026"
     with (

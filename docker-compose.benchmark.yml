@@ -1,4 +1,4 @@
-# Benchmark runner uses an isolated database and read-only fixtures.
+# 읽기 전용 fixture와 격리 데이터베이스를 사용하는 벤치마크 환경이다.
 services:
   db-benchmark:
     image: pgvector/pgvector:pg17

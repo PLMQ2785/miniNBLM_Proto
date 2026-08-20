@@ -33,12 +33,13 @@ MIN_CONTEXT_RETRY_OUTPUT_TOKENS = 128
 
 
 def _reduced_output_token_budget(exc: Exception, current_max_tokens: int) -> int | None:
+    """컨텍스트 초과 응답에서 한 번 재시도할 출력 예산을 계산한다."""
     match = CONTEXT_LENGTH_ERROR_PATTERN.search(str(exc))
     if match is None:
         return None
     context_limit = int(match.group("limit").replace(",", ""))
     input_tokens = int(match.group("input").replace(",", ""))
-    # Leave a small margin for tokenizer differences reported by compatible endpoints.
+    # 호환 엔드포인트의 토크나이저 오차를 흡수할 여유를 둔다.
     available_output_tokens = context_limit - input_tokens - CONTEXT_RETRY_TOKEN_MARGIN
     if (
         available_output_tokens < MIN_CONTEXT_RETRY_OUTPUT_TOKENS
@@ -49,7 +50,9 @@ def _reduced_output_token_budget(exc: Exception, current_max_tokens: int) -> int
 
 
 class LLMClient:
+    """RAG 단계별 LLM 호출과 관측 지표를 한 경로에서 관리한다."""
     def __init__(self, endpoint_key: str | None = None) -> None:
+        """사용자에게 선택된 엔드포인트로 OpenAI 호환 클라이언트를 만든다."""
         endpoint = settings.get_llm_endpoint(endpoint_key) if endpoint_key else get_active_endpoint()
         self.endpoint_key = endpoint.key
         self.model = endpoint.model
@@ -66,6 +69,7 @@ class LLMClient:
         operation: str = "completion",
         response_format: dict[str, str] | None = None,
     ) -> str:
+        """동기 응답을 생성하고 컨텍스트 초과만 축소 예산으로 재시도한다."""
         started_at = time.perf_counter()
         max_tokens = MAX_TOKENS_BY_OPERATION.get(operation, DEFAULT_MAX_TOKENS)
         context_retry_used = False
@@ -82,7 +86,7 @@ class LLMClient:
                     )
                     break
                 except Exception as exc:
-                    # Retry only before a response exists, and never more than once.
+                    # 응답이 생기기 전 컨텍스트 초과만 한 번 재시도한다.
                     if context_retry_used:
                         raise
                     reduced_max_tokens = _reduced_output_token_budget(exc, max_tokens)
@@ -115,6 +119,7 @@ class LLMClient:
         temperature: float = 0.2,
         operation: str = "answer",
     ) -> Iterator[str]:
+        """응답 델타를 전달하며 첫 델타 전 컨텍스트 초과만 재시도한다."""
         started_at = time.perf_counter()
         first_token_recorded = False
         status = "success"
@@ -133,7 +138,7 @@ class LLMClient:
                     )
                     break
                 except Exception as exc:
-                    # A stream can be retried safely only before the first delta.
+                    # 스트림은 첫 델타 전까지만 안전하게 한 번 재시도할 수 있다.
                     if context_retry_used:
                         raise
                     reduced_max_tokens = _reduced_output_token_budget(exc, max_tokens)

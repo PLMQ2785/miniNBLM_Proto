@@ -1,4 +1,4 @@
-"""Generate a multi-topic nursing PDF used as retrieval evaluation distractors."""
+"""검색 평가의 방해 자료로 쓰는 다주제 간호 PDF를 생성한다."""
 
 from pathlib import Path
 
@@ -58,6 +58,7 @@ TOPICS = [
 
 
 def generate(output: Path) -> None:
+    """간호 주제들을 방해 문서로 저장하고 PDF 자원을 닫는다."""
     output.parent.mkdir(parents=True, exist_ok=True)
     document = fitz.open()
     for page_number, (title, *paragraphs) in enumerate(TOPICS, start=1):

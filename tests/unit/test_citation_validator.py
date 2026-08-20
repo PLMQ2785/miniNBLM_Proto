@@ -11,6 +11,7 @@ from app.services.retriever import RetrievedChunk
 
 @pytest.fixture
 def chunks() -> list[RetrievedChunk]:
+    """인용 검증에 쓸 서로 다른 페이지의 검색 청크를 제공한다."""
     return [
         RetrievedChunk(
             chunk_id=10,
@@ -39,6 +40,7 @@ def test_complete_citations_skip_llm(
     monkeypatch: pytest.MonkeyPatch,
     chunks: list[RetrievedChunk],
 ) -> None:
+    """완전한 인용은 LLM 복구 없이 그대로 통과하는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
@@ -57,6 +59,7 @@ def test_complete_citations_remove_revised_answer_heading_without_llm(
     monkeypatch: pytest.MonkeyPatch,
     chunks: list[RetrievedChunk],
 ) -> None:
+    """완전한 인용의 수정 답변 머리말을 LLM 없이 제거하는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
@@ -76,6 +79,7 @@ def test_bare_source_reference_is_completed_from_chunk_page(
     monkeypatch: pytest.MonkeyPatch,
     chunks: list[RetrievedChunk],
 ) -> None:
+    """페이지 없는 출처 표기를 청크 페이지로 로컬 보완하는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
@@ -95,6 +99,7 @@ def test_uncited_conclusion_is_repaired(
     monkeypatch: pytest.MonkeyPatch,
     chunks: list[RetrievedChunk],
 ) -> None:
+    """인용 없는 결론을 양쪽 근거가 달린 답변으로 복구하는지 보장한다."""
     repaired = (
         "reset은 이후 이력을 삭제합니다. [Source 1, Page 6]\n"
         "revert는 기존 이력을 보존하므로 공유 이력에 더 적합합니다. "
@@ -119,6 +124,7 @@ def test_uncited_conclusion_is_repaired(
 def test_uncited_sentence_on_same_line_requires_repair(
     chunks: list[RetrievedChunk],
 ) -> None:
+    """같은 줄의 인용 없는 후속 문장도 복구 대상으로 판정하는지 보장한다."""
     answer = (
         "reset은 이후 이력을 삭제합니다. [Source 1, Page 6] "
         "따라서 공유 이력에는 revert가 더 적합합니다."
@@ -131,6 +137,7 @@ def test_wrong_page_triggers_repair(
     monkeypatch: pytest.MonkeyPatch,
     chunks: list[RetrievedChunk],
 ) -> None:
+    """잘못된 페이지를 실제 출처 페이지로 로컬 교정하는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
@@ -150,6 +157,7 @@ def test_grouped_citation_pages_are_normalized_from_source_chunks(
     monkeypatch: pytest.MonkeyPatch,
     chunks: list[RetrievedChunk],
 ) -> None:
+    """묶음 인용의 각 페이지를 대응 청크 기준으로 정규화하는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
@@ -171,6 +179,7 @@ def test_grouped_citation_pages_are_normalized_from_source_chunks(
 def test_malformed_source_number_list_is_not_a_valid_citation(
     chunks: list[RetrievedChunk],
 ) -> None:
+    """구조가 깨진 출처 번호 목록을 유효 인용으로 인정하지 않는지 보장한다."""
     answer = "관련 자료입니다. [Source 1, Page 6, 2, 5, 7]"
 
     assert answer_needs_citation_repair(answer, chunks) is True
@@ -180,6 +189,7 @@ def test_parenthesized_source_is_not_treated_as_a_valid_citation(
     monkeypatch: pytest.MonkeyPatch,
     chunks: list[RetrievedChunk],
 ) -> None:
+    """괄호형 출처 표기를 유효 인용으로 오인하지 않고 복구하는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
@@ -199,6 +209,7 @@ def test_invalid_repair_preserves_original_answer(
     monkeypatch: pytest.MonkeyPatch,
     chunks: list[RetrievedChunk],
 ) -> None:
+    """복구 결과의 출처도 유효하지 않으면 원 답변을 보존하는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
@@ -213,6 +224,7 @@ def test_repair_can_reject_all_unsupported_claims(
     monkeypatch: pytest.MonkeyPatch,
     chunks: list[RetrievedChunk],
 ) -> None:
+    """뒷받침할 수 없는 주장은 모두 근거 없음으로 거부할 수 있는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
@@ -230,6 +242,7 @@ def test_no_source_repair_preserves_only_validly_cited_claims(
     monkeypatch: pytest.MonkeyPatch,
     chunks: list[RetrievedChunk],
 ) -> None:
+    """근거 없음 복구에서도 유효 인용 문장만 남기고 unsupported 주장을 제거하는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",
@@ -259,6 +272,7 @@ def test_repair_removes_bracketed_revised_answer_heading(
     monkeypatch: pytest.MonkeyPatch,
     chunks: list[RetrievedChunk],
 ) -> None:
+    """복구 답변에 붙은 대괄호형 머리말을 최종 결과에서 제거하는지 보장한다."""
     monkeypatch.setattr(
         LLMClient,
         "chat_completion",

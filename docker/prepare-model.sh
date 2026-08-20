@@ -12,11 +12,13 @@ MODEL_KEEP_ARCHIVE="${MODEL_KEEP_ARCHIVE:-false}"
 MODEL_MARKER_NAME=".mininblm-model.sha256"
 MODEL_SOURCE_MARKER_NAME=".mininblm-model.source"
 
+# 모델 준비를 중단하고 오류를 알린다.
 fail() {
   echo "오류: $*" >&2
   exit 1
 }
 
+# 중단된 모델 아카이브 다운로드를 이어받는다.
 download_archive() {
   local output_path="$1"
   shift
@@ -36,6 +38,7 @@ download_archive() {
     --output "$output_path" "$@"
 }
 
+# 모델 설정과 가중치가 모두 설치되었는지 확인한다.
 model_is_complete() {
   local path="$1"
   [[ -f "$path/config.json" ]] && compgen -G "$path/*.safetensors" >/dev/null
@@ -70,6 +73,7 @@ case "$MODEL_KEEP_ARCHIVE" in
   *) fail "MODEL_KEEP_ARCHIVE는 true 또는 false여야 합니다." ;;
 esac
 
+# 설치된 모델이 요청한 원본과 일치하는지 확인한다.
 model_source_matches() {
   local path="$1"
   if [[ -z "$requested_source" ]]; then
@@ -127,6 +131,7 @@ fi
 archive_path="$MODEL_CACHE_DIR/$MODEL_ARCHIVE_SHA256.archive"
 partial_path="$archive_path.part"
 
+# 내려받은 아카이브의 체크섬을 검증한다.
 archive_matches() {
   local path="$1"
   printf '%s  %s\n' "$MODEL_ARCHIVE_SHA256" "$path" | sha256sum --check --status
@@ -137,7 +142,7 @@ if [[ -f "$archive_path" ]] && ! archive_matches "$archive_path"; then
   rm -f "$archive_path"
 fi
 
-# Downloads use a .part file so interrupted transfers never look complete.
+# 중단된 전송이 완성본으로 보이지 않도록 임시 파일에 받는다.
 if [[ ! -f "$archive_path" ]]; then
   echo "모델 archive를 다운로드합니다. 중단된 파일이 있으면 이어받습니다."
   if ! download_archive "$partial_path" \
@@ -158,9 +163,10 @@ if [[ ! -f "$archive_path" ]]; then
   echo "모델 archive checksum 확인 완료."
 fi
 
-# Install through temporary directories, then expose the model with one rename.
+# 임시 디렉터리에 설치를 마친 뒤 한 번의 이름 변경으로 공개한다.
 extract_dir="$(mktemp -d "$model_parent/.${model_name}.extract.XXXXXX")"
 install_dir="$model_parent/.${model_name}.install.$$"
+# 실패하거나 종료될 때 임시 설치 파일을 정리한다.
 cleanup() {
   rm -rf "$extract_dir" "$install_dir"
 }

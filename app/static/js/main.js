@@ -11,6 +11,7 @@ import { AdminView } from "./views/admin-view.js";
 import { PasswordChangeView } from "./views/password-change-view.js";
 import { AccountView } from "./views/account-view.js";
 
+// 화면 요소를 의존성 구성에 연결할 때 ID 조회를 통일한다.
 const byId = (id) => document.getElementById(id);
 
 const documentPanelRoot = byId("document-panel");
@@ -116,6 +117,7 @@ const sourcePanel = new SourcePanel({
 const notificationView = new NotificationView(byId("notification-region"));
 const languageModelSelect = byId("language-model-select");
 
+// 공유 상태와 화면·통신 서비스를 단일 컨트롤러에 연결한다.
 const controller = new AppController({
   state: createInitialState(),
   apiClient,
@@ -126,12 +128,14 @@ const controller = new AppController({
   notificationView,
 });
 
+// 모바일 서랍 상태에 맞춰 공통 배경막을 동기화한다.
 function syncBackdrop() {
   const open = documentPanelRoot.classList.contains("is-mobile-open")
     || sourcePanelRoot.classList.contains("is-mobile-open");
   backdrop.hidden = !open;
 }
 
+// 모바일에서 문서 서랍만 열어 패널 충돌을 막는다.
 function openDocuments() {
   sourcePanelRoot.classList.remove("is-mobile-open");
   documentPanelRoot.classList.add("is-mobile-open");
@@ -139,6 +143,7 @@ function openDocuments() {
   syncBackdrop();
 }
 
+// 열린 모바일 서랍을 모두 닫고 접근성 상태를 갱신한다.
 function closeDrawers() {
   documentPanelRoot.classList.remove("is-mobile-open");
   sourcePanelRoot.classList.remove("is-mobile-open");
@@ -167,13 +172,15 @@ let workspaceNeedsRefresh = false;
 let currentUser = null;
 let accountReturnView = "workspace";
 
+// 관리자 화면을 벗어날 때 예약된 갱신을 해제한다.
 function stopAdminRefresh() {
   if (adminRefreshTimer !== null) window.clearTimeout(adminRefreshTimer);
   adminRefreshTimer = null;
 }
 
+// 유지보수 작업이 진행되는 동안만 관리자 상태를 다시 조회한다.
 async function refreshAdminState() {
-  // Poll only while maintenance work is active.
+  // 유지보수나 작업이 끝나면 아래에서 다음 조회를 예약하지 않는다.
   stopAdminRefresh();
   try {
     const state = await apiClient.getRetrievalAdminState();
@@ -187,6 +194,7 @@ async function refreshAdminState() {
   }
 }
 
+// 작업공간 폴링을 멈추고 관리자 화면으로 전환한다.
 async function openAdmin() {
   controller.pollingService.stopAll();
   appRoot.hidden = true;
@@ -194,6 +202,7 @@ async function openAdmin() {
   await refreshAdminState();
 }
 
+// 설정 변경 여부에 따라 작업공간을 복원하거나 새로고침한다.
 function closeAdmin() {
   stopAdminRefresh();
   if (workspaceNeedsRefresh) {
@@ -204,6 +213,7 @@ function closeAdmin() {
   appRoot.hidden = false;
 }
 
+// 사용 가능한 언어모델과 현재 선택을 셀렉트에 반영한다.
 async function loadLanguageModels() {
   languageModelSelect.disabled = true;
   const state = await apiClient.getLanguageModelState();
@@ -220,6 +230,7 @@ async function loadLanguageModels() {
   languageModelSelect.disabled = state.endpoints.length < 2;
 }
 
+// 인증된 사용자의 작업공간을 열고 컨트롤러를 최초 한 번 시작한다.
 async function enterWorkspace(user) {
   currentUser = user;
   authView.hide();
@@ -235,13 +246,14 @@ async function enterWorkspace(user) {
   } catch (error) {
     notificationView.showError(`언어모델 설정을 불러오지 못했습니다: ${error.message}`);
   }
-  // Keep one controller instance; later view changes only refresh its state.
+  // 화면을 다시 열 때는 같은 컨트롤러의 상태만 갱신한다.
   if (!controllerStarted) {
     controllerStarted = true;
     await controller.start();
   }
 }
 
+// 비밀번호 변경 의무에 따라 인증 사용자의 진입 화면을 결정한다.
 async function routeAuthenticatedUser(user) {
   currentUser = user;
   if (user.must_change_password) {
@@ -272,6 +284,7 @@ authView.onSubmit(async (mode, username, password) => {
   }
 });
 
+// 서버 세션 종료 결과와 무관하게 로컬 화면을 초기화한다.
 async function logout() {
   try {
     await apiClient.logout();
@@ -295,6 +308,7 @@ passwordChangeView.onSubmit(async (currentPassword, newPassword) => {
 
 passwordChangeView.onLogout(logout);
 
+// 현재 화면을 기억한 뒤 계정 관리 화면으로 전환한다.
 function openAccount(returnView = "workspace") {
   if (!currentUser) return;
   accountReturnView = returnView;
@@ -304,6 +318,7 @@ function openAccount(returnView = "workspace") {
   accountView.show(currentUser);
 }
 
+// 계정 관리 진입 전 화면으로 돌아간다.
 function closeAccount() {
   accountView.hide();
   if (accountReturnView === "admin") {
@@ -428,6 +443,7 @@ languageModelSelect.addEventListener("change", async () => {
   }
 });
 
+// 현재 세션을 확인해 인증 화면과 작업공간 중 시작 화면을 고른다.
 async function bootstrap() {
   try {
     const result = await apiClient.getCurrentUser();

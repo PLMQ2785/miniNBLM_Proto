@@ -9,6 +9,7 @@ ENV_FILE="${AIO_ENV_FILE:-.env.all-in-one}"
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f docker-compose.all-in-one.yml)
 STARTUP_TIMEOUT="${STARTUP_TIMEOUT:-1800}"
 
+# 통합 컨테이너 실행 명령을 안내한다.
 usage() {
   cat <<'EOF'
 Usage:
@@ -26,6 +27,7 @@ Environment:
 EOF
 }
 
+# 실행에 필요한 명령이 설치되어 있는지 확인한다.
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "오류: '$1' 명령을 찾을 수 없습니다." >&2
@@ -33,6 +35,7 @@ require_command() {
   fi
 }
 
+# 환경 파일에서 지정한 설정값을 읽는다.
 env_value() {
   local key="$1"
   local default_value="${2:-}"
@@ -50,6 +53,7 @@ env_value() {
   printf '%s' "$default_value"
 }
 
+# Docker와 최초 실행용 환경 파일을 준비한다.
 ensure_environment_file() {
   require_command docker
   docker compose version >/dev/null
@@ -59,7 +63,7 @@ ensure_environment_file() {
   fi
 }
 
-# Validate secrets and model sources before pulling or starting a large image.
+# 큰 이미지를 받기 전에 비밀값과 모델 원본을 검증한다.
 validate_start_configuration() {
   local password model_source model_repository model_path
   local admin_username admin_password normalized_username normalized_password
@@ -125,6 +129,7 @@ validate_start_configuration() {
   fi
 }
 
+# 통합 컨테이너의 현재 상태를 읽는다.
 container_state() {
   local container_id
   container_id="$("${COMPOSE[@]}" ps -aq mininblm 2>/dev/null | sed -n '1p')"
@@ -135,7 +140,7 @@ container_state() {
   docker inspect --format '{{.State.Status}}' "$container_id" 2>/dev/null || printf 'unknown'
 }
 
-# Readiness is checked inside the host-network container, not through a public proxy.
+# 외부 프록시 대신 호스트 네트워크 컨테이너 내부에서 준비 상태를 확인한다.
 wait_for_ready() {
   local deadline=$((SECONDS + STARTUP_TIMEOUT))
   local next_notice=$SECONDS
@@ -165,6 +170,7 @@ wait_for_ready() {
   echo " 완료"
 }
 
+# 준비된 통합 서비스의 접속 주소를 안내한다.
 print_access_urls() {
   echo
   echo "원샷 통합 컨테이너가 준비되었습니다."

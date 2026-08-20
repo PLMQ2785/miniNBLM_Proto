@@ -17,6 +17,7 @@ def reset_user_password(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin),
 ) -> UserResponse:
+    """관리자가 다른 사용자의 임시 비밀번호를 설정한다."""
     try:
         user = auth_service.reset_password(
             db,

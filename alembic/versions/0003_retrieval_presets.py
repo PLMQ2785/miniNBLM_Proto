@@ -1,4 +1,4 @@
-"""add retrieval presets and reindex jobs
+"""검색 프리셋과 재색인 작업 스키마를 추가한다.
 
 Revision ID: 0003_retrieval_presets
 Revises: 0002_user_auth_and_ownership
@@ -25,6 +25,7 @@ PRESETS = (
 
 
 def upgrade() -> None:
+    """검색 설정과 재색인 작업을 만들고 문서 인덱스 상태를 확장한다."""
     op.create_table(
         "retrieval_presets",
         sa.Column("key", sa.Text(), primary_key=True),
@@ -135,6 +136,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """검색 프리셋과 재색인 작업 관련 스키마를 제거한다."""
     op.drop_index("reindex_jobs_requested_by_idx", table_name="reindex_jobs")
     op.drop_index("reindex_jobs_status_idx", table_name="reindex_jobs")
     op.drop_table("reindex_jobs")

@@ -12,6 +12,7 @@ pytestmark = pytest.mark.integration
 
 
 def _endpoints() -> list[LLMEndpoint]:
+    """사용자별 모델 선택 검증에 사용할 두 엔드포인트를 만든다."""
     return [
         LLMEndpoint(
             key="primary",
@@ -33,6 +34,7 @@ def _endpoints() -> list[LLMEndpoint]:
 
 
 def _configure_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    """언어 모델 API가 참조할 엔드포인트 설정을 고정한다."""
     monkeypatch.setattr(
         language_models.settings,
         "llm_configuration",
@@ -44,6 +46,7 @@ def test_language_models_require_login_and_are_available_to_regular_users(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """모델 목록은 로그인을 요구하고 일반 사용자에게 제공되는지 검증한다."""
     _configure_endpoints(monkeypatch)
     assert client.get("/language-models").status_code == 401
 
@@ -66,6 +69,7 @@ def test_user_activates_available_language_model(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """가용한 모델 선택이 응답과 사용자 DB 설정에 반영되는지 검증한다."""
     _configure_endpoints(monkeypatch)
     response = httpx.Response(
         200,
@@ -94,6 +98,7 @@ def test_language_model_selection_is_per_user(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """활성 언어 모델 선택이 사용자 사이에 격리되는지 검증한다."""
     _configure_endpoints(monkeypatch)
     response = httpx.Response(
         200,
@@ -119,6 +124,7 @@ def test_user_rejects_unavailable_language_model(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """설정 모델을 제공하지 않는 엔드포인트 활성화를 거부하는지 검증한다."""
     _configure_endpoints(monkeypatch)
     response = httpx.Response(
         200,

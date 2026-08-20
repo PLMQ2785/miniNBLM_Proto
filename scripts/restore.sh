@@ -30,6 +30,7 @@ if [[ -z "$DB_PASSWORD" && -f .env ]]; then
 fi
 DB_PASSWORD="${DB_PASSWORD:-rag_password}"
 
+# 복원 중 쓰기를 막기 위해 API를 잠시 중단한다.
 stop_api() {
   if [[ "$RUNTIME_MODE" == "native" ]]; then
     "$PROJECT_DIR/run-native.sh" stop-api >/dev/null
@@ -38,6 +39,7 @@ stop_api() {
   fi
 }
 
+# 복원 뒤 원래 실행 중이던 API를 다시 기동한다.
 start_api() {
   if [[ "$RUNTIME_MODE" == "native" ]]; then
     "$PROJECT_DIR/run-native.sh" start-api >/dev/null
@@ -46,6 +48,7 @@ start_api() {
   fi
 }
 
+# 실패 시 되돌릴 현재 데이터베이스 덤프를 만든다.
 dump_database() {
   if [[ "$RUNTIME_MODE" == "native" ]]; then
     PGPASSWORD="$DB_PASSWORD" pg_dump \
@@ -58,6 +61,7 @@ dump_database() {
   fi
 }
 
+# 실행 방식에 맞는 도구로 데이터베이스를 복원한다.
 restore_database() {
   local dump_file="$1"
   if [[ "$RUNTIME_MODE" == "native" ]]; then
@@ -73,6 +77,7 @@ restore_database() {
   fi
 }
 
+# 복원 및 검증 명령 사용법을 안내한다.
 usage() {
   cat <<'EOF'
 Usage:
@@ -119,6 +124,7 @@ api_was_stopped=false
 restore_started=false
 restore_succeeded=false
 
+# 검증된 업로드 아카이브로 기존 파일을 교체한다.
 replace_uploads() {
   local uploads_archive="$1"
   if [[ "$RUNTIME_MODE" == "native" ]]; then
@@ -134,7 +140,7 @@ replace_uploads() {
   fi
 }
 
-# A local rollback snapshot makes database and files one recoverable operation.
+# 데이터베이스와 파일을 함께 되돌릴 로컬 스냅샷을 관리한다.
 cleanup() {
   local exit_code=$?
   trap - EXIT INT TERM
@@ -151,7 +157,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# Reject extra archive entries before extracting any user-controlled path.
+# 사용자 경로를 풀기 전에 허용하지 않은 아카이브 항목을 거부한다.
 unexpected_entry="$(
   tar -tzf "$archive" | sed 's#^\./##' \
     | grep -Ev '^(database\.dump|uploads\.tar\.gz|manifest\.txt|SHA256SUMS)$' \

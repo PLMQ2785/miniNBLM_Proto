@@ -3,6 +3,7 @@ from enum import StrEnum
 
 
 class SearchAlgorithmKey(StrEnum):
+    """저장소와 관리 API가 공유하는 검색 알고리즘 키다."""
     DENSE = "dense"
     KEYWORD = "keyword"
     SUBSTRING = "substring"
@@ -11,6 +12,7 @@ class SearchAlgorithmKey(StrEnum):
 
 @dataclass(frozen=True)
 class SearchAlgorithmDefinition:
+    """초기 데이터에 등록할 검색 알고리즘 설명을 묶는다."""
     key: SearchAlgorithmKey
     display_name: str
     description: str

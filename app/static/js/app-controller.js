@@ -3,7 +3,9 @@ import { getConversation, upsertChatSession, upsertDocument } from "./state.js";
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 const ACTIVE_STATUSES = new Set(["uploaded", "processing"]);
 
+// 작업공간의 상태 전이와 API·화면 서비스를 조정하는 진입점이다.
 export class AppController {
+  // 공유 상태와 화면 이벤트를 연결해 사용자 동작을 컨트롤러로 모은다.
   constructor({ state, apiClient, pollingService, documentPanel, chatPanel, sourcePanel, notificationView }) {
     this.state = state;
     this.apiClient = apiClient;
@@ -37,6 +39,7 @@ export class AppController {
     });
   }
 
+  // 초기 화면에 필요한 상태를 서로 막지 않도록 함께 불러온다.
   async start() {
     await Promise.allSettled([
       this.checkHealth(),
@@ -45,6 +48,7 @@ export class AppController {
     ]);
   }
 
+  // 대화 목록을 불러오고 사용할 세션 또는 새 대화를 선택한다.
   async loadChatSessions() {
     this.state.isLoadingSessions = true;
     this.render();
@@ -69,6 +73,7 @@ export class AppController {
     }
   }
 
+  // 선택한 대화로 상태를 전환하고 서버 이력을 채운다.
   async selectChatSession(sessionId) {
     if (!sessionId || this.state.isGenerating) return;
     this.state.activeSessionId = sessionId;
@@ -79,7 +84,7 @@ export class AppController {
     this.clearSelectedSource();
     this.render();
     try {
-      // Ignore a response if the user switched sessions while it was loading.
+      // 조회 중 다른 대화를 선택했다면 오래된 응답을 버린다.
       const session = await this.apiClient.getChatSession(sessionId);
       if (this.state.activeSessionId !== sessionId) return;
       this.state.chatSessions = upsertChatSession(this.state.chatSessions, session);
@@ -105,6 +110,7 @@ export class AppController {
     }
   }
 
+  // 저장된 세션 선택을 해제하고 빈 대화 작성 상태로 전환한다.
   startNewConversation({ focus = true } = {}) {
     if (this.state.isGenerating) return;
     this.state.activeSessionId = null;
@@ -116,6 +122,7 @@ export class AppController {
     if (focus) this.chatPanel.focusComposer();
   }
 
+  // 서버와 로컬 목록에서 대화를 지운 뒤 다음 대화를 선택한다.
   async deleteConversation(sessionId, { skipConfirmation = false } = {}) {
     if (sessionId === null || this.state.isGenerating || this.state.deletingSessionId !== null) return;
     const session = this.state.chatSessions.find((item) => item.session_id === sessionId);
@@ -148,11 +155,13 @@ export class AppController {
     }
   }
 
+  // 대화 전환이나 문서 삭제 때 출처 선택을 함께 해제한다.
   clearSelectedSource() {
     this.state.selectedSource = null;
     this.sourcePanel.closeMobile();
   }
 
+  // 서버 메시지를 화면 대화가 사용하는 필드 형태로 바꾼다.
   toConversationMessage(message) {
     return {
       messageId: message.message_id,
@@ -162,6 +171,7 @@ export class AppController {
     };
   }
 
+  // 현재 대화 앞에 이전 메시지를 붙이고 스크롤 위치를 보존한다.
   async loadOlderMessages() {
     const sessionId = this.state.activeSessionId;
     const oldestMessageId = this.state.conversation[0]?.messageId;
@@ -190,6 +200,7 @@ export class AppController {
     }
   }
 
+  // API 연결 상태를 작업공간 상태 표시에 반영한다.
   async checkHealth() {
     const status = document.querySelector("#service-status");
     try {
@@ -202,6 +213,7 @@ export class AppController {
     }
   }
 
+  // 문서 목록을 갱신하고 처리 중 문서의 폴링을 맞춘다.
   async loadDocuments({ announceSuccess = false } = {}) {
     this.state.isLoadingDocuments = true;
     this.state.documentLoadError = null;
@@ -225,6 +237,7 @@ export class AppController {
     }
   }
 
+  // 업로드 가능한 PDF를 순서대로 전송해 진행률과 부분 실패를 구분한다.
   async uploadDocuments(files) {
     if (this.state.isUploading) return;
 
@@ -246,7 +259,7 @@ export class AppController {
       return;
     }
 
-    // Upload sequentially so progress and partial failures stay understandable.
+    // 진행률과 부분 실패를 분명히 보여 주도록 파일을 순서대로 전송한다.
     let uploadedCount = 0;
     const retryableFiles = [];
     this.state.isUploading = true;
@@ -281,6 +294,7 @@ export class AppController {
     }
   }
 
+  // 업로드 결과를 요약하고 전송 실패 파일에만 재시도를 제공한다.
   showUploadFailures(uploadedCount, failures, retryableFiles = []) {
     const preview = failures.slice(0, 2).map(
       ({ file, reason }) => `${file.name}: ${reason}`,
@@ -293,6 +307,7 @@ export class AppController {
     });
   }
 
+  // 처리 중이 아닌 문서와 연결된 출처 상태를 함께 정리한다.
   async deleteDocument(documentId, { skipConfirmation = false } = {}) {
     const documentSummary = this.state.documents.find(
       (document) => document.document_id === documentId,
@@ -335,6 +350,7 @@ export class AppController {
     }
   }
 
+  // 질문을 대화에 추가하고 스트리밍 답변 생성을 시작한다.
   async submitQuestion(question) {
     if (!this.hasIndexedDocuments() || this.state.isGenerating || this.state.isLoadingConversation) return;
 
@@ -343,6 +359,7 @@ export class AppController {
     await this.generateAnswer(question, messages);
   }
 
+  // 실패한 답변을 제외한 대화 맥락으로 같은 질문을 다시 보낸다.
   async retryQuestion(messageIndex) {
     const conversation = getConversation(this.state);
     const failedMessage = conversation[messageIndex];
@@ -353,7 +370,8 @@ export class AppController {
     await this.generateAnswer(failedMessage.retryQuestion, messages);
   }
 
-  // Render one mutable placeholder while SSE events arrive.
+  // SSE 이벤트가 도착하는 동안 하나의 임시 답변을 계속 갱신한다.
+  // SSE 세션·본문·교정·출처 이벤트를 작업공간 상태에 순서대로 반영한다.
   async generateAnswer(question, messages) {
     const originalSessionId = this.state.activeSessionId;
     const streamingMessage = {
@@ -387,7 +405,7 @@ export class AppController {
               streamingMessage.content,
             );
           } else if (event === "revision") {
-            // Revision is authoritative; it replaces text already streamed.
+            // 교정 이벤트는 앞서 받은 전체 본문을 대체하는 최종 값이다.
             streamingMessage.content = data.text || "";
             this.chatPanel.updateStreamingMessage(
               this.state.conversation.length - 1,
@@ -403,7 +421,7 @@ export class AppController {
       delete streamingMessage.status;
       focusMessageIndex = this.state.conversation.length - 1;
     } catch (error) {
-      // A failed new stream may have created a server session with no messages.
+      // 새 스트림 실패로 빈 서버 세션이 생겼다면 로컬 선택에서 제거한다.
       if (originalSessionId === null && this.state.activeSessionId !== null) {
         const failedSessionId = this.state.activeSessionId;
         this.state.chatSessions = this.state.chatSessions.filter(
@@ -430,6 +448,7 @@ export class AppController {
     }
   }
 
+  // 답변 출처를 선택하고 좁은 화면에서는 출처 패널을 연다.
   selectSource(source) {
     if (source.available === false) {
       this.notificationView.showError("삭제된 문서의 원본은 열 수 없습니다.");
@@ -440,8 +459,9 @@ export class AppController {
     if (window.matchMedia("(max-width: 900px)").matches) this.sourcePanel.openMobile();
   }
 
+  // 문서가 최종 상태가 되거나 조회가 실패할 때까지 폴링한다.
   startPolling(documentId) {
-    // Returning false stops this document's self-scheduling poll loop.
+    // 콜백이 false를 반환하면 이 문서의 반복 조회가 끝난다.
     this.pollingService.start(documentId, async (id) => {
       try {
         const documentSummary = await this.apiClient.getDocument(id);
@@ -470,6 +490,7 @@ export class AppController {
     });
   }
 
+  // 현재 처리 중인 문서에만 폴링 작업이 남도록 다시 구성한다.
   syncPolling() {
     this.pollingService.stopAll();
     for (const documentSummary of this.state.documents) {
@@ -479,6 +500,7 @@ export class AppController {
     }
   }
 
+  // 공유 상태를 각 화면에 전달해 작업공간 표시를 일관되게 갱신한다.
   render() {
     const conversation = getConversation(this.state);
     this.documentPanel.render(this.state.documents, {
@@ -507,10 +529,12 @@ export class AppController {
     this.sourcePanel.render(source, pdfUrl, source?.document_title || "");
   }
 
+  // MIME 형식이나 확장자로 업로드 파일의 PDF 여부를 판정한다.
   isPdf(file) {
     return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
   }
 
+  // 질문 전송에 사용할 수 있는 인덱싱 완료 문서가 있는지 확인한다.
   hasIndexedDocuments() {
     return this.state.documents.some((document) => document.status === "indexed");
   }
