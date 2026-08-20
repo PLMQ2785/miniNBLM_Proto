@@ -37,6 +37,7 @@ export class SourcePanel {
     this.title.textContent = documentTitle || "출처";
     this.pageLabel.textContent = formatPage(source.page);
 
+    // Keep the iframe alive when only surrounding UI state changes.
     if (this.currentUrl === pdfUrl) return;
     this.currentUrl = pdfUrl;
     this.content.replaceChildren();

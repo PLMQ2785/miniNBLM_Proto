@@ -45,6 +45,7 @@ async def upload_document(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except InvalidPDFError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    # The durable row exists before indexing starts, so startup recovery can resume it.
     background_tasks.add_task(document_processor.process_document, document.id)
     return DocumentUploadResponse(document_id=document.id, status=document.status)
 

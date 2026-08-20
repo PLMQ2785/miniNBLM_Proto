@@ -38,6 +38,7 @@ def _reduced_output_token_budget(exc: Exception, current_max_tokens: int) -> int
         return None
     context_limit = int(match.group("limit").replace(",", ""))
     input_tokens = int(match.group("input").replace(",", ""))
+    # Leave a small margin for tokenizer differences reported by compatible endpoints.
     available_output_tokens = context_limit - input_tokens - CONTEXT_RETRY_TOKEN_MARGIN
     if (
         available_output_tokens < MIN_CONTEXT_RETRY_OUTPUT_TOKENS
@@ -81,6 +82,7 @@ class LLMClient:
                     )
                     break
                 except Exception as exc:
+                    # Retry only before a response exists, and never more than once.
                     if context_retry_used:
                         raise
                     reduced_max_tokens = _reduced_output_token_budget(exc, max_tokens)
@@ -131,6 +133,7 @@ class LLMClient:
                     )
                     break
                 except Exception as exc:
+                    # A stream can be retried safely only before the first delta.
                     if context_retry_used:
                         raise
                     reduced_max_tokens = _reduced_output_token_budget(exc, max_tokens)

@@ -16,6 +16,7 @@ from app.services.retriever import RetrievedChunk
 pytestmark = pytest.mark.integration
 
 
+# Keep API persistence tests deterministic; planner and coverage have their own unit tests.
 @pytest.fixture(autouse=True)
 def stub_query_planner(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(

@@ -24,6 +24,7 @@ ACTIVE_DOCUMENT_STATUSES = {"uploaded", "processing"}
 
 async def create_document_from_upload(db: Session, owner_id: int, file: UploadFile) -> Document:
     title = Path((file.filename or "uploaded.pdf").replace("\\", "/")).name or "uploaded.pdf"
+    # Create the row first; its ID becomes the private storage directory.
     document = document_repository.create_document(
         db=db,
         owner_id=owner_id,
@@ -39,6 +40,7 @@ async def create_document_from_upload(db: Session, owner_id: int, file: UploadFi
         file_path = await storage.save_upload_file(file, document.id)
         validate_saved_pdf(file_path)
     except Exception:
+        # Validation failures must remove both the row and any partial file.
         document_repository.delete_document(db, document)
         db.commit()
         try:

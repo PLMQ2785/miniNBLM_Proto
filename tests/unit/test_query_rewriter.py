@@ -159,6 +159,7 @@ def test_multiple_json_objects_selects_more_complete_structured_plan(
     assert tuple(goal.goal_id for goal in plan.goals) == ("g1", "g2")
 
 
+# These malformed keys came from the quantized model despite JSON mode.
 def test_corrupted_goal_keys_are_salvaged_without_format_repair(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

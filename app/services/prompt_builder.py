@@ -50,6 +50,7 @@ def select_generation_chunks(
         if evidence_matrix is not None
         else set()
     )
+    # Matrix-referenced evidence comes first, then distinct pages, then nearby duplicates.
     evidence_chunks = [
         chunk for chunk in chunks if chunk.chunk_id in evidence_chunk_ids
     ]
@@ -73,6 +74,7 @@ def select_generation_chunks(
         *distinct_page_chunks,
         *repeated_page_chunks,
     ]
+    # Whole source blocks are kept so citations never point at truncated evidence.
     selected: list[RetrievedChunk] = []
     used_chars = 0
     for chunk in prioritized:

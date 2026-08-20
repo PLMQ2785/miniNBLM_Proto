@@ -32,6 +32,7 @@ def assess_evidence_answerability(
     question: str,
     chunks: list[RetrievedChunk],
 ) -> EvidenceGuardDecision:
+    # Ordinary text questions pass; this guard targets exact visual transcription tasks.
     if not VISUAL_TERM_PATTERN.search(question) or not EXACT_VISUAL_TASK_PATTERN.search(question):
         return EvidenceGuardDecision(True)
 
@@ -61,6 +62,7 @@ def assess_evidence_answerability(
         for page in _chunk_pages(chunk)
         if not requested_pages or page in requested_pages
     }
+    # Visual pages are answerable only when their caption chunk reached this context.
     risky_pages = sorted(visual_pages - captioned_pages)
     if requested_pages and risky_pages:
         return EvidenceGuardDecision(

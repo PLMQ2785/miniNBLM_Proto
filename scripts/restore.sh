@@ -134,6 +134,7 @@ replace_uploads() {
   fi
 }
 
+# A local rollback snapshot makes database and files one recoverable operation.
 cleanup() {
   local exit_code=$?
   trap - EXIT INT TERM
@@ -150,6 +151,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# Reject extra archive entries before extracting any user-controlled path.
 unexpected_entry="$(
   tar -tzf "$archive" | sed 's#^\./##' \
     | grep -Ev '^(database\.dump|uploads\.tar\.gz|manifest\.txt|SHA256SUMS)$' \

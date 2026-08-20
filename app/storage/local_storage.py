@@ -18,6 +18,7 @@ class LocalStorage:
         destination = document_dir / f"original-{uuid4().hex}.pdf"
         total_bytes = 0
 
+        # Count bytes while streaming; Content-Length is not trusted.
         with destination.open("wb") as output:
             while chunk := await file.read(1024 * 1024):
                 total_bytes += len(chunk)

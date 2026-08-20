@@ -1,3 +1,4 @@
+/* Page structure, panel sizing, and responsive geometry. */
 .app-shell {
   height: 100dvh;
   overflow: hidden;

@@ -79,6 +79,7 @@ def enrich_pages_with_vision_captions(
                 page.page_number,
             )
         except Exception as exc:
+            # A caption failure must not discard otherwise searchable page text.
             logger.warning(
                 "Vision caption failed; preserving text-only page",
                 extra={"page_number": page.page_number, "error_type": type(exc).__name__},

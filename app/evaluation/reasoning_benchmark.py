@@ -393,6 +393,7 @@ def run_benchmark(
         for case in fixture.cases
         if case.group in selected_groups and (not case_ids or case.case_id in case_ids)
     ]
+    # Combined mode exposes cross-document distractors; isolated mode diagnoses one group.
     started_at = datetime.now(UTC)
     db = SessionLocal()
     configuration = retrieval_config_repository.get_configuration(db)
@@ -443,6 +444,7 @@ def run_benchmark(
             ):
                 raise RuntimeError(f"Reasoning document indexing failed: {document.title}")
 
+    # The temporary user makes cleanup and ownership checks match production.
     try:
         preset = retrieval_config_repository.get_preset(db, preset_key)
         if preset is None:

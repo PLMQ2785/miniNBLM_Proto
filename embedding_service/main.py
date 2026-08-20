@@ -27,6 +27,7 @@ class QueryEmbeddingRequest(BaseModel):
 
 
 class QueriesEmbeddingRequest(BaseModel):
+    # The API client batches to this service limit.
     texts: list[str] = Field(min_length=1, max_length=5)
 
 
@@ -57,6 +58,7 @@ def get_settings() -> Settings:
     return Settings()
 
 
+# Load once on the first embedding request; /health only checks the process.
 @lru_cache
 def get_model() -> SentenceTransformer:
     settings = get_settings()

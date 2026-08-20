@@ -169,6 +169,7 @@ def _select_rows(
         if len(query_scores) == 1:
             semantic_score = query_scores[0]
         else:
+            # The original question stays dominant; facet queries recover narrow evidence.
             semantic_score = (
                 ORIGINAL_QUERY_SHARE * query_scores[0]
                 + FACET_QUERY_SHARE * max(query_scores[1:])
@@ -180,6 +181,7 @@ def _select_rows(
         scored_rows.append((chunk, combined_score, document_title, rank, query_scores))
 
     scored_rows.sort(key=lambda row: (-row[1], row[3], row[0].id))
+    # Reserve one strong candidate per goal before filling by overall score.
     selected_ids: set[int] = set()
     for _, query_indexes in goal_query_indexes:
         best_for_goal = max(

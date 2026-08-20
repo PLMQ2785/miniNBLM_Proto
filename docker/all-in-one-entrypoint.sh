@@ -8,6 +8,7 @@ if [[ "${NATIVE_DB_PASSWORD:-rag_password}" == "rag_password" \
   exit 1
 fi
 
+# Seed persistent config once; later image upgrades must not overwrite operator changes.
 LLM_CONFIG_PATH="${LLM_ENDPOINTS_FILE:-/data/config/llm-endpoints.json}"
 DEFAULT_LLM_CONFIG_PATH="/app/config/llm-endpoints.default.json"
 if [[ ! -f "$LLM_CONFIG_PATH" ]]; then

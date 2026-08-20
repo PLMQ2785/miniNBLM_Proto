@@ -1,3 +1,4 @@
+# Reasoning benchmark adds the local sample corpus as a read-only mount.
 services:
   benchmark:
     environment:

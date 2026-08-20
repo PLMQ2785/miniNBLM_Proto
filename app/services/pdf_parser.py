@@ -44,7 +44,7 @@ class _RawPage:
 def extract_pages(pdf_path: str) -> list[ParsedPage]:
     with fitz.open(pdf_path) as document:
         raw_pages = [_extract_raw_page(page, index) for index, page in enumerate(document, 1)]
-
+    # Repeated headers can only be identified after every page has been inspected.
     repeated_margin_lines = _repeated_margin_lines(raw_pages)
     pages: list[ParsedPage] = []
     for raw_page in raw_pages:
@@ -57,6 +57,7 @@ def extract_pages(pdf_path: str) -> list[ParsedPage]:
             content_blocks.append(block)
 
         content_blocks.extend(raw_page.tables)
+        # Table rows rejoin the normal reading order by their vertical position.
         content_blocks.sort(key=lambda block: (block.y0, block.y1))
         text = "\n\n".join(block.text.strip() for block in content_blocks if block.text.strip())
         text = re.sub(r"\n{3,}", "\n\n", text).strip()

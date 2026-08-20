@@ -69,6 +69,7 @@ def search_chunks_by_embedding(
     query_embedding: list[float],
     top_k: int,
 ) -> list[tuple[Chunk, float, str]]:
+    # Joining Document enforces tenant and index-state boundaries for every search.
     distance = Chunk.embedding.cosine_distance(query_embedding).label("distance")
     rows = (
         db.query(Chunk, distance, Document.title)

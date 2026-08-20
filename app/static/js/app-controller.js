@@ -79,6 +79,7 @@ export class AppController {
     this.clearSelectedSource();
     this.render();
     try {
+      // Ignore a response if the user switched sessions while it was loading.
       const session = await this.apiClient.getChatSession(sessionId);
       if (this.state.activeSessionId !== sessionId) return;
       this.state.chatSessions = upsertChatSession(this.state.chatSessions, session);
@@ -245,6 +246,7 @@ export class AppController {
       return;
     }
 
+    // Upload sequentially so progress and partial failures stay understandable.
     let uploadedCount = 0;
     const retryableFiles = [];
     this.state.isUploading = true;
@@ -351,6 +353,7 @@ export class AppController {
     await this.generateAnswer(failedMessage.retryQuestion, messages);
   }
 
+  // Render one mutable placeholder while SSE events arrive.
   async generateAnswer(question, messages) {
     const originalSessionId = this.state.activeSessionId;
     const streamingMessage = {
@@ -384,6 +387,7 @@ export class AppController {
               streamingMessage.content,
             );
           } else if (event === "revision") {
+            // Revision is authoritative; it replaces text already streamed.
             streamingMessage.content = data.text || "";
             this.chatPanel.updateStreamingMessage(
               this.state.conversation.length - 1,
@@ -399,6 +403,7 @@ export class AppController {
       delete streamingMessage.status;
       focusMessageIndex = this.state.conversation.length - 1;
     } catch (error) {
+      // A failed new stream may have created a server session with no messages.
       if (originalSessionId === null && this.state.activeSessionId !== null) {
         const failedSessionId = this.state.activeSessionId;
         this.state.chatSessions = this.state.chatSessions.filter(
@@ -436,6 +441,7 @@ export class AppController {
   }
 
   startPolling(documentId) {
+    // Returning false stops this document's self-scheduling poll loop.
     this.pollingService.start(documentId, async (id) => {
       try {
         const documentSummary = await this.apiClient.getDocument(id);

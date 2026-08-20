@@ -17,6 +17,7 @@ class RequestBodyLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # Reject known oversized bodies before Starlette starts parsing multipart data.
         content_length = _content_length(scope.get("headers", []))
         if content_length is not None and content_length > self.max_body_bytes:
             await self._reject(scope, receive, send)
@@ -24,7 +25,7 @@ class RequestBodyLimitMiddleware:
 
         received_bytes = 0
         response_started = False
-
+        # Content-Length is optional, so streamed bodies are counted as they arrive.
         async def receive_with_limit():
             nonlocal received_bytes
             message = await receive()

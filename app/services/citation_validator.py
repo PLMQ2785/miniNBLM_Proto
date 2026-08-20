@@ -44,6 +44,7 @@ def validate_answer_citations(
 ) -> str:
     answer = _strip_answer_heading(answer)
     answer = _normalize_structural_citations(answer, chunks)
+    # Most answers are already valid; avoid another model call unless it is needed.
     if not chunks or NO_SOURCE_PATTERN.match(answer) or not answer_needs_citation_repair(answer, chunks):
         CITATION_VALIDATION_REQUESTS.labels(status="skipped").inc()
         return answer
@@ -73,6 +74,7 @@ def validate_answer_citations(
     if not repaired:
         CITATION_VALIDATION_REQUESTS.labels(status="invalid").inc()
         return answer
+    # Preserve valid cited sentences when a repair overreacts and rejects everything.
     if NO_SOURCE_PATTERN.match(repaired):
         grounded_fallback = _grounded_claim_fallback(question, answer, chunks)
         if grounded_fallback is not None:

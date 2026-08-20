@@ -292,6 +292,7 @@ def run_benchmark(
         configuration.active_search_algorithm_key,
         configuration.index_version,
     )
+    # Benchmarks borrow global retrieval settings and restore them in finally.
     preset_results = []
     try:
         user, corpus_documents = _create_corpus(db, documents)
@@ -300,6 +301,7 @@ def run_benchmark(
             if preset is None:
                 raise RuntimeError(f"Preset is missing from the database: {preset_key}")
 
+            # Every preset gets a fresh index version over the same temporary corpus.
             target_index_version = original_configuration[2] + preset_index
             indexing_started = time.perf_counter()
             for document in corpus_documents:
@@ -353,6 +355,7 @@ def run_benchmark(
                 }
             )
     finally:
+        # Evaluation data and configuration must not leak into later runs.
         try:
             configuration = retrieval_config_repository.get_configuration(db)
             configuration.active_preset_key = original_configuration[0]

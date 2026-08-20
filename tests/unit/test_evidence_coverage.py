@@ -120,6 +120,7 @@ def test_unknown_chunk_id_is_repaired_once_and_json_mode_is_requested(
 
 
 
+# Guessing unknown IDs would attach a claim to the wrong source.
 def test_failed_repair_uses_unchecked_matrix_instead_of_guessing_identifiers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

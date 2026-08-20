@@ -11,6 +11,7 @@ from app.models.user import User
 
 
 logger = logging.getLogger(__name__)
+# Keeps concurrent requests from leaking a user's model choice into each other.
 active_endpoint_context: ContextVar[str | None] = ContextVar(
     "active_llm_endpoint",
     default=None,

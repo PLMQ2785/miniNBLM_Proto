@@ -1,3 +1,4 @@
+# Benchmark runner uses an isolated database and read-only fixtures.
 services:
   db-benchmark:
     image: pgvector/pgvector:pg17

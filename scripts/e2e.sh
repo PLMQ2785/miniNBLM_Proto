@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Exercise the real embedding and LLM services with isolated API data.
 
 set -Eeuo pipefail
 

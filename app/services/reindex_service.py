@@ -59,6 +59,7 @@ def recover_interrupted_reindex_jobs(db: Session) -> list[int]:
             db.commit()
         return []
 
+    # Only the newest unfinished job can own maintenance mode after a restart.
     job = unfinished_jobs[-1]
     for superseded_job in unfinished_jobs[:-1]:
         superseded_job.status = "failed"
@@ -118,6 +119,7 @@ def start_preset_change(db: Session, requested_by: int, target_key: str) -> tupl
         runtime_settings_changed=change_plan.runtime_settings_changed,
     )
 
+    # A top-k-only change is immediate; chunk geometry requires a full rebuild.
     requires_background_work = change_plan.reindex_documents
     now = datetime.now(UTC)
     if requires_background_work:
@@ -186,6 +188,7 @@ def run_reindex_job(job_id: int) -> None:
         job.total_documents = len(document_ids)
         db.commit()
 
+        # Commit progress per document so a restart does not lose the audit trail.
         for document_id in document_ids:
             succeeded = process_document(
                 document_id,
@@ -211,6 +214,7 @@ def run_reindex_job(job_id: int) -> None:
         job.completed_at = datetime.now(UTC)
         db.commit()
     except Exception as exc:
+        # Never leave writes blocked when the worker exits unexpectedly.
         db.rollback()
         logger.exception("Reindex job failed: job_id=%s", job_id)
         job = retrieval_config_repository.get_reindex_job(db, job_id)

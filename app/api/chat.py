@@ -98,6 +98,7 @@ def _persist_exchange(
     sources: list[SourceRef],
     trace: RetrievalTrace | None = None,
 ) -> None:
+    # Persist only the final post-processed answer and the sources it actually cited.
     trace_metadata = (
         trace.complete(answer=answer, chunks=chunks, sources=sources)
         if trace is not None
@@ -126,6 +127,7 @@ def _sse(event: str, payload: dict | list) -> str:
 
 
 def _cleanup_empty_session(session_id: int, owner_id: int) -> None:
+    # Failed brand-new streams should not leave empty conversations behind.
     with SessionLocal() as db:
         session = chat_repository.get_session(db, session_id, owner_id)
         if session is not None and not session.messages:
@@ -144,6 +146,7 @@ def _chat_event_stream(
     evidence_matrix,
     endpoint_key: str,
 ):
+    # Streaming outlives the request-scoped DB session, so each DB phase opens its own.
     try:
         with SessionLocal() as db:
             session = chat_repository.get_session(db, session_id, owner_id)
@@ -167,6 +170,7 @@ def _chat_event_stream(
             yield _sse("delta", {"text": delta})
         if streamed.generated is None:
             raise RuntimeError("Streaming answer completed without a final result")
+        # A revision replaces deltas already shown after citation and literal repairs.
         if streamed.revision is not None:
             yield _sse("revision", {"text": streamed.revision})
 
@@ -292,6 +296,7 @@ def chat(
         )
         history = build_conversation_context(recent_messages)
 
+    # Sync and SSE share this retrieval pipeline; only generation transport differs.
     retrieval_plan = plan_retrieval_queries(request.question, history)
     trace = RetrievalTrace(request_id=request_id_context.get())
     goals = retrieval_plan.goals
@@ -381,7 +386,7 @@ def chat_stream(
         trace=trace,
     )
     evidence_matrix = build_evidence_matrix(goals, trace)
-
+    # Create a new session only after retrieval succeeds.
     if session is None:
         session = chat_repository.create_session(
             db,
@@ -393,6 +398,7 @@ def chat_stream(
 
     stream_session_id = session.id
     endpoint_key = language_model_service.get_user_endpoint_key(user)
+    # The generator runs after the request-scoped session is closed.
     db.close()
     return StreamingResponse(
         _chat_event_stream(

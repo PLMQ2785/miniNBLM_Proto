@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Keep the API image small while confirming the embedding image owns ML dependencies.
 
 set -Eeuo pipefail
 

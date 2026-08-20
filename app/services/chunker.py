@@ -27,6 +27,7 @@ def chunk_pages(
         text = page.text.strip()
         source_page_metadata = _source_page_metadata(page.metadata)
         if text:
+            # Overlap keeps sentences near a boundary searchable from either chunk.
             start = 0
             while start < len(text):
                 end = min(start + chunk_size, len(text))
@@ -64,6 +65,7 @@ def chunk_pages(
                     break
                 start = max(end - chunk_overlap, start + 1)
 
+        # Captions stay separate so text and visual evidence keep their provenance.
         vision = page.metadata.get("vision_caption", {})
         if isinstance(vision, dict) and vision.get("status") == "completed":
             content = str(vision.get("search_text", "")).strip()

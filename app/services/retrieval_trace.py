@@ -54,6 +54,7 @@ class RetrievalTrace:
         rows,
         goal_ids: tuple[str | None, ...] = (),
     ) -> None:
+        # Traces are diagnostic metadata; cap snapshots so chat rows stay bounded.
         self.retrieval_events.append(
             {
                 "stage": stage,
@@ -133,6 +134,7 @@ class RetrievalTrace:
         )
 
     def complete(self, *, answer: str, chunks, sources) -> dict[str, Any]:
+        # Final chunk IDs and cited IDs are separate on purpose.
         self.outcome = {
             "status": _answer_status(answer, chunks, sources),
             "final_chunk_ids": [chunk.chunk_id for chunk in chunks],

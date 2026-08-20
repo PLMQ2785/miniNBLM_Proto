@@ -14,6 +14,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
+# These expression indexes are created with raw SQL in migrations.
 MANUALLY_MANAGED_INDEXES = {"chunks_content_fts_gin"}
 
 

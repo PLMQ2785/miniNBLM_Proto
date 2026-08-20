@@ -137,6 +137,7 @@ if [[ -f "$archive_path" ]] && ! archive_matches "$archive_path"; then
   rm -f "$archive_path"
 fi
 
+# Downloads use a .part file so interrupted transfers never look complete.
 if [[ ! -f "$archive_path" ]]; then
   echo "모델 archive를 다운로드합니다. 중단된 파일이 있으면 이어받습니다."
   if ! download_archive "$partial_path" \
@@ -157,6 +158,7 @@ if [[ ! -f "$archive_path" ]]; then
   echo "모델 archive checksum 확인 완료."
 fi
 
+# Install through temporary directories, then expose the model with one rename.
 extract_dir="$(mktemp -d "$model_parent/.${model_name}.extract.XXXXXX")"
 install_dir="$model_parent/.${model_name}.install.$$"
 cleanup() {
