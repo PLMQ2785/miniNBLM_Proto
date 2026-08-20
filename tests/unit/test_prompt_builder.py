@@ -227,3 +227,29 @@ def test_generation_context_prefers_distinct_pages_before_adjacent_duplicates() 
     selected = select_generation_chunks(chunks, matrix)
 
     assert [chunk.chunk_id for chunk in selected] == [1, 3, 5, 6]
+
+
+def test_generation_context_truncates_an_oversized_first_chunk() -> None:
+    """첫 Source 하나가 전체 예산보다 길어도 메타데이터와 문자 상한을 지킨다."""
+    chunk = RetrievedChunk(
+        chunk_id=1,
+        document_id=10,
+        document_title="oversized.pdf",
+        content="긴 근거 " * MAX_GENERATION_CONTEXT_CHARS,
+        page_start=4,
+        page_end=4,
+        score=1.0,
+        source_refs={"page": 4},
+    )
+
+    selected = select_generation_chunks(
+        [chunk],
+        max_context_chars=2_000,
+    )
+    context = build_retrieval_context(selected)
+
+    assert len(selected) == 1
+    assert selected[0].chunk_id == chunk.chunk_id
+    assert len(context) <= 2_000
+    assert "[Source 1]" in context
+    assert "후반부 생략" in context

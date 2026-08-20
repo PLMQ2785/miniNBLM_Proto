@@ -8,7 +8,7 @@ from app.models.chat import ChatMessage, ChatSession
 from app.repositories import user_repository
 from app.schemas.chat import SourceRef
 from app.services.generator import GeneratedAnswer
-from app.clients.llm_client import LLMClient
+from app.clients.llm_client import ContextLengthExceededError, LLMClient
 from app.services.query_rewriter import EvidenceGoal, RetrievalQueryPlan
 from app.services.retriever import RetrievedChunk
 
@@ -529,6 +529,62 @@ def test_chat_stream_revises_and_persists_citation_repair(
     assert assistant is not None
     assert assistant.content.endswith("[Source 1, Page 7]")
     assert assistant.message_metadata["sources"][0]["page"] == 7
+
+
+def test_chat_stream_persists_extractive_fallback_after_context_overflow(
+    client: TestClient,
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    document_factory,
+) -> None:
+    """모든 생성 단계의 입력 초과가 SSE 오류 없이 발췌 답변으로 완료되는지 검증한다."""
+    assert client.post(
+        "/auth/register",
+        json={"username": "overflow-stream", "password": "password123"},
+    ).status_code == 201
+    user = user_repository.get_user_by_username(db, "overflow-stream")
+    document = document_factory(user)
+    retrieved = RetrievedChunk(
+        chunk_id=581,
+        document_id=document.id,
+        document_title=document.title,
+        content="낙상 후에는 손상 여부를 확인한다.",
+        page_start=7,
+        page_end=7,
+        score=0.9,
+        source_refs={"page": 7},
+    )
+    monkeypatch.setattr(chat_api, "retrieve_chunks", lambda **kwargs: [retrieved])
+    calls = 0
+
+    def overflow_stream(*args, **kwargs):
+        """일반·축소·최소 생성 단계에서 모두 컨텍스트 초과를 반환한다."""
+        nonlocal calls
+        calls += 1
+        raise ContextLengthExceededError("context overflow")
+        yield ""
+
+    monkeypatch.setattr(LLMClient, "stream_chat_completion", overflow_stream)
+
+    with client.stream(
+        "POST",
+        "/chat/stream",
+        json={"document_id": document.id, "question": "낙상 후 조치는?"},
+    ) as response:
+        body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert calls == 3
+    assert "event: error" not in body
+    assert "검색된 핵심 근거" in body
+    assert "[Source 1, Page 7]" in body
+    assert "event: sources" in body
+    assert "event: done" in body
+    db.expire_all()
+    messages = list(db.scalars(select(ChatMessage).order_by(ChatMessage.id)))
+    assert [message.role for message in messages] == ["user", "assistant"]
+    assert "검색된 핵심 근거" in messages[1].content
+    assert messages[1].message_metadata["sources"][0]["chunk_id"] == 581
 
 
 def test_failed_new_chat_stream_removes_empty_session(

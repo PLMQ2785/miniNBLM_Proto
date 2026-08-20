@@ -1,6 +1,6 @@
 import pytest
 
-from app.clients.llm_client import LLMClient
+from app.clients.llm_client import ContextLengthExceededError, LLMClient
 from app.services.evidence_coverage import EvidenceMatrix, EvidenceMatrixGoal
 from app.services.generator import INSUFFICIENT_EVIDENCE_ANSWER, StreamingAnswer
 from app.services.retriever import RetrievedChunk
@@ -205,3 +205,83 @@ def test_stream_no_source_repair_keeps_grounded_subset(
     assert "구체적인 상황을 추가로 알려주세요" in streamed.revision
     assert streamed.generated is not None
     assert len(streamed.generated.sources) == 1
+
+
+def test_stream_retries_with_compact_context_before_first_visible_delta(
+    monkeypatch: pytest.MonkeyPatch,
+    retrieved_chunk: RetrievedChunk,
+) -> None:
+    """첫 델타 전 입력 초과는 축소 프롬프트로 재시도해 정상 스트림을 연다."""
+    calls = 0
+
+    def stream(self, messages, **kwargs):
+        """첫 단계는 거부하고 축소 단계에서는 근거 답변을 반환한다."""
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ContextLengthExceededError("context overflow")
+        yield "낙상 예방 교육 내용입니다. [Source 1, Page 3]"
+
+    monkeypatch.setattr(LLMClient, "stream_chat_completion", stream)
+    streamed = StreamingAnswer("낙상 예방은?", [retrieved_chunk])
+
+    visible = "".join(streamed)
+
+    assert calls == 2
+    assert visible.endswith("[Source 1, Page 3]")
+    assert streamed.revision is None
+    assert streamed.generated is not None
+    assert [source.chunk_id for source in streamed.generated.sources] == [10]
+
+
+def test_stream_replaces_partial_answer_after_context_overflow(
+    monkeypatch: pytest.MonkeyPatch,
+    retrieved_chunk: RetrievedChunk,
+) -> None:
+    """일부 델타 뒤 입력 초과가 나면 재생성 결과를 revision으로 전체 교체한다."""
+    calls = 0
+
+    def stream(self, messages, **kwargs):
+        """첫 단계는 일부만 보낸 뒤 실패하고 축소 단계는 완전한 답을 반환한다."""
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield "불완전한 답변"
+            raise ContextLengthExceededError("context overflow")
+        yield "낙상 예방 교육 내용입니다. [Source 1, Page 3]"
+
+    monkeypatch.setattr(LLMClient, "stream_chat_completion", stream)
+    streamed = StreamingAnswer("낙상 예방은?", [retrieved_chunk])
+
+    assert "".join(streamed) == "불완전한 답변"
+    assert calls == 2
+    assert streamed.revision == "낙상 예방 교육 내용입니다. [Source 1, Page 3]"
+    assert streamed.generated is not None
+    assert streamed.generated.answer == streamed.revision
+
+
+def test_stream_returns_extractive_evidence_when_every_attempt_overflows(
+    monkeypatch: pytest.MonkeyPatch,
+    retrieved_chunk: RetrievedChunk,
+) -> None:
+    """모든 스트림 단계가 초과해도 오류 대신 근거 발췌와 출처를 완료한다."""
+    calls = 0
+
+    def overflow(self, messages, **kwargs):
+        """모든 생성 단계에서 컨텍스트 초과를 반환한다."""
+        nonlocal calls
+        calls += 1
+        raise ContextLengthExceededError("context overflow")
+        yield ""
+
+    monkeypatch.setattr(LLMClient, "stream_chat_completion", overflow)
+    streamed = StreamingAnswer("낙상 예방은?", [retrieved_chunk])
+
+    visible = "".join(streamed)
+
+    assert calls == 3
+    assert "검색된 핵심 근거" in visible
+    assert "[Source 1, Page 3]" in visible
+    assert streamed.revision is None
+    assert streamed.generated is not None
+    assert [source.chunk_id for source in streamed.generated.sources] == [10]

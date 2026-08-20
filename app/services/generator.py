@@ -2,7 +2,8 @@ import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from app.clients.llm_client import LLMClient
+from app.clients.llm_client import ContextLengthExceededError, LLMClient
+from app.observability import LLM_CONTEXT_RECOVERIES
 from app.schemas.chat import SourceRef
 from app.services.citation_validator import (
     valid_cited_source_indexes,
@@ -10,9 +11,14 @@ from app.services.citation_validator import (
 )
 from app.services.prompt_builder import (
     EXCLUDED_STATE_PATTERN,
+    MAX_GENERATION_CONTEXT_CHARS,
     build_rag_messages,
     build_retrieval_context,
     select_generation_chunks,
+)
+from app.services.conversation_service import (
+    MAX_CONTEXT_CHARS,
+    limit_conversation_context,
 )
 from app.services.evidence_guard import assess_evidence_answerability
 from app.services.evidence_coverage import EvidenceMatrix
@@ -70,6 +76,11 @@ INSUFFICIENT_EVIDENCE_ANSWER = (
     "업로드된 자료만으로는 현재 질문의 구체적인 상황에 맞는 답변을 확정하기 어렵습니다. "
     "수행하려던 작업과 사용한 명령, 발생한 오류, 현재 상태, 되돌릴 대상을 구체적으로 알려주세요."
 )
+COMPACT_GENERATION_CONTEXT_CHARS = 8_000
+MINIMAL_GENERATION_CONTEXT_CHARS = 4_000
+COMPACT_HISTORY_CHARS = 2_000
+MAX_EXTRACTIVE_SOURCES = 3
+MAX_EXTRACTIVE_CONTENT_CHARS = 700
 
 
 @dataclass(frozen=True)
@@ -77,6 +88,61 @@ class GeneratedAnswer:
     """후처리된 최종 답변과 실제 인용 출처를 함께 전달한다."""
     answer: str
     sources: list[SourceRef]
+
+
+@dataclass(frozen=True)
+class _GenerationAttempt:
+    """컨텍스트 초과 복구 단계의 입력 예산과 관측 이름을 묶는다."""
+
+    strategy: str | None
+    context_chars: int
+    history_chars: int
+
+
+GENERATION_ATTEMPTS = (
+    _GenerationAttempt(None, MAX_GENERATION_CONTEXT_CHARS, MAX_CONTEXT_CHARS),
+    _GenerationAttempt(
+        "compact_context",
+        COMPACT_GENERATION_CONTEXT_CHARS,
+        COMPACT_HISTORY_CHARS,
+    ),
+    _GenerationAttempt(
+        "minimal_context",
+        MINIMAL_GENERATION_CONTEXT_CHARS,
+        0,
+    ),
+)
+
+
+def _generation_inputs(
+    question: str,
+    chunks: list[RetrievedChunk],
+    history: list[dict[str, str]] | None,
+    evidence_matrix: EvidenceMatrix | None,
+) -> Iterator[
+    tuple[_GenerationAttempt, list[RetrievedChunk], list[dict[str, str]]]
+]:
+    """일반·축소·최소 단계별 Source와 메시지를 같은 우선순위로 만든다."""
+    for attempt in GENERATION_ATTEMPTS:
+        generation_chunks = select_generation_chunks(
+            chunks,
+            evidence_matrix,
+            max_context_chars=attempt.context_chars,
+        )
+        bounded_history = limit_conversation_context(
+            history or [],
+            attempt.history_chars,
+        )
+        yield (
+            attempt,
+            generation_chunks,
+            build_rag_messages(
+                question,
+                generation_chunks,
+                bounded_history,
+                evidence_matrix=evidence_matrix,
+            ),
+        )
 
 
 class StreamingAnswer:
@@ -97,7 +163,7 @@ class StreamingAnswer:
         self.revision: str | None = None
 
     def __iter__(self) -> Iterator[str]:
-        """델타를 생성하고 후처리로 달라진 최종 답변은 revision으로 남긴다."""
+        """컨텍스트를 단계적으로 줄이고 끝까지 넘치면 근거 발췌를 반환한다."""
         if not self.chunks:
             self.generated = GeneratedAnswer(answer=EMPTY_CONTEXT_ANSWER, sources=[])
             yield EMPTY_CONTEXT_ANSWER
@@ -112,23 +178,65 @@ class StreamingAnswer:
             self.generated = GeneratedAnswer(answer=INSUFFICIENT_EVIDENCE_ANSWER, sources=[])
             yield INSUFFICIENT_EVIDENCE_ANSWER
             return
-        # 프롬프트, 인용 검사, SourceRef 변환은 모두 같은 Source 순서를 쓴다.
-        generation_chunks = select_generation_chunks(
-            self.chunks,
-            self.evidence_matrix,
-        )
 
-        messages = build_rag_messages(
+        client = LLMClient()
+        visible_parts: list[str] = []
+        generation_chunks: list[RetrievedChunk] = []
+        normalizer: _StreamingSourceNormalizer | None = None
+        messages: list[dict[str, str]] = []
+        for attempt, attempt_chunks, attempt_messages in _generation_inputs(
             self.question,
-            generation_chunks,
+            self.chunks,
             self.history,
-            evidence_matrix=self.evidence_matrix,
-        )
-        # NO_SOURCE 표식을 숨길 수 있을 때까지 접두부를 잠시 보류한다.
-        normalizer = _StreamingSourceNormalizer()
-        for raw_delta in LLMClient().stream_chat_completion(messages, operation="answer"):
-            yield from normalizer.push(raw_delta)
-        yield from normalizer.finish()
+            self.evidence_matrix,
+        ):
+            attempt_normalizer = _StreamingSourceNormalizer()
+            suppress_deltas = bool(visible_parts)
+            try:
+                for raw_delta in client.stream_chat_completion(
+                    attempt_messages,
+                    operation="answer",
+                ):
+                    for delta in attempt_normalizer.push(raw_delta):
+                        if suppress_deltas:
+                            continue
+                        visible_parts.append(delta)
+                        yield delta
+                for delta in attempt_normalizer.finish():
+                    if suppress_deltas:
+                        continue
+                    visible_parts.append(delta)
+                    yield delta
+            except ContextLengthExceededError:
+                continue
+
+            generation_chunks = attempt_chunks
+            normalizer = attempt_normalizer
+            messages = attempt_messages
+            if attempt.strategy is not None:
+                LLM_CONTEXT_RECOVERIES.labels(
+                    operation="answer",
+                    strategy=attempt.strategy,
+                ).inc()
+            break
+
+        if normalizer is None:
+            fallback = _extractive_context_fallback(
+                self.chunks,
+                self.evidence_matrix,
+            )
+            LLM_CONTEXT_RECOVERIES.labels(
+                operation="answer",
+                strategy="extractive_fallback",
+            ).inc()
+            if visible_parts:
+                self.revision = fallback.answer
+            else:
+                visible_parts.append(fallback.answer)
+                yield fallback.answer
+            self.generated = fallback
+            return
+
         streamed_answer = normalizer.answer
         raw_answer = streamed_answer
         if _has_degenerate_repetition(raw_answer):
@@ -148,8 +256,9 @@ class StreamingAnswer:
         answer = _restore_question_literal_fidelity(self.question, answer)
         answer, has_grounded_source = _normalize_source_decision(answer)
         answer = _ensure_exclusion_precondition(self.question, answer)
-        # 스트림 뒤 보정 결과는 델타가 아니라 전체 교체 revision으로 보낸다.
-        self.revision = answer if answer != streamed_answer else None
+        visible_answer = "".join(visible_parts)
+        # 앞선 실패의 일부 델타와 후처리 변경은 전체 교체 revision으로 확정한다.
+        self.revision = answer if answer != visible_answer else None
         self.generated = GeneratedAnswer(
             answer=answer,
             sources=(
@@ -166,7 +275,7 @@ def generate_answer(
     history: list[dict[str, str]] | None = None,
     evidence_matrix: EvidenceMatrix | None = None,
 ) -> GeneratedAnswer:
-    """제한된 동일 Source 순서로 동기 답변을 생성하고 인용 출처를 확정한다."""
+    """컨텍스트를 단계적으로 줄여 동기 답변을 생성하고 인용 출처를 확정한다."""
     if not chunks:
         return GeneratedAnswer(answer=EMPTY_CONTEXT_ANSWER, sources=[])
 
@@ -175,16 +284,37 @@ def generate_answer(
         return GeneratedAnswer(answer=VISUAL_EVIDENCE_LIMIT_ANSWER, sources=[])
     if _requires_clarification(question, evidence_matrix):
         return GeneratedAnswer(answer=INSUFFICIENT_EVIDENCE_ANSWER, sources=[])
-    # 동기와 스트리밍 경로는 같은 14,000자 제한 컨텍스트를 쓴다.
-    generation_chunks = select_generation_chunks(chunks, evidence_matrix)
 
-    messages = build_rag_messages(
+    client = LLMClient()
+    generation_chunks: list[RetrievedChunk] = []
+    messages: list[dict[str, str]] = []
+    answer: str | None = None
+    for attempt, attempt_chunks, attempt_messages in _generation_inputs(
         question,
-        generation_chunks,
+        chunks,
         history,
-        evidence_matrix=evidence_matrix,
-    )
-    answer = LLMClient().chat_completion(messages, operation="answer")
+        evidence_matrix,
+    ):
+        try:
+            answer = client.chat_completion(attempt_messages, operation="answer")
+        except ContextLengthExceededError:
+            continue
+        generation_chunks = attempt_chunks
+        messages = attempt_messages
+        if attempt.strategy is not None:
+            LLM_CONTEXT_RECOVERIES.labels(
+                operation="answer",
+                strategy=attempt.strategy,
+            ).inc()
+        break
+
+    if answer is None:
+        LLM_CONTEXT_RECOVERIES.labels(
+            operation="answer",
+            strategy="extractive_fallback",
+        ).inc()
+        return _extractive_context_fallback(chunks, evidence_matrix)
+
     if _has_degenerate_repetition(answer):
         answer = _retry_degenerate_answer(messages, answer)
     answer, has_grounded_source = _normalize_source_decision(answer)
@@ -200,6 +330,83 @@ def generate_answer(
         answer=answer,
         sources=_sources_for_citations(answer, generation_chunks) if has_grounded_source else [],
     )
+
+
+def _extractive_context_fallback(
+    chunks: list[RetrievedChunk],
+    evidence_matrix: EvidenceMatrix | None,
+) -> GeneratedAnswer:
+    """생성 입력이 계속 넘치면 상위 근거를 가공 없이 발췌해 정상 응답을 만든다."""
+    candidates = select_generation_chunks(
+        chunks,
+        evidence_matrix,
+        max_context_chars=MINIMAL_GENERATION_CONTEXT_CHARS,
+    )
+    selected: list[RetrievedChunk] = []
+    seen_locations: set[tuple[int, int | None]] = set()
+    for chunk in candidates:
+        location = (chunk.document_id, chunk.page_start)
+        if location in seen_locations:
+            continue
+        seen_locations.add(location)
+        selected.append(chunk)
+        if len(selected) >= MAX_EXTRACTIVE_SOURCES:
+            break
+    if not selected:
+        return GeneratedAnswer(answer=EMPTY_CONTEXT_ANSWER, sources=[])
+
+    lines = [
+        "입력 길이 제한으로 생성형 요약 대신 검색된 핵심 근거를 제공합니다.",
+        "",
+    ]
+    sources: list[SourceRef] = []
+    for index, chunk in enumerate(selected, start=1):
+        excerpt = _bounded_evidence_excerpt(chunk.content)
+        citation = _fallback_citation(index, chunk)
+        lines.append(f"- {excerpt} {citation}")
+        sources.append(
+            SourceRef(
+                document_id=chunk.document_id,
+                document_title=chunk.document_title,
+                page=chunk.page_start,
+                chunk_id=chunk.chunk_id,
+            )
+        )
+    lines.extend(
+        [
+            "",
+            "위 근거 범위까지만 확인할 수 있습니다. 질문을 나누면 더 구체적인 답변을 받을 수 있습니다.",
+        ]
+    )
+    return GeneratedAnswer(answer="\n".join(lines), sources=sources)
+
+
+def _bounded_evidence_excerpt(content: str) -> str:
+    """근거 문장을 공백 정규화 후 의미 있는 문장 경계에서 짧게 자른다."""
+    normalized = " ".join(content.split())
+    if len(normalized) <= MAX_EXTRACTIVE_CONTENT_CHARS:
+        return normalized
+    boundary = max(
+        normalized.rfind(marker, 0, MAX_EXTRACTIVE_CONTENT_CHARS)
+        for marker in (".", "!", "?", "。", "！", "？")
+    )
+    if boundary < MAX_EXTRACTIVE_CONTENT_CHARS // 2:
+        boundary = MAX_EXTRACTIVE_CONTENT_CHARS
+    else:
+        boundary += 1
+    return normalized[:boundary].rstrip() + "…"
+
+
+def _fallback_citation(index: int, chunk: RetrievedChunk) -> str:
+    """발췌 Source 번호와 실제 페이지 범위를 사용자 표기로 만든다."""
+    if chunk.page_start is None:
+        return f"[Source {index}]"
+    if chunk.page_end is None or chunk.page_end == chunk.page_start:
+        page = str(chunk.page_start)
+    else:
+        page = f"{chunk.page_start}-{chunk.page_end}"
+    return f"[Source {index}, Page {page}]"
+
 
 def _requires_clarification(
     question: str,

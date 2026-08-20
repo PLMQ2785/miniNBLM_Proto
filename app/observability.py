@@ -68,6 +68,11 @@ LLM_REQUESTS = Counter(
     "LLM operations by purpose, mode, and result status.",
     ("operation", "mode", "status"),
 )
+LLM_CONTEXT_RECOVERIES = Counter(
+    "mininblm_llm_context_recoveries_total",
+    "Context overflow recovery actions by operation and strategy.",
+    ("operation", "strategy"),
+)
 LLM_DURATION = Histogram(
     "mininblm_llm_duration_seconds",
     "LLM operation duration by purpose and mode.",

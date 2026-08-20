@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 import re
 
@@ -14,6 +15,8 @@ EXCLUDED_STATE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 MAX_GENERATION_CONTEXT_CHARS = 14_000
+MIN_TRUNCATED_CHUNK_CONTENT_CHARS = 256
+TRUNCATED_CHUNK_MARKER = "\n[… 입력 길이 제한으로 후반부 생략 …]"
 
 
 def load_rag_system_prompt() -> str:
@@ -39,11 +42,37 @@ def _format_chunk_section(index: int, chunk: RetrievedChunk) -> str:
     )
 
 
+def _fit_chunk_to_section_budget(
+    index: int,
+    chunk: RetrievedChunk,
+    section_budget: int,
+) -> RetrievedChunk | None:
+    """Source 메타데이터를 보존하며 긴 청크 본문만 주어진 예산에 맞춘다."""
+    section = _format_chunk_section(index, chunk)
+    if len(section) <= section_budget:
+        return chunk
+
+    empty_chunk = replace(chunk, content="")
+    metadata_chars = len(_format_chunk_section(index, empty_chunk))
+    available_content_chars = (
+        section_budget - metadata_chars - len(TRUNCATED_CHUNK_MARKER)
+    )
+    if available_content_chars < MIN_TRUNCATED_CHUNK_CONTENT_CHARS:
+        return None
+    content = chunk.content[:available_content_chars].rstrip()
+    return replace(
+        chunk,
+        content=content + TRUNCATED_CHUNK_MARKER,
+    )
+
+
 def select_generation_chunks(
     chunks: list[RetrievedChunk],
     evidence_matrix: EvidenceMatrix | None = None,
+    *,
+    max_context_chars: int = MAX_GENERATION_CONTEXT_CHARS,
 ) -> list[RetrievedChunk]:
-    """근거 행렬 우선순위와 Source 순서를 지키며 컨텍스트를 14,000자로 고른다."""
+    """근거 우선순위와 Source 순서를 지키며 지정 문자 예산 안에서 청크를 고른다."""
     evidence_chunk_ids = (
         {
             reference.chunk_id
@@ -77,16 +106,27 @@ def select_generation_chunks(
         *distinct_page_chunks,
         *repeated_page_chunks,
     ]
-    # 인용 대상이 잘리지 않도록 Source 블록은 통째로 포함하거나 제외한다.
+    # 기존 선택은 블록 단위로 유지하고 첫 청크 하나만 예산에 맞게 자른다.
     selected: list[RetrievedChunk] = []
     used_chars = 0
     for chunk in prioritized:
-        section = _format_chunk_section(len(selected) + 1, chunk)
-        section_chars = len(section) + (2 if selected else 0)
-        if selected and used_chars + section_chars > MAX_GENERATION_CONTEXT_CHARS:
+        separator_chars = 2 if selected else 0
+        section_budget = max_context_chars - used_chars - separator_chars
+        if selected and len(
+            _format_chunk_section(len(selected) + 1, chunk)
+        ) > section_budget:
             continue
-        selected.append(chunk)
-        used_chars += section_chars
+        fitted = _fit_chunk_to_section_budget(
+            len(selected) + 1,
+            chunk,
+            section_budget,
+        )
+        if fitted is None:
+            continue
+        selected.append(fitted)
+        used_chars += separator_chars + len(
+            _format_chunk_section(len(selected), fitted)
+        )
     return selected
 
 

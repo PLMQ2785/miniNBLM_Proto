@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.clients import llm_client
-from app.clients.llm_client import LLMClient
+from app.clients.llm_client import ContextLengthExceededError, LLMClient
 from app.services import language_model_service
 from app.config import LLMConfiguration, Settings
 
@@ -208,6 +208,101 @@ def test_non_context_error_is_not_retried() -> None:
 
     completions = Completions()
     with pytest.raises(RuntimeError, match="service unavailable"):
+        _client_with_completions(completions).chat_completion(
+            [{"role": "user", "content": "question"}],
+            operation="answer",
+        )
+
+    assert completions.calls == 1
+
+
+def test_stream_completion_retries_context_overflow_raised_by_first_iteration() -> None:
+    """스트림 생성 뒤 첫 순회에서 난 컨텍스트 초과도 델타 전에는 복구한다."""
+    class FailingStream:
+        """첫 순회에서 컨텍스트 초과를 내는 스트림 대역이다."""
+
+        def __enter__(self):
+            """스트림 컨텍스트 진입 시 자신을 반환한다."""
+            return self
+
+        def __exit__(self, *args) -> None:
+            """검증용 스트림 종료를 정상 처리한다."""
+            return None
+
+        def __iter__(self):
+            """첫 응답 조각 대신 컨텍스트 초과를 발생시킨다."""
+            raise RuntimeError(CONTEXT_LENGTH_ERROR)
+
+    class RecoveredStream:
+        """출력 예산 축소 뒤 정상 조각을 돌려주는 스트림 대역이다."""
+
+        def __enter__(self):
+            """스트림 컨텍스트 진입 시 자신을 반환한다."""
+            return self
+
+        def __exit__(self, *args) -> None:
+            """검증용 스트림 종료를 정상 처리한다."""
+            return None
+
+        def __iter__(self):
+            """복구된 답변 조각을 순회한다."""
+            return iter(
+                [
+                    SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                delta=SimpleNamespace(content="recovered answer")
+                            )
+                        ]
+                    )
+                ]
+            )
+
+    class Completions:
+        """호출 순서에 따라 실패·복구 스트림을 제공한다."""
+
+        def __init__(self) -> None:
+            """호출별 출력 예산을 기록한다."""
+            self.max_tokens: list[int] = []
+
+        def create(self, **kwargs):
+            """첫 호출은 순회 실패 스트림, 다음 호출은 정상 스트림을 반환한다."""
+            self.max_tokens.append(kwargs["max_tokens"])
+            return FailingStream() if len(self.max_tokens) == 1 else RecoveredStream()
+
+    completions = Completions()
+    result = list(
+        _client_with_completions(completions).stream_chat_completion(
+            [{"role": "user", "content": "question"}],
+            operation="answer",
+        )
+    )
+
+    assert result == ["recovered answer"]
+    assert completions.max_tokens == [900, 883]
+
+
+def test_context_error_without_token_counts_is_exposed_as_typed_error() -> None:
+    """토큰 수가 없는 호환 서버 오류도 상위 입력 축소가 처리할 전용 오류로 바꾼다."""
+    class ContextError(RuntimeError):
+        """구조화된 오류 코드만 제공하는 서버 오류 대역이다."""
+
+        body = {"error": {"code": "context_length_exceeded"}}
+
+    class Completions:
+        """컨텍스트 초과를 항상 반환하는 완료 API 대역이다."""
+
+        def __init__(self) -> None:
+            """호출 횟수를 초기화한다."""
+            self.calls = 0
+
+        def create(self, **kwargs):
+            """토큰 수 없는 컨텍스트 초과를 반환한다."""
+            self.calls += 1
+            raise ContextError("request rejected")
+
+    completions = Completions()
+    with pytest.raises(ContextLengthExceededError):
         _client_with_completions(completions).chat_completion(
             [{"role": "user", "content": "question"}],
             operation="answer",
