@@ -124,13 +124,12 @@ export class AppController {
     if (focus) this.chatPanel.focusComposer();
   }
 
-  // 질의 문서를 바꾸면 다른 문서 이력이 섞이지 않도록 새 대화로 전환한다.
+  // 전체·개별 질의 범위를 바꾸면 다른 범위의 이력이 섞이지 않게 새 대화로 전환한다.
   selectDocument(documentId) {
     if (this.state.isGenerating || this.state.isLoadingConversation) return;
-    const documentSummary = this.state.documents.find(
+    if (documentId !== null && !this.state.documents.some(
       (document) => document.document_id === documentId && document.status === "indexed",
-    );
-    if (!documentSummary) return;
+    )) return;
 
     const activeSession = this.state.chatSessions.find(
       (session) => session.session_id === this.state.activeSessionId,
@@ -397,9 +396,9 @@ export class AppController {
     }
   }
 
-  // 선택된 색인 문서가 있을 때만 질문을 대화에 추가하고 답변 생성을 시작한다.
+  // 전체 또는 선택 문서에 검색 가능한 자료가 있을 때 답변 생성을 시작한다.
   async submitQuestion(question) {
-    if (!this.hasSelectedIndexedDocument() || this.state.isGenerating
+    if (!this.hasQueryableDocuments() || this.state.isGenerating
         || this.state.isLoadingConversation) return;
 
     const messages = [...getConversation(this.state), { role: "user", content: question, sources: [] }];
@@ -411,7 +410,7 @@ export class AppController {
   async retryQuestion(messageIndex) {
     const conversation = getConversation(this.state);
     const failedMessage = conversation[messageIndex];
-    if (!this.hasSelectedIndexedDocument() || this.state.isGenerating
+    if (!this.hasQueryableDocuments() || this.state.isGenerating
         || failedMessage?.status !== "error" || !failedMessage.retryQuestion) return;
 
     const messages = conversation.filter((_, index) => index !== messageIndex);
@@ -423,7 +422,6 @@ export class AppController {
   async generateAnswer(question, messages) {
     const originalSessionId = this.state.activeSessionId;
     const documentId = this.state.selectedDocumentId;
-    if (documentId === null) return;
     const streamingMessage = {
       role: "assistant",
       content: "",
@@ -588,8 +586,11 @@ export class AppController {
     return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
   }
 
-  // 현재 선택 문서가 실제 검색 가능한 상태인지 확인한다.
-  hasSelectedIndexedDocument() {
+  // 전체 범위 또는 현재 선택 범위에 검색 가능한 문서가 있는지 확인한다.
+  hasQueryableDocuments() {
+    if (this.state.selectedDocumentId === null) {
+      return this.state.documents.some((document) => document.status === "indexed");
+    }
     return this.state.documents.some(
       (document) => document.document_id === this.state.selectedDocumentId
         && document.status === "indexed",

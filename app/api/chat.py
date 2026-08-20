@@ -44,8 +44,14 @@ def _session_summary(session: ChatSession) -> ChatSessionSummary:
 
 
 
-def _require_indexed_document(db: Session, owner_id: int, document_id: int) -> None:
-    """질의 문서의 소유권과 검색 가능 상태를 요청 경계에서 강제한다."""
+def _require_indexed_document(
+    db: Session,
+    owner_id: int,
+    document_id: int | None,
+) -> None:
+    """선택 문서가 있으면 소유권과 검색 가능 상태를 강제한다."""
+    if document_id is None:
+        return
     document = document_repository.get_document(db, document_id, owner_id)
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
@@ -56,18 +62,14 @@ def _require_indexed_document(db: Session, owner_id: int, document_id: int) -> N
         )
 
 
-def _require_session_document(session: ChatSession, document_id: int) -> None:
-    """대화 도중 다른 문서로 검색 범위가 바뀌는 것을 막는다."""
-    if session.document_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Chat session has no document scope",
-        )
+def _require_session_document(session: ChatSession, document_id: int | None) -> None:
+    """대화 도중 전체·개별 문서 검색 범위가 바뀌는 것을 막는다."""
     if session.document_id != document_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Chat session belongs to a different document",
+            detail="Chat session belongs to a different document scope",
         )
+
 
 def _source_document_ids(messages: list[ChatMessage]) -> set[int]:
     """메시지 메타데이터에서 출처 문서 ID를 모아 제목 조회를 제한한다."""

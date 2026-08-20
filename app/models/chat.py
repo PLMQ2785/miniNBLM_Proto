@@ -18,7 +18,7 @@ class ChatSession(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     owner_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
-    # 기존 전역 대화는 NULL일 수 있지만 새 질의 세션은 API에서 문서 ID를 필수로 기록한다.
+    # NULL은 전체 문서 범위, 값이 있으면 해당 문서로 고정된 대화를 뜻한다.
     document_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("documents.id"))
     title: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

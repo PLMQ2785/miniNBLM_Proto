@@ -221,12 +221,28 @@ def test_chat_rejects_session_scope_changes_and_unindexed_documents(
         "/chat",
         json={"document_id": processing_document.id, "question": "처리 중 질문"},
     )
+    global_session = client.post(
+        "/chat",
+        json={"question": "전체 문서 질문"},
+    )
+    assert global_session.status_code == 200
+    global_changed = client.post(
+        "/chat",
+        json={
+            "session_id": global_session.json()["session"]["session_id"],
+            "document_id": first_document.id,
+            "question": "개별 문서로 변경",
+        },
+    )
+
 
     assert changed.status_code == 409
-    assert changed.json()["detail"] == "Chat session belongs to a different document"
+    assert changed.json()["detail"] == "Chat session belongs to a different document scope"
     assert not_indexed.status_code == 409
     assert not_indexed.json()["detail"] == "Document is not indexed"
-    assert len(retrieval_calls) == 1
+    assert global_changed.status_code == 409
+    assert global_changed.json()["detail"] == "Chat session belongs to a different document scope"
+    assert len(retrieval_calls) == 2
 
 
 def test_chat_sessions_are_isolated_and_can_be_deleted(
@@ -325,25 +341,35 @@ def test_legacy_chat_history_filters_retrieval_candidates_by_citation(
     assert sources[0]["page"] == 9
 
 
-def test_chat_requires_document_selection(
+def test_chat_without_selection_queries_the_whole_workspace(
     client: TestClient,
+    db: Session,
+    document_factory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """문서 ID가 없는 질문은 검색을 시작하기 전에 거부한다."""
+    """문서 선택이 없으면 기존처럼 전체 문서 범위로 검색한다."""
     assert client.post(
         "/auth/register",
-        json={"username": "empty-workspace", "password": "password123"},
+        json={"username": "whole-workspace", "password": "password123"},
     ).status_code == 201
+    user = user_repository.get_user_by_username(db, "whole-workspace")
+    document_factory(user, title="first.pdf")
+    document_factory(user, title="second.pdf")
     retrieval_calls = []
-    monkeypatch.setattr(chat_api, "retrieve_chunks", lambda **kwargs: retrieval_calls.append(kwargs))
+    monkeypatch.setattr(
+        chat_api,
+        "retrieve_chunks",
+        lambda **kwargs: retrieval_calls.append(kwargs) or [],
+    )
 
     response = client.post(
         "/chat",
-        json={"question": "질문"},
+        json={"question": "전체 질문"},
     )
 
-    assert response.status_code == 422
-    assert retrieval_calls == []
+    assert response.status_code == 200
+    assert response.json()["session"]["document_id"] is None
+    assert retrieval_calls[0]["document_id"] is None
 
 
 def test_chat_streams_answer_and_persists_only_after_completion(

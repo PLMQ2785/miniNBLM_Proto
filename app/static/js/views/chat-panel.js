@@ -131,7 +131,7 @@ export class ChatPanel {
     const selectedDocument = documents.find(
       (document) => document.document_id === selectedDocumentId,
     ) || null;
-    const isReady = selectedDocument?.status === "indexed";
+    const isReady = selectedDocument ? selectedDocument.status === "indexed" : indexedCount > 0;
 
     this.status.textContent = this.workspaceStatus({
       indexedCount,
@@ -147,9 +147,9 @@ export class ChatPanel {
       isLoadingOlderMessages,
       deletingSessionId,
     });
-    this.input.placeholder = isReady
+    this.input.placeholder = selectedDocument
       ? `${selectedDocument.title} 문서에 대해 질문하세요.`
-      : "왼쪽에서 질의할 PDF를 선택하세요.";
+      : "전체 문서에 대해 질문하세요.";
     this.input.disabled = !isReady || isGenerating || isLoadingConversation;
     this.sendButton.disabled = !isReady || isGenerating || isLoadingConversation;
     this.sendButton.textContent = isGenerating ? "답변 생성 중" : "질문 보내기";
@@ -160,7 +160,7 @@ export class ChatPanel {
     } else if (messages.length === 0) {
       let emptyMessage = selectedDocument
         ? `“${selectedDocument.title}” 문서에 대해 질문하세요.`
-        : "왼쪽 문서 목록에서 질문할 PDF를 선택하세요.";
+        : "업로드한 전체 문서에 대해 질문하세요.";
       if (isLoading && documents.length === 0) {
         emptyMessage = "문서를 불러오는 중입니다.";
       } else if (indexedCount === 0 && processingCount > 0) {
@@ -225,7 +225,7 @@ export class ChatPanel {
     this.deleteSessionButton.textContent = deletingSessionId === activeSessionId ? "삭제 중" : "삭제";
   }
 
-  // 문서 처리 현황과 현재 질의 범위를 채팅 헤더 문구로 만든다.
+  // 문서 처리 현황과 현재 전체·개별 질의 범위를 채팅 헤더 문구로 만든다.
   workspaceStatus({ indexedCount, processingCount, failedCount, isLoading, selectedDocument }) {
     if (selectedDocument) {
       return `질의 대상 · ${selectedDocument.title} · ${formatStatus(selectedDocument.status)}`;
@@ -235,7 +235,7 @@ export class ChatPanel {
     if (processingCount > 0) parts.push(`처리 중 ${processingCount}개`);
     if (failedCount > 0) parts.push(`실패 ${failedCount}개`);
     if (parts.length === 0) return isLoading ? "목록 확인 중" : "등록된 문서 없음";
-    return `${parts.join(" · ")} · 질의 문서 선택 필요`;
+    return `${parts.join(" · ")} · 전체 문서 질의`;
   }
 
   // 역할·상태·출처를 포함한 대화 메시지 요소를 만든다.
