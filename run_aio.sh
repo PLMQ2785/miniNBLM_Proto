@@ -63,9 +63,9 @@ ensure_environment_file() {
   fi
 }
 
-# 큰 이미지를 받기 전에 비밀값과 모델 원본을 검증한다.
+# 컨테이너를 시작하기 전에 호스트에서 확인할 비밀값을 검증한다.
 validate_start_configuration() {
-  local password model_source model_repository model_path
+  local password
   local admin_username admin_password normalized_username normalized_password
   local password_classes=0
   password="${NATIVE_DB_PASSWORD:-$(env_value NATIVE_DB_PASSWORD)}"
@@ -112,21 +112,6 @@ validate_start_configuration() {
     fi
   fi
 
-  model_source="${MININBLM_MODEL_VOLUME:-$(env_value MININBLM_MODEL_VOLUME mininblm_models)}"
-  model_repository="${MODEL_REPOSITORY:-$(env_value MODEL_REPOSITORY)}"
-  if [[ "$model_source" == /* || "$model_source" == ./* || "$model_source" == ../* ]]; then
-    model_path="$model_source"
-    if [[ "$model_path" != /* ]]; then
-      model_path="$PROJECT_DIR/${model_path#./}"
-    fi
-    if [[ ! -f "$model_path/config.json" ]]; then
-      echo "오류: Gemma 모델의 config.json을 찾을 수 없습니다: $model_path" >&2
-      exit 1
-    fi
-  elif [[ -z "$model_repository" ]]; then
-    echo "오류: named model volume을 사용할 때는 MODEL_REPOSITORY를 설정하십시오." >&2
-    exit 1
-  fi
 }
 
 # 통합 컨테이너의 현재 상태를 읽는다.
