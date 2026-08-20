@@ -13,6 +13,7 @@ class RerankerClient:
         ).rstrip("/")
         self.timeout = timeout
 
+    # Batch without reordering; callers reshape scores by query and row.
     def score_pairs(self, pairs: list[tuple[str, str]]) -> list[float]:
         scores: list[float] = []
         for start in range(0, len(pairs), MAX_RERANK_BATCH_SIZE):

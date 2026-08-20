@@ -68,6 +68,7 @@ def get_model() -> SentenceTransformer:
     )
 
 
+# The heavier cross-encoder stays unloaded unless /rerank is used.
 @lru_cache
 def get_reranker() -> CrossEncoder:
     settings = get_settings()

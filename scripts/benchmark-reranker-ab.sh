@@ -17,6 +17,7 @@ if [[ ! -f "$fixture" ]]; then
   exit 1
 fi
 
+# Use one stable default matrix when the caller supplies no arguments.
 if (($# == 0)); then
   set -- \
     --preset balanced \
@@ -28,6 +29,7 @@ if (($# == 0)); then
     --minimum-recall 0.8
 fi
 
+# Alternate modes so each pair sees the same fixture and arguments.
 for ((run = 1; run <= repeats; run++)); do
   for mode in embedding cross_encoder; do
     printf '\n=== Reranker A/B run %d/%d: %s ===\n' "$run" "$repeats" "$mode"

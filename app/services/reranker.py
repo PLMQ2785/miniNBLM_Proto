@@ -32,6 +32,7 @@ def rerank_rows(
     try:
         rerank_queries = _normalize_rerank_queries(question, queries)
         goal_query_indexes = _goal_query_indexes(rerank_queries, goal_query_groups)
+        # Cross-encoder failure degrades to the same BGE-M3 path used on main.
         if settings.reranker_mode == "cross_encoder":
             try:
                 reranked = _rerank_with_cross_encoder(
@@ -131,6 +132,7 @@ def _rerank_with_cross_encoder(
 ):
     if not queries:
         raise ValueError("At least one reranking query is required")
+    # Flatten query-major so returned scores can be reshaped deterministically.
     pairs = [
         (query, chunk.content)
         for query in queries
