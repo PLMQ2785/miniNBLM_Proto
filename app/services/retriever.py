@@ -48,8 +48,9 @@ def retrieve_chunks(
     goals: Sequence[EvidenceGoal] | None = None,
     trace: RetrievalTrace | None = None,
     trace_stage: str = "initial",
+    document_id: int | None = None,
 ) -> list[RetrievedChunk]:
-    """활성 검색 설정으로 목표별 후보를 찾고 재순위화·인접 확장을 적용한다."""
+    """활성 설정과 선택 문서 범위로 후보를 찾고 재순위화·인접 확장을 적용한다."""
     configuration = retrieval_config_repository.get_configuration(db)
     active_preset = retrieval_config_repository.get_preset(db, configuration.active_preset_key)
     if active_preset is None:
@@ -87,6 +88,7 @@ def retrieve_chunks(
                 question=search_queries[0],
                 top_k=final_candidate_limit,
                 algorithm=algorithm,
+                document_id=document_id,
             )
             if trace is not None:
                 trace.record_candidates(
@@ -107,6 +109,7 @@ def retrieve_chunks(
                     question=query,
                     top_k=per_query_limit,
                     algorithm=algorithm,
+                    document_id=document_id,
                 )
                 for query in search_queries
             ]
@@ -274,34 +277,50 @@ def _search(
     question: str,
     top_k: int,
     algorithm: SearchAlgorithmKey,
+    document_id: int | None = None,
 ):
-    """선택된 알고리즘으로 단일 쿼리 후보를 검색한다."""
+    """선택된 알고리즘과 문서 범위로 단일 쿼리 후보를 검색한다."""
     if algorithm == SearchAlgorithmKey.DENSE:
-        return _dense_search(db, owner_id, question, top_k)
+        return _dense_search(db, owner_id, question, top_k, document_id)
     if algorithm == SearchAlgorithmKey.KEYWORD:
-        return search_chunks_by_keyword(db, owner_id, question, top_k)
+        return search_chunks_by_keyword(
+            db, owner_id, question, top_k, document_id=document_id
+        )
     if algorithm == SearchAlgorithmKey.SUBSTRING:
-        return search_chunks_by_substring(db, owner_id, question, top_k)
+        return search_chunks_by_substring(
+            db, owner_id, question, top_k, document_id=document_id
+        )
     if algorithm == SearchAlgorithmKey.HYBRID:
         candidate_limit = top_k * 3
         result_sets = (
-            _dense_search(db, owner_id, question, candidate_limit),
-            search_chunks_by_keyword(db, owner_id, question, candidate_limit),
-            search_chunks_by_substring(db, owner_id, question, candidate_limit),
+            _dense_search(db, owner_id, question, candidate_limit, document_id),
+            search_chunks_by_keyword(
+                db, owner_id, question, candidate_limit, document_id=document_id
+            ),
+            search_chunks_by_substring(
+                db, owner_id, question, candidate_limit, document_id=document_id
+            ),
         )
         fused_rows = _reciprocal_rank_fusion(result_sets, top_k)
         return _merge_query_anchors(result_sets, fused_rows, top_k)
     raise RuntimeError(f"Unsupported search algorithm: {algorithm}")
 
 
-def _dense_search(db: Session, owner_id: int, question: str, top_k: int):
-    """질문 임베딩으로 소유자 범위의 유사 청크를 찾는다."""
+def _dense_search(
+    db: Session,
+    owner_id: int,
+    question: str,
+    top_k: int,
+    document_id: int | None = None,
+):
+    """질문 임베딩으로 선택 문서 범위의 유사 청크를 찾는다."""
     query_embedding = EmbeddingClient().embed_query(question)
     return search_chunks_by_embedding(
         db=db,
         owner_id=owner_id,
         query_embedding=query_embedding,
         top_k=top_k,
+        document_id=document_id,
     )
 
 

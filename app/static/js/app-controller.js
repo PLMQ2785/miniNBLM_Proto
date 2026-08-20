@@ -18,6 +18,7 @@ export class AppController {
     this.documentPanel.onUpload((files) => this.uploadDocuments(files));
     this.documentPanel.onDelete((documentId) => this.deleteDocument(documentId));
     this.documentPanel.onRefresh(() => this.loadDocuments({ announceSuccess: true }));
+    this.documentPanel.onSelect((documentId) => this.selectDocument(documentId));
     this.chatPanel.onSubmit((question) => this.submitQuestion(question));
     this.chatPanel.onRetry((messageIndex) => this.retryQuestion(messageIndex));
     this.chatPanel.onSessionSelect((sessionId) => {
@@ -88,6 +89,7 @@ export class AppController {
       const session = await this.apiClient.getChatSession(sessionId);
       if (this.state.activeSessionId !== sessionId) return;
       this.state.chatSessions = upsertChatSession(this.state.chatSessions, session);
+      this.state.selectedDocumentId = session.document_id;
       this.state.conversation = session.messages.map((message) => this.toConversationMessage(message));
       this.state.hasOlderMessages = session.has_more;
     } catch (error) {
@@ -120,6 +122,26 @@ export class AppController {
     this.clearSelectedSource();
     this.render();
     if (focus) this.chatPanel.focusComposer();
+  }
+
+  // 질의 문서를 바꾸면 다른 문서 이력이 섞이지 않도록 새 대화로 전환한다.
+  selectDocument(documentId) {
+    if (this.state.isGenerating || this.state.isLoadingConversation) return;
+    const documentSummary = this.state.documents.find(
+      (document) => document.document_id === documentId && document.status === "indexed",
+    );
+    if (!documentSummary) return;
+
+    const activeSession = this.state.chatSessions.find(
+      (session) => session.session_id === this.state.activeSessionId,
+    );
+    this.state.selectedDocumentId = documentId;
+    if (activeSession && activeSession.document_id !== documentId) {
+      this.startNewConversation({ focus: false });
+    } else {
+      this.render();
+    }
+    this.chatPanel.focusComposer();
   }
 
   // 서버와 로컬 목록에서 대화를 지운 뒤 다음 대화를 선택한다.
@@ -220,6 +242,15 @@ export class AppController {
     this.render();
     try {
       this.state.documents = await this.apiClient.listDocuments();
+      if (this.state.selectedDocumentId !== null && !this.state.documents.some(
+        (documentSummary) => documentSummary.document_id === this.state.selectedDocumentId,
+      )) {
+        this.state.selectedDocumentId = null;
+        this.state.activeSessionId = null;
+        this.state.conversation = [];
+        this.state.hasOlderMessages = false;
+        this.clearSelectedSource();
+      }
       if (this.state.selectedSource && !this.state.documents.some(
         (documentSummary) => documentSummary.document_id === this.state.selectedSource.document_id,
       )) {
@@ -328,6 +359,22 @@ export class AppController {
       this.state.documents = this.state.documents.filter(
         (document) => document.document_id !== documentId,
       );
+      const removedSessionIds = new Set(
+        this.state.chatSessions
+          .filter((session) => session.document_id === documentId)
+          .map((session) => session.session_id),
+      );
+      this.state.chatSessions = this.state.chatSessions.filter(
+        (session) => session.document_id !== documentId,
+      );
+      if (removedSessionIds.has(this.state.activeSessionId)) {
+        this.state.activeSessionId = null;
+        this.state.conversation = [];
+        this.state.hasOlderMessages = false;
+      }
+      if (this.state.selectedDocumentId === documentId) {
+        this.state.selectedDocumentId = null;
+      }
       this.state.conversation = this.state.conversation.map((message) => ({
         ...message,
         sources: message.sources?.map((source) => (
@@ -350,9 +397,10 @@ export class AppController {
     }
   }
 
-  // 질문을 대화에 추가하고 스트리밍 답변 생성을 시작한다.
+  // 선택된 색인 문서가 있을 때만 질문을 대화에 추가하고 답변 생성을 시작한다.
   async submitQuestion(question) {
-    if (!this.hasIndexedDocuments() || this.state.isGenerating || this.state.isLoadingConversation) return;
+    if (!this.hasSelectedIndexedDocument() || this.state.isGenerating
+        || this.state.isLoadingConversation) return;
 
     const messages = [...getConversation(this.state), { role: "user", content: question, sources: [] }];
     this.chatPanel.clearInput();
@@ -363,7 +411,7 @@ export class AppController {
   async retryQuestion(messageIndex) {
     const conversation = getConversation(this.state);
     const failedMessage = conversation[messageIndex];
-    if (!this.hasIndexedDocuments() || this.state.isGenerating
+    if (!this.hasSelectedIndexedDocument() || this.state.isGenerating
         || failedMessage?.status !== "error" || !failedMessage.retryQuestion) return;
 
     const messages = conversation.filter((_, index) => index !== messageIndex);
@@ -374,6 +422,8 @@ export class AppController {
   // SSE 세션·본문·교정·출처 이벤트를 작업공간 상태에 순서대로 반영한다.
   async generateAnswer(question, messages) {
     const originalSessionId = this.state.activeSessionId;
+    const documentId = this.state.selectedDocumentId;
+    if (documentId === null) return;
     const streamingMessage = {
       role: "assistant",
       content: "",
@@ -389,6 +439,7 @@ export class AppController {
     try {
       const result = await this.apiClient.streamQuestion(
         question,
+        documentId,
         originalSessionId,
         (event, data) => {
           if (event === "session" || event === "done") {
@@ -396,6 +447,7 @@ export class AppController {
             if (session) {
               this.state.activeSessionId = session.session_id;
               this.state.chatSessions = upsertChatSession(this.state.chatSessions, session);
+              this.state.selectedDocumentId = session.document_id;
               this.render();
             }
           } else if (event === "delta") {
@@ -509,6 +561,7 @@ export class AppController {
       isUploading: this.state.isUploading,
       uploadProgress: this.state.uploadProgress,
       deletingDocumentId: this.state.deletingDocumentId,
+      selectedDocumentId: this.state.selectedDocumentId,
     });
     this.chatPanel.render(this.state.documents, conversation, {
       isGenerating: this.state.isGenerating,
@@ -520,6 +573,7 @@ export class AppController {
       isLoadingOlderMessages: this.state.isLoadingOlderMessages,
       hasOlderMessages: this.state.hasOlderMessages,
       deletingSessionId: this.state.deletingSessionId,
+      selectedDocumentId: this.state.selectedDocumentId,
     });
 
     const source = this.state.selectedSource;
@@ -534,8 +588,11 @@ export class AppController {
     return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
   }
 
-  // 질문 전송에 사용할 수 있는 인덱싱 완료 문서가 있는지 확인한다.
-  hasIndexedDocuments() {
-    return this.state.documents.some((document) => document.status === "indexed");
+  // 현재 선택 문서가 실제 검색 가능한 상태인지 확인한다.
+  hasSelectedIndexedDocument() {
+    return this.state.documents.some(
+      (document) => document.document_id === this.state.selectedDocumentId
+        && document.status === "indexed",
+    );
   }
 }

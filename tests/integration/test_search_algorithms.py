@@ -289,13 +289,13 @@ def test_adjacent_expansion_excludes_deleted_chunks(
     assert [result.chunk_id for result in results] == [anchor_id]
 
 
-def test_all_search_algorithms_are_scoped_to_the_owners_indexed_documents(
+def test_all_search_algorithms_honor_owner_status_and_selected_document_scope(
     db: Session,
     user_factory,
     document_factory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """모든 검색 알고리즘이 소유자의 색인 완료 문서로 범위를 제한하는지 검증한다."""
+    """모든 검색 알고리즘이 소유자·색인 상태·선택 문서 범위를 함께 강제한다."""
     user = user_factory("scope-user")
     other_user = user_factory("other-user")
     first_document = document_factory(user, title="first.pdf")
@@ -363,20 +363,40 @@ def test_all_search_algorithms_are_scoped_to_the_owners_indexed_documents(
             second_document.title,
         }
 
+        scoped_results = retrieve_chunks(
+            db,
+            owner_id=user.id,
+            question="안전 수칙",
+            top_k=10,
+            document_id=first_document.id,
+        )
 
-def test_hierarchical_fallback_searches_pages_then_scopes_chunks_to_owner(
+        assert {result.document_id for result in scoped_results} == {first_document.id}
+        assert {result.document_title for result in scoped_results} == {first_document.title}
+
+
+def test_hierarchical_fallback_scopes_pages_and_chunks_to_selected_document(
     db: Session,
     user_factory,
     document_factory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """계층 검색이 페이지를 찾은 뒤 소유자 청크만 반환하는지 검증한다."""
+    """계층 검색이 페이지와 청크 모두 선택 문서 밖으로 벗어나지 않게 한다."""
     user = user_factory("hierarchical-owner")
     other_user = user_factory("hierarchical-other")
     document = document_factory(user, title="git-pages.pdf")
+    other_document = document_factory(user, title="other-pages.pdf")
     foreign_document = document_factory(other_user, title="foreign-pages.pdf")
     target = Chunk(
         document_id=document.id,
+        page_start=5,
+        page_end=5,
+        chunk_index=0,
+        content="공유 원격 이력을 재작성하면 협업자의 로컬 이력이 분기된다.",
+        embedding=[1.0] + [0.0] * 1023,
+    )
+    same_owner_distractor = Chunk(
+        document_id=other_document.id,
         page_start=5,
         page_end=5,
         chunk_index=0,
@@ -408,8 +428,14 @@ def test_hierarchical_fallback_searches_pages_then_scopes_chunks_to_owner(
                 page_number=5,
                 text="DVCS에서 공유 원격 이력 재작성은 협업자의 로컬 이력을 분기시킨다.",
             ),
+            DocumentPage(
+                document_id=other_document.id,
+                page_number=5,
+                text="DVCS에서 공유 원격 이력 재작성은 협업자의 로컬 이력을 분기시킨다.",
+            ),
             target,
             foreign,
+            same_owner_distractor,
         ]
     )
     db.commit()
@@ -425,6 +451,7 @@ def test_hierarchical_fallback_searches_pages_then_scopes_chunks_to_owner(
         owner_id=user.id,
         question="push 후 reset이 협업에 미치는 영향",
         queries=("공유 원격 이력 재작성 협업자 로컬 이력 분기",),
+        document_id=document.id,
     )
 
     assert [result.chunk_id for result in results] == [target_id]

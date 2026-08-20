@@ -9,7 +9,7 @@ from app.database import SessionLocal
 from app.dependencies import ensure_retrieval_writes_available, get_current_user, get_current_user_with_language_model, get_db
 from app.models.chat import ChatMessage, ChatSession
 from app.models.user import User
-from app.repositories import chat_repository
+from app.repositories import chat_repository, document_repository
 from app.schemas.chat import (
     ChatMessageResponse,
     ChatRequest,
@@ -36,11 +36,38 @@ def _session_summary(session: ChatSession) -> ChatSessionSummary:
     """세션 목록과 완료 이벤트에 쓰는 공통 요약 응답을 만든다."""
     return ChatSessionSummary(
         session_id=session.id,
+        document_id=session.document_id,
         title=session.title or "제목 없는 대화",
         created_at=session.created_at,
         updated_at=session.updated_at,
     )
 
+
+
+def _require_indexed_document(db: Session, owner_id: int, document_id: int) -> None:
+    """질의 문서의 소유권과 검색 가능 상태를 요청 경계에서 강제한다."""
+    document = document_repository.get_document(db, document_id, owner_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    if document.status != "indexed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Document is not indexed",
+        )
+
+
+def _require_session_document(session: ChatSession, document_id: int) -> None:
+    """대화 도중 다른 문서로 검색 범위가 바뀌는 것을 막는다."""
+    if session.document_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Chat session has no document scope",
+        )
+    if session.document_id != document_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Chat session belongs to a different document",
+        )
 
 def _source_document_ids(messages: list[ChatMessage]) -> set[int]:
     """메시지 메타데이터에서 출처 문서 ID를 모아 제목 조회를 제한한다."""
@@ -289,10 +316,12 @@ def chat(
     _: None = Depends(ensure_retrieval_writes_available),
 ) -> ChatResponse:
     """검색 계획부터 생성·인용 저장까지 동기 RAG 요청을 처리한다."""
+    _require_indexed_document(db, user.id, request.document_id)
     if request.session_id is None:
         session = chat_repository.create_session(
             db,
             owner_id=user.id,
+            document_id=request.document_id,
             title=request.question.strip()[:80] or "새 대화",
         )
         history: list[dict[str, str]] = []
@@ -300,6 +329,7 @@ def chat(
         session = chat_repository.get_session(db, request.session_id, user.id)
         if session is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
+        _require_session_document(session, request.document_id)
         recent_messages = chat_repository.list_recent_messages(
             db,
             session.id,
@@ -315,6 +345,7 @@ def chat(
     chunks = retrieve_chunks(
         db=db,
         owner_id=user.id,
+        document_id=request.document_id,
         question=retrieval_plan.standalone_query,
         goals=goals,
         trace=trace,
@@ -322,6 +353,7 @@ def chat(
     chunks = complete_evidence_coverage(
         db=db,
         owner_id=user.id,
+        document_id=request.document_id,
         question=request.question,
         goals=goals,
         chunks=chunks,
@@ -362,6 +394,7 @@ def chat_stream(
     _: None = Depends(ensure_retrieval_writes_available),
 ) -> StreamingResponse:
     """동기와 같은 검색을 마친 뒤 생성 결과를 SSE로 전달한다."""
+    _require_indexed_document(db, user.id, request.document_id)
     owner_id = user.id
     session_created = request.session_id is None
     if session_created:
@@ -371,6 +404,7 @@ def chat_stream(
         session = chat_repository.get_session(db, request.session_id, owner_id)
         if session is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
+        _require_session_document(session, request.document_id)
         recent_messages = chat_repository.list_recent_messages(
             db,
             session.id,
@@ -385,6 +419,7 @@ def chat_stream(
     chunks = retrieve_chunks(
         db=db,
         owner_id=owner_id,
+        document_id=request.document_id,
         question=retrieval_plan.standalone_query,
         goals=goals,
         trace=trace,
@@ -392,6 +427,7 @@ def chat_stream(
     chunks = complete_evidence_coverage(
         db=db,
         owner_id=owner_id,
+        document_id=request.document_id,
         question=request.question,
         goals=goals,
         chunks=chunks,
@@ -403,6 +439,7 @@ def chat_stream(
         session = chat_repository.create_session(
             db,
             owner_id=owner_id,
+            document_id=request.document_id,
             title=request.question.strip()[:80] or "새 대화",
         )
         db.commit()

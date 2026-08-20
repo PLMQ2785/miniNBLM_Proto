@@ -167,9 +167,9 @@ export class ApiClient {
     return this.request(`/chat/sessions/${sessionId}`, { method: "DELETE" });
   }
 
-  // 스트리밍이 필요 없는 질문 요청을 전송한다.
-  async sendQuestion(question, sessionId = null) {
-    const payload = { question };
+  // 선택 문서 범위를 포함한 비스트리밍 질문을 전송한다.
+  async sendQuestion(question, documentId, sessionId = null) {
+    const payload = { question, document_id: documentId };
     if (sessionId !== null) payload.session_id = sessionId;
     return this.request("/chat", {
       method: "POST",
@@ -178,11 +178,10 @@ export class ApiClient {
     });
   }
 
-  // 질문을 SSE로 전송하고 이벤트별 결과를 누적해 반환한다.
-  async streamQuestion(question, sessionId = null, onEvent = null) {
-    const payload = { question };
+  // 선택 문서 범위를 포함한 질문을 SSE로 전송하고 이벤트 결과를 누적한다.
+  async streamQuestion(question, documentId, sessionId = null, onEvent = null) {
+    const payload = { question, document_id: documentId };
     if (sessionId !== null) payload.session_id = sessionId;
-
     let response;
     try {
       response = await fetch(`${this.baseUrl}/chat/stream`, {

@@ -21,10 +21,11 @@ def retrieve_hierarchical_chunks(
     question: str,
     queries: Sequence[str],
     *,
+    document_id: int | None = None,
     trace: RetrievalTrace | None = None,
     trace_stage: str = "hierarchical_fallback",
 ) -> list[RetrievedChunk]:
-    """청크 검색이 부족할 때 페이지 검색을 거쳐 겹치는 청크를 복구한다."""
+    """선택 문서의 청크 검색이 부족할 때 페이지를 거쳐 겹치는 청크를 복구한다."""
     # 페이지를 먼저 찾은 뒤 그 페이지와 겹치는 청크를 복구한다.
     search_queries = _normalize_queries(question, queries)
     per_query_results = []
@@ -34,12 +35,14 @@ def retrieve_hierarchical_chunks(
             owner_id,
             query,
             MAX_PAGE_RESULTS_PER_QUERY,
+            document_id=document_id,
         )
         substring_rows = page_repository.search_pages_by_substring(
             db,
             owner_id,
             query,
             MAX_PAGE_RESULTS_PER_QUERY,
+            document_id=document_id,
         )
         per_query_results.append(
             _fuse_page_results(

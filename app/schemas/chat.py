@@ -4,10 +4,10 @@ from pydantic import BaseModel, Field
 
 
 class ChatRequest(BaseModel):
-    """대화 API가 받는 질문과 세션 선택 경계다."""
+    """대화 API가 받는 질문·문서 범위·세션 선택 경계다."""
     question: str = Field(min_length=1)
+    document_id: int = Field(gt=0)
     session_id: int | None = Field(default=None, gt=0)
-
 
 class SourceRef(BaseModel):
     """대화 응답에서 출처 문서와 청크를 식별하는 경계다."""
@@ -21,6 +21,7 @@ class SourceRef(BaseModel):
 class ChatSessionSummary(BaseModel):
     """대화 목록 API가 반환하는 세션 요약 경계다."""
     session_id: int
+    document_id: int | None
     title: str
     created_at: datetime
     updated_at: datetime

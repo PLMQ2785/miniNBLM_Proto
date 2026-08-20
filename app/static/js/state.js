@@ -2,6 +2,7 @@
 export function createInitialState() {
   return {
     documents: [],
+    selectedDocumentId: null,
     chatSessions: [],
     activeSessionId: null,
     conversation: [],

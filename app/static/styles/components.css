@@ -487,6 +487,25 @@
   text-align: left;
 }
 
+/* 선택 문서가 질의 범위임을 행 강조와 키보드 초점으로 표시한다. */
+.document-item:not(:disabled) {
+  cursor: pointer;
+}
+
+.document-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.document-item:disabled {
+  cursor: not-allowed;
+}
+
+.document-row[data-selected="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
 .document-delete-button {
   width: 54px;
   min-height: 34px;
