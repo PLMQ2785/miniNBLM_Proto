@@ -377,6 +377,7 @@
 
 .upload-button,
 .document-refresh-button,
+.panel-collapse-button,
 .mobile-nav-button,
 .mobile-close-button,
 .source-mobile-toggle,
@@ -402,6 +403,20 @@
   padding: 0;
   font-size: 20px;
   line-height: 1;
+}
+
+.panel-collapse-button {
+  display: inline-flex;
+  width: 34px;
+  min-height: 34px;
+  padding: 0;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.panel-collapse-button:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
 }
 
 .refresh-icon {
@@ -921,6 +936,10 @@
 
 /* 모바일 컴포넌트 배치 */
 @media (max-width: 900px) {
+  .panel-collapse-button {
+    display: none;
+  }
+
   .source-close-button {
     display: inline-flex;
   }

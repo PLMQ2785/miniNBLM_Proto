@@ -234,6 +234,9 @@
               <button id="documents-refresh" class="document-refresh-button" type="button" aria-label="문서 목록 새로고침" title="문서 목록 새로고침">
                 <span class="refresh-icon" aria-hidden="true">↻</span>
               </button>
+              <button id="document-panel-collapse" class="panel-collapse-button" type="button" aria-controls="document-panel" aria-expanded="true" aria-label="문서 목록 숨기기" title="문서 목록 숨기기">
+                <span aria-hidden="true">‹</span>
+              </button>
               <button id="documents-close" class="mobile-close-button" type="button" aria-label="문서 패널 닫기">×</button>
             </div>
           </div>
@@ -278,7 +281,12 @@
               <h2 id="source-title">출처</h2>
               <span id="source-page-label" class="source-page-label"></span>
             </div>
-            <button id="source-close" class="source-close-button" type="button" aria-label="출처 닫기">×</button>
+            <div class="source-heading-actions">
+              <button id="source-panel-collapse" class="panel-collapse-button" type="button" aria-controls="source-panel" aria-expanded="true" aria-label="PDF 미리보기 숨기기" title="PDF 미리보기 숨기기">
+                <span aria-hidden="true">›</span>
+              </button>
+              <button id="source-close" class="source-close-button" type="button" aria-label="출처 닫기">×</button>
+            </div>
           </header>
           <div id="source-content" class="source-content"></div>
         </aside>

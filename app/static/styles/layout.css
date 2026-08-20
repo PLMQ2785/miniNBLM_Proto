@@ -338,8 +338,10 @@
 }
 
 .workspace {
+  --document-panel-width: minmax(248px, 280px);
+  --source-panel-width: minmax(320px, 36vw);
   display: grid;
-  grid-template-columns: minmax(248px, 280px) minmax(380px, 1fr) minmax(320px, 36vw);
+  grid-template-columns: var(--document-panel-width) minmax(380px, 1fr) var(--source-panel-width);
   height: calc(100dvh - var(--header-height));
   min-height: 0;
 }
@@ -383,7 +385,8 @@
   border-bottom: 1px solid var(--border);
 }
 
-.panel-heading-actions {
+.panel-heading-actions,
+.source-heading-actions {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -447,10 +450,37 @@
   display: none;
 }
 
+/* 데스크톱에서는 접힌 패널의 복원 버튼만 좁은 레일에 남긴다. */
+@media (min-width: 901px) {
+  .workspace.is-document-panel-collapsed {
+    --document-panel-width: 44px;
+  }
+
+  .workspace.is-source-panel-collapsed {
+    --source-panel-width: 44px;
+  }
+
+  .workspace.is-document-panel-collapsed .document-panel .panel-heading > :first-child,
+  .workspace.is-document-panel-collapsed .document-refresh-button,
+  .workspace.is-document-panel-collapsed .upload-form,
+  .workspace.is-document-panel-collapsed .document-list,
+  .workspace.is-source-panel-collapsed .source-header > :first-child,
+  .workspace.is-source-panel-collapsed .source-content {
+    display: none;
+  }
+
+  .workspace.is-document-panel-collapsed .panel-heading,
+  .workspace.is-source-panel-collapsed .source-header {
+    justify-content: center;
+    padding-right: 4px;
+    padding-left: 4px;
+  }
+}
 /* 작업공간의 태블릿·모바일 서랍 배치 */
 @media (max-width: 1100px) {
   .workspace {
-    grid-template-columns: 250px minmax(380px, 1fr) 340px;
+    --document-panel-width: 250px;
+    --source-panel-width: 340px;
   }
 }
 

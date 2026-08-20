@@ -18,6 +18,9 @@ const documentPanelRoot = byId("document-panel");
 const sourcePanelRoot = byId("source-panel");
 const backdrop = byId("drawer-backdrop");
 const appRoot = byId("app");
+const workspaceRoot = appRoot.querySelector(".workspace");
+const documentPanelCollapse = byId("document-panel-collapse");
+const sourcePanelCollapse = byId("source-panel-collapse");
 const adminRoot = byId("admin-view");
 const passwordChangeRoot = byId("password-change-view");
 const accountRoot = byId("account-view");
@@ -128,6 +131,26 @@ const controller = new AppController({
   notificationView,
 });
 
+// 데스크톱 문서 목록을 좁은 복원 레일로 접거나 원래 너비로 펼친다.
+function setDocumentPanelCollapsed(collapsed) {
+  const actionLabel = collapsed ? "문서 목록 펼치기" : "문서 목록 숨기기";
+  workspaceRoot.classList.toggle("is-document-panel-collapsed", collapsed);
+  documentPanelCollapse.setAttribute("aria-expanded", String(!collapsed));
+  documentPanelCollapse.setAttribute("aria-label", actionLabel);
+  documentPanelCollapse.title = actionLabel;
+  documentPanelCollapse.querySelector("[aria-hidden]").textContent = collapsed ? "›" : "‹";
+}
+
+// 데스크톱 PDF 미리보기를 좁은 복원 레일로 접거나 원래 너비로 펼친다.
+function setSourcePanelCollapsed(collapsed) {
+  const actionLabel = collapsed ? "PDF 미리보기 펼치기" : "PDF 미리보기 숨기기";
+  workspaceRoot.classList.toggle("is-source-panel-collapsed", collapsed);
+  sourcePanelCollapse.setAttribute("aria-expanded", String(!collapsed));
+  sourcePanelCollapse.setAttribute("aria-label", actionLabel);
+  sourcePanelCollapse.title = actionLabel;
+  sourcePanelCollapse.querySelector("[aria-hidden]").textContent = collapsed ? "‹" : "›";
+}
+
 // 모바일 서랍 상태에 맞춰 공통 배경막을 동기화한다.
 function syncBackdrop() {
   const open = documentPanelRoot.classList.contains("is-mobile-open")
@@ -150,6 +173,13 @@ function closeDrawers() {
   byId("documents-toggle").setAttribute("aria-expanded", "false");
   syncBackdrop();
 }
+
+documentPanelCollapse.addEventListener("click", () => {
+  setDocumentPanelCollapsed(!workspaceRoot.classList.contains("is-document-panel-collapsed"));
+});
+sourcePanelCollapse.addEventListener("click", () => {
+  setSourcePanelCollapsed(!workspaceRoot.classList.contains("is-source-panel-collapsed"));
+});
 
 byId("documents-toggle").addEventListener("click", openDocuments);
 byId("documents-close").addEventListener("click", closeDrawers);
