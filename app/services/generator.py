@@ -108,6 +108,7 @@ class StreamingAnswer:
             self.generated = GeneratedAnswer(answer=INSUFFICIENT_EVIDENCE_ANSWER, sources=[])
             yield INSUFFICIENT_EVIDENCE_ANSWER
             return
+        # Prompt, citation checks, and final SourceRef mapping use this same ordering.
         generation_chunks = select_generation_chunks(
             self.chunks,
             self.evidence_matrix,
@@ -119,6 +120,7 @@ class StreamingAnswer:
             self.history,
             evidence_matrix=self.evidence_matrix,
         )
+        # Hold the prefix until NO_SOURCE can be hidden without leaking marker text.
         normalizer = _StreamingSourceNormalizer()
         for raw_delta in LLMClient().stream_chat_completion(messages, operation="answer"):
             yield from normalizer.push(raw_delta)
@@ -142,6 +144,7 @@ class StreamingAnswer:
         answer = _restore_question_literal_fidelity(self.question, answer)
         answer, has_grounded_source = _normalize_source_decision(answer)
         answer = _ensure_exclusion_precondition(self.question, answer)
+        # Post-stream repairs are sent as one replacement event.
         self.revision = answer if answer != streamed_answer else None
         self.generated = GeneratedAnswer(
             answer=answer,
@@ -167,6 +170,7 @@ def generate_answer(
         return GeneratedAnswer(answer=VISUAL_EVIDENCE_LIMIT_ANSWER, sources=[])
     if _requires_clarification(question, evidence_matrix):
         return GeneratedAnswer(answer=INSUFFICIENT_EVIDENCE_ANSWER, sources=[])
+    # Keep the synchronous path on the same bounded context as streaming.
     generation_chunks = select_generation_chunks(chunks, evidence_matrix)
 
     messages = build_rag_messages(

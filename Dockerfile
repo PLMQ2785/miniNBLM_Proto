@@ -1,3 +1,4 @@
+# Lightweight API image; model and embedding runtimes live in separate services.
 FROM python:3.12-slim
 COPY --from=ghcr.io/astral-sh/uv:0.9.28 /uv /uvx /bin/
 

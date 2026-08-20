@@ -55,6 +55,7 @@ def retrieve_chunks(
     requested_limit = top_k if top_k is not None else active_preset.top_k
     algorithm = SearchAlgorithmKey(configuration.active_search_algorithm_key)
     goal_query_groups = _normalize_goal_query_groups(goals)
+    # A multi-goal question must keep room for at least one result per goal.
     result_limit = max(requested_limit, len(goal_query_groups))
     search_queries = _normalize_search_queries(
         question,
@@ -71,6 +72,7 @@ def retrieve_chunks(
             if goal_id not in goal_ids:
                 goal_ids.append(goal_id)
     rerank_enabled = algorithm in {SearchAlgorithmKey.DENSE, SearchAlgorithmKey.HYBRID}
+    # Over-fetch before semantic reranking; only the final limit reaches the prompt.
     final_candidate_limit = (
         result_limit * RERANK_CANDIDATE_MULTIPLIER if rerank_enabled else result_limit
     )
@@ -117,6 +119,7 @@ def retrieve_chunks(
                             goal_ids_by_query.get(query.casefold(), ())
                         ),
                     )
+            # Query anchors stop RRF from erasing a narrow but necessary facet.
             fused_rows = _reciprocal_rank_fusion(result_sets, final_candidate_limit)
             rows = _merge_query_anchors(
                 result_sets,
@@ -146,6 +149,7 @@ def retrieve_chunks(
                     rows=rows,
                     goal_ids=tuple(goal_id for goal_id, _ in goal_query_groups),
                 )
+        # Add local continuity only after the ranked anchors are fixed.
         rows = _expand_with_adjacent_chunks(db, owner_id, rows)
     except Exception:
         RETRIEVAL_REQUESTS.labels(algorithm=algorithm.value, status="error").inc()

@@ -82,6 +82,7 @@ redact_database_url() {
 }
 
 
+# Process environment wins over .env so orchestrators can override image defaults.
 load_config() {
   DB_PORT="${MININBLM_DB_PORT:-$(env_value MININBLM_DB_PORT 5433)}"
   DB_NAME="${NATIVE_DB_NAME:-$(env_value NATIVE_DB_NAME rag_db)}"
@@ -163,6 +164,7 @@ service_running() {
   [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null
 }
 
+# PID files track only processes started by this script.
 start_process() {
   local service="$1"
   shift
@@ -460,6 +462,7 @@ start_api() {
     --host "$API_HOST" --port "$API_PORT" --no-access-log
 }
 
+# Start dependencies first; the API is last because its readiness checks all of them.
 start_all() {
   require_command curl
   [[ -x "$NATIVE_PYTHON" ]] || {
@@ -491,6 +494,7 @@ start_all() {
   echo "비컨테이너 서비스가 준비되었습니다: http://localhost:$API_PORT/"
 }
 
+# Stop in reverse dependency order.
 stop_all() {
   local failed=false
   stop_process api || failed=true

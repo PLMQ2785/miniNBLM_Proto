@@ -14,6 +14,7 @@ from app.services.runtime_service import initialize_runtime
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Recover persisted work before the API starts accepting requests.
     configure_logging(settings.log_level)
     initialize_runtime()
     yield

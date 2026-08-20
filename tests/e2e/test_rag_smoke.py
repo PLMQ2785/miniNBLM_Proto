@@ -119,6 +119,7 @@ def test_real_pdf_embedding_retrieval_generation_and_grounding() -> None:
         upload.raise_for_status()
         document_id = upload.json()["document_id"]
 
+        # Cleanup runs even when a real model assertion fails midway.
         try:
             _wait_until_indexed(client, document_id)
 

@@ -10,6 +10,7 @@ export class PollingService {
     const task = { timerId: null, callback };
     this.tasks.set(documentId, task);
 
+    // Schedule after each callback to avoid overlapping slow requests.
     const tick = async () => {
       if (!this.tasks.has(documentId)) return;
       if (this.paused) {

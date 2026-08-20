@@ -19,6 +19,7 @@ export function createInitialState() {
   };
 }
 
+// Upserts keep server refreshes idempotent and preserve the UI's sort order.
 export function upsertChatSession(sessions, incoming) {
   const next = sessions.filter((session) => session.session_id !== incoming.session_id);
   next.push(incoming);

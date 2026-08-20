@@ -146,6 +146,7 @@ class RequestObservabilityMiddleware:
         request_id = _request_id(scope.get("headers", []))
         token = request_id_context.set(request_id)
         started_at = time.perf_counter()
+        # Exceptions keep the default 500 status for metrics and logs.
         status_code = 500
 
         async def send_with_request_id(message) -> None:

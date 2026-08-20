@@ -126,6 +126,7 @@ class Settings(BaseSettings):
     @model_validator(mode="before")
     @classmethod
     def load_llm_configuration(cls, values: object) -> object:
+        # Treat endpoint configuration errors as startup errors, not runtime fallbacks.
         if not isinstance(values, dict) or values.get("llm_configuration") is not None:
             return values
         path = Path(values.get("llm_endpoints_file", "config/llm-endpoints.json")).expanduser()
@@ -145,6 +146,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_request_body_limit(self) -> "Settings":
+        # Multipart metadata needs a little room above the raw PDF limit.
         if self.max_request_body_bytes <= self.max_upload_bytes:
             raise ValueError("MAX_REQUEST_BODY_BYTES must be greater than MAX_UPLOAD_BYTES")
         return self

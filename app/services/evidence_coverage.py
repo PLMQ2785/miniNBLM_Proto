@@ -111,6 +111,7 @@ def assess_evidence_coverage(
                 operation="evidence_coverage_repair",
                 response_format=JSON_OBJECT_RESPONSE_FORMAT,
             )
+            # Unknown IDs are never matched by position; an unchecked matrix is safer.
             try:
                 assessment = _parse_coverage_response(repaired, goals, chunks)
             except (TypeError, ValueError, json.JSONDecodeError):
@@ -142,6 +143,7 @@ def complete_evidence_coverage(
         return chunks
 
     current_chunks = chunks
+    # Hierarchical fallback and targeted retries share one bounded action budget.
     actions = 0
     if not current_chunks:
         hierarchy_queries = tuple(query for goal in goals for query in goal.queries)
@@ -187,6 +189,7 @@ def complete_evidence_coverage(
         RETRIEVAL_RETRIES.labels(
             status="success" if supplemental else "empty"
         ).inc()
+        # Empty retries preserve the context already found.
         current_chunks = _merge_retry_chunks(current_chunks, supplemental)
         assessment = assess_evidence_coverage(goals, current_chunks)
         _record_assessment(trace, actions, goals, assessment)

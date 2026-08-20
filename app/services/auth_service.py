@@ -85,6 +85,7 @@ def register(db: Session, username: str, password: str) -> AuthenticatedSession:
 
 def login(db: Session, username: str, password: str) -> AuthenticatedSession:
     user = user_repository.get_user_by_username(db, username)
+    # Verify a real hash even for unknown users to reduce username timing leaks.
     candidate_hash = user.password_hash if user is not None and user.is_active else dummy_password_hash
     try:
         password_valid = password_hash.verify(password, candidate_hash)

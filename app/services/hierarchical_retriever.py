@@ -24,6 +24,7 @@ def retrieve_hierarchical_chunks(
     trace: RetrievalTrace | None = None,
     trace_stage: str = "hierarchical_fallback",
 ) -> list[RetrievedChunk]:
+    # Fall back to page search first, then recover chunks that overlap those pages.
     search_queries = _normalize_queries(question, queries)
     per_query_results = []
     for query in search_queries:
@@ -46,6 +47,7 @@ def retrieve_hierarchical_chunks(
             )
         )
 
+    # Keep each query's best page so broad RRF results cannot erase a narrow facet.
     pages = _merge_page_anchors(
         per_query_results,
         _fuse_page_results(per_query_results, MAX_PAGE_CANDIDATES),

@@ -37,6 +37,7 @@ def get_document(
     *,
     for_update: bool = False,
 ) -> Document | None:
+    # Ownership and soft-delete checks belong in the query, not only the router.
     statement = select(Document).where(
         Document.id == document_id,
         Document.owner_id == owner_id,

@@ -15,6 +15,7 @@ from app.models.user import User
 from app.services.auth_service import password_hash
 
 
+# Never let a misconfigured test command truncate a developer database.
 def _assert_isolated_test_database() -> None:
     if (
         os.environ.get("MININBLM_TEST_DATABASE") != "1"
@@ -36,6 +37,7 @@ def _reset_mutable_data() -> None:
                 "document_pages, reindex_jobs, documents, users RESTART IDENTITY CASCADE"
             )
         )
+        # Built-in retrieval rows persist across tests, so reset their mutable singleton.
         connection.execute(
             text(
                 "UPDATE retrieval_configuration SET "

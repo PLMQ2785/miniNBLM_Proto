@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Measure retrieval quality without touching the application database.
 
 set -Eeuo pipefail
 

@@ -25,6 +25,7 @@ def get_current_user(user: User = Depends(get_authenticated_user)) -> User:
 async def get_current_user_with_language_model(
     user: User = Depends(get_current_user),
 ) -> AsyncGenerator[User, None]:
+    # Nested LLM clients read this request-local endpoint from a ContextVar.
     endpoint_key = language_model_service.get_user_endpoint_key(user)
     with language_model_service.use_endpoint(endpoint_key):
         yield user

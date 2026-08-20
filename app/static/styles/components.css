@@ -1,3 +1,4 @@
+/* Visual states for controls, messages, and panels. */
 .auth-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;

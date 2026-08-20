@@ -46,6 +46,7 @@ class RetrievalEvaluationFixture(BaseModel):
         if len(case_ids) != len(set(case_ids)):
             raise ValueError("Evaluation case IDs must be unique")
 
+        # Schema v2 makes each evidence facet and required claim explicit.
         if self.schema_version == 2:
             incomplete_cases = [
                 case.case_id
@@ -77,6 +78,7 @@ class RetrievalEvaluationFixture(BaseModel):
             case_sources = {
                 (source.document, source.page) for source in case.relevant_sources
             }
+            # Facet ground truth must cover exactly the case-level source set.
             if facet_sources and facet_sources != case_sources:
                 raise ValueError(
                     f"Evidence facet sources must match relevant sources in case: {case.case_id}"

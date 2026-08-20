@@ -111,6 +111,7 @@ else
   }
 fi
 
+# Build in a private staging directory and publish with one final rename.
 mkdir -p "$BACKUP_DIR"
 staging_dir="$(mktemp -d "$BACKUP_DIR/.backup-staging.XXXXXX")"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -146,6 +147,7 @@ fi
 echo "PostgreSQL을 백업합니다."
 dump_database >"$staging_dir/database.dump"
 
+# Refuse symlinks so a backup cannot escape the upload tree.
 echo "업로드 PDF를 백업합니다."
 if [[ -d "$UPLOADS_DIR" ]]; then
   if find "$UPLOADS_DIR" -type l -print -quit | grep . >/dev/null; then

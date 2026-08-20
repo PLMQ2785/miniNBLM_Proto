@@ -1,3 +1,4 @@
+# vLLM image with the minimal Gemma 4 quantization compatibility patch.
 FROM vllm/vllm-openai:v0.25.0
 
 USER root

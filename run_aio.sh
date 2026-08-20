@@ -59,6 +59,7 @@ ensure_environment_file() {
   fi
 }
 
+# Validate secrets and model sources before pulling or starting a large image.
 validate_start_configuration() {
   local password model_source model_repository model_path
   local admin_username admin_password normalized_username normalized_password
@@ -134,6 +135,7 @@ container_state() {
   docker inspect --format '{{.State.Status}}' "$container_id" 2>/dev/null || printf 'unknown'
 }
 
+# Readiness is checked inside the host-network container, not through a public proxy.
 wait_for_ready() {
   local deadline=$((SECONDS + STARTUP_TIMEOUT))
   local next_notice=$SECONDS

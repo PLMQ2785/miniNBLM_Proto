@@ -173,6 +173,7 @@ function stopAdminRefresh() {
 }
 
 async function refreshAdminState() {
+  // Poll only while maintenance work is active.
   stopAdminRefresh();
   try {
     const state = await apiClient.getRetrievalAdminState();
@@ -234,6 +235,7 @@ async function enterWorkspace(user) {
   } catch (error) {
     notificationView.showError(`언어모델 설정을 불러오지 못했습니다: ${error.message}`);
   }
+  // Keep one controller instance; later view changes only refresh its state.
   if (!controllerStarted) {
     controllerStarted = true;
     await controller.start();

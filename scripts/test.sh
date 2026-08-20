@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Run fast tests against a disposable PostgreSQL project.
 
 set -Eeuo pipefail
 

@@ -19,6 +19,7 @@ export class DocumentPanel {
     this.refreshButton.addEventListener("click", () => {
       if (this.refreshHandler) this.refreshHandler();
     });
+    // Delegate row actions because the document list is rendered from scratch.
     this.listRoot.addEventListener("click", (event) => {
       const refreshButton = event.target.closest("[data-refresh-documents]");
       if (refreshButton && this.refreshHandler) {

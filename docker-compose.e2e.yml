@@ -1,3 +1,4 @@
+# Real-model E2E uses isolated API/DB ports and a disposable upload directory.
 services:
   db-e2e:
     image: pgvector/pgvector:pg17

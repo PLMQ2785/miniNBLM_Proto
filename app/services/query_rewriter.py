@@ -71,6 +71,7 @@ def plan_retrieval_queries(question: str, history: list[dict[str, str]]) -> Retr
         )
         return _normalize_query_plan(rewritten, original_question)
     except Exception:
+        # A second model call repairs shape only; it does not invent a new answer.
         logger.warning("Retrieval query planning failed; attempting one format repair")
 
     try:
@@ -145,6 +146,7 @@ def _normalize_rewritten_query(rewritten: str, fallback: str) -> str:
     return (candidate or fallback)[:MAX_RETRIEVAL_QUERY_CHARS].rstrip()
 
 
+# Gemma occasionally corrupts key names or nests one goal; salvage only clear cases.
 def _goal_object(raw_goal: dict) -> dict:
     has_goal_fields = any(
         key.casefold().startswith(("goal", "description", "quer"))
@@ -225,6 +227,7 @@ def _normalize_query_plan(response: str, fallback: str) -> RetrievalQueryPlan:
 
     if not parsed_goals:
         raise ValueError("At least one evidence goal is required")
+    # Give every goal one query before spending the remaining shared query budget.
     allocated = [[queries[0]] for _, _, queries in parsed_goals]
     remaining_query_slots = MAX_RETRIEVAL_QUERIES - 1 - len(allocated)
     query_offset = 1

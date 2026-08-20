@@ -191,7 +191,7 @@ export class ApiClient {
     const decoder = new TextDecoder();
     let buffer = "";
     let completed = false;
-
+    // Network chunks do not align with SSE blocks, so keep the unfinished tail.
     const processBlock = (block) => {
       if (!block.trim()) return;
       let event = "message";
@@ -207,8 +207,10 @@ export class ApiClient {
       }
       if (event === "session") result.session = data;
       else if (event === "delta") result.answer += data.text || "";
-      else if (event === "revision") result.answer = data.text || "";
-      else if (event === "sources") result.sources = data;
+      else if (event === "revision") {
+        // Citation repair can replace the complete answer after token streaming.
+        result.answer = data.text || "";
+      } else if (event === "sources") result.sources = data;
       else if (event === "done") {
         result.session = data.session || result.session;
         completed = true;

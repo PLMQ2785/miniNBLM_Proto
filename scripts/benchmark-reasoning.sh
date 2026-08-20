@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Run repeated reasoning cases over the read-only sample corpus.
 
 set -Eeuo pipefail
 

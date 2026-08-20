@@ -77,6 +77,7 @@ wait_for_endpoint() {
   echo " 완료"
 }
 
+# Fail early when the configured model mount is incomplete.
 ensure_environment() {
   require_command docker
   docker compose version >/dev/null

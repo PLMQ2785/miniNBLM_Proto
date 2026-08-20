@@ -111,6 +111,7 @@ def list_owned_documents_for_update(db: Session, user_id: int) -> list[tuple[int
 
 
 def delete_user_and_owned_data(db: Session, user: User, document_ids: list[int]) -> None:
+    # Delete dependents explicitly; several relationships are intentionally workspace-wide.
     session_ids = list(
         db.scalars(select(ChatSession.id).where(ChatSession.owner_id == user.id))
     )

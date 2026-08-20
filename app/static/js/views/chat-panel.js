@@ -38,6 +38,7 @@ export class ChatPanel {
         this.form.requestSubmit();
       }
     });
+    // Delegate clicks because message rows are replaced on every render.
     this.messageList.addEventListener("click", (event) => {
       const loadOlderButton = event.target.closest("[data-load-older-messages]");
       if (loadOlderButton && this.loadOlderHandler) {

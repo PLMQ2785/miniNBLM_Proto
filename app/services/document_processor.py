@@ -51,6 +51,7 @@ def process_document(
         if preset is None:
             raise ValueError(f"Unknown retrieval preset: {preset_key}")
 
+        # Reindexing replaces derived pages and chunks, never the original PDF.
         if reset_existing:
             chat_repository.delete_sessions_for_document(db, document.id)
             chunk_repository.delete_chunks(db, document.id)
@@ -63,6 +64,7 @@ def process_document(
         owner = user_repository.get_user_by_id(db, document.owner_id)
         if owner is None:
             raise ValueError("Document owner not found")
+        # Vision captions use the document owner's selected endpoint.
         endpoint_key = language_model_service.get_user_endpoint_key(owner)
         with language_model_service.use_endpoint(endpoint_key):
             pages = enrich_pages_with_vision_captions(document.file_path, pages)
@@ -84,9 +86,11 @@ def process_document(
 
         document_repository.update_index_metadata(db, document, preset_key, index_version)
         document_repository.update_status(db, document, "indexed")
+        # Pages, chunks, and final status become visible together.
         db.commit()
         return True
     except Exception as exc:
+        # Keep a durable failure reason for polling and restart recovery.
         db.rollback()
         document = document_repository.get_document_by_id(db, document_id)
         if document is not None:
