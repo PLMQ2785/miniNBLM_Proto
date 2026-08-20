@@ -33,11 +33,14 @@ def _wait_until_indexed(client: httpx.Client, document_id: int, timeout: float =
     pytest.fail(f"Document {document_id} was not indexed within {timeout:.0f}s")
 
 
-def _ask(client: httpx.Client, document_id: int, question: str) -> dict:
-    """선택 문서 범위의 실제 비스트리밍 답변이 비어 있지 않은지 확인한다."""
+def _ask(client: httpx.Client, document_id: int | None, question: str) -> dict:
+    """전체 또는 선택 문서 범위의 실제 비스트리밍 답변을 확인한다."""
+    payload = {"question": question}
+    if document_id is not None:
+        payload["document_id"] = document_id
     response = client.post(
         "/chat",
-        json={"document_id": document_id, "question": question},
+        json=payload,
         timeout=180.0,
     )
     response.raise_for_status()
@@ -46,8 +49,8 @@ def _ask(client: httpx.Client, document_id: int, question: str) -> dict:
     return payload
 
 
-def _ask_stream(client: httpx.Client, document_id: int, question: str) -> dict:
-    """선택 문서 범위의 SSE 이벤트를 조립하고 완료·분할 전송 계약을 확인한다."""
+def _ask_stream(client: httpx.Client, document_id: int | None, question: str) -> dict:
+    """전체 또는 선택 문서 범위의 SSE 완료·분할 전송 계약을 확인한다."""
     answer_parts: list[str] = []
     sources: list[dict] = []
     session: dict | None = None
@@ -55,10 +58,14 @@ def _ask_stream(client: httpx.Client, document_id: int, question: str) -> dict:
     event = "message"
     delta_count = 0
 
+    request_payload = {"question": question}
+    if document_id is not None:
+        request_payload["document_id"] = document_id
+
     with client.stream(
         "POST",
         "/chat/stream",
-        json={"document_id": document_id, "question": question},
+        json=request_payload,
         timeout=180.0,
     ) as response:
         response.raise_for_status()
@@ -143,7 +150,7 @@ def test_real_pdf_embedding_retrieval_generation_and_grounding() -> None:
 
             grounded = _ask_stream(
                 client,
-                document_id,
+                None,
                 "이 자료에서 고위험군을 나타내는 가상의 표식은 무엇인가?",
             )
             assert "청록색" in grounded["answer"]

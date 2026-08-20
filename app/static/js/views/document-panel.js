@@ -29,6 +29,11 @@ export class DocumentPanel {
         this.refreshHandler();
         return;
       }
+      const allDocumentsButton = event.target.closest("[data-select-all-documents]");
+      if (allDocumentsButton && this.selectHandler) {
+        this.selectHandler(null);
+        return;
+      }
       const deleteButton = event.target.closest("[data-delete-document-id]");
       if (deleteButton && this.deleteHandler) {
         this.deleteHandler(Number(deleteButton.dataset.deleteDocumentId));
@@ -96,6 +101,11 @@ export class DocumentPanel {
       return;
     }
 
+    const indexedCount = documents.filter((documentSummary) => (
+      documentSummary.status === "indexed"
+    )).length;
+    this.listRoot.append(this.allDocumentsRow(indexedCount, selectedDocumentId === null));
+
     for (const documentSummary of documents) {
       const row = document.createElement("div");
       row.className = "document-row";
@@ -150,6 +160,34 @@ export class DocumentPanel {
       row.append(item, deleteButton);
       this.listRoot.append(row);
     }
+  }
+
+  // 선택이 없는 전체 문서 범위를 목록의 명시적인 첫 항목으로 만든다.
+  allDocumentsRow(indexedCount, isSelected) {
+    const row = document.createElement("div");
+    row.className = "document-row document-scope-row";
+    row.dataset.selected = String(isSelected);
+
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "document-item";
+    item.dataset.selectAllDocuments = "true";
+    item.dataset.selected = String(isSelected);
+    item.disabled = indexedCount === 0;
+    item.setAttribute("aria-pressed", String(isSelected));
+    item.setAttribute("aria-label", "전체 문서를 질의 대상으로 선택");
+
+    const title = document.createElement("span");
+    title.className = "document-title";
+    title.textContent = "전체 문서";
+
+    const meta = document.createElement("span");
+    meta.className = "document-meta document-scope-meta";
+    meta.textContent = `인덱싱 완료 ${indexedCount}개`;
+
+    item.append(title, meta);
+    row.append(item);
+    return row;
   }
 
   // 문서 목록의 빈 상태 안내 요소를 만든다.

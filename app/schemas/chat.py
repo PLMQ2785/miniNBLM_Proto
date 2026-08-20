@@ -4,9 +4,9 @@ from pydantic import BaseModel, Field
 
 
 class ChatRequest(BaseModel):
-    """대화 API가 받는 질문·문서 범위·세션 선택 경계다."""
+    """대화 API가 받는 질문·선택 문서·세션 경계다."""
     question: str = Field(min_length=1)
-    document_id: int = Field(gt=0)
+    document_id: int | None = Field(default=None, gt=0)
     session_id: int | None = Field(default=None, gt=0)
 
 class SourceRef(BaseModel):

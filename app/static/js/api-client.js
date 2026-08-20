@@ -167,9 +167,10 @@ export class ApiClient {
     return this.request(`/chat/sessions/${sessionId}`, { method: "DELETE" });
   }
 
-  // 선택 문서 범위를 포함한 비스트리밍 질문을 전송한다.
+  // 선택 문서가 있으면 범위를 포함하고 없으면 전체 대상으로 질문을 전송한다.
   async sendQuestion(question, documentId, sessionId = null) {
-    const payload = { question, document_id: documentId };
+    const payload = { question };
+    if (documentId !== null) payload.document_id = documentId;
     if (sessionId !== null) payload.session_id = sessionId;
     return this.request("/chat", {
       method: "POST",
@@ -178,9 +179,10 @@ export class ApiClient {
     });
   }
 
-  // 선택 문서 범위를 포함한 질문을 SSE로 전송하고 이벤트 결과를 누적한다.
+  // 선택 문서가 있으면 범위를 포함한 질문을 SSE로 전송하고 결과를 누적한다.
   async streamQuestion(question, documentId, sessionId = null, onEvent = null) {
-    const payload = { question, document_id: documentId };
+    const payload = { question };
+    if (documentId !== null) payload.document_id = documentId;
     if (sessionId !== null) payload.session_id = sessionId;
     let response;
     try {
