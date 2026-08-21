@@ -80,7 +80,7 @@ image layer에서 제외되어 12B·31B image는 런타임 코드 차이만 가�
 직접 다운로드 URL과 SHA-256을 `.env.all-in-one-31b`에 설정합니다. 기존 checkpoint의
 10개 Safetensors weight 합은 `19,073,960,528` bytes입니다. 모델은 첫 실행에서
 `/data/models/gemma4`에 설치되고 이후 재사용됩니다.
-배포 image는 `cpsu/mininblm:0.1.4-gemma4-31b-w4a16`이며 12B `0.1.4`와 동일하게
+배포 image는 `cpsu/mininblm:0.1.5-gemma4-31b-w4a16`이며 12B `0.1.5`와 동일하게
 Hugging Face snapshot downloader와 소유권 변경 제한 storage 대응을 포함합니다.
 현재 Google Drive의 `gemma-4-31B-it-W4A16.tar` archive SHA-256은
 `1a28093ac67542780473b4c74f659fb3988d7c69e1fbf974772b2ab94c0f6ebf`입니다.
@@ -92,7 +92,7 @@ cp .env.all-in-one-31b.example .env.all-in-one-31b
 # 이미지 build만 수행
 docker compose --env-file .env.all-in-one-31b \
   -f docker-compose.all-in-one.yml build mininblm
-docker push cpsu/mininblm:0.1.4-gemma4-31b-w4a16
+docker push cpsu/mininblm:0.1.5-gemma4-31b-w4a16
 
 # 배포 서버에서 실행
 AIO_ENV_FILE=.env.all-in-one-31b ./run_aio.sh --no-build
@@ -106,13 +106,13 @@ AIO_ENV_FILE=.env.all-in-one-31b ./run_aio.sh --no-build
 ```bash
 docker compose --env-file .env.all-in-one \
   -f docker-compose.all-in-one.yml build mininblm
-docker tag cpsu/mininblm:0.1.4 cpsu/mininblm:0.1.4-gemma4-12b-w4a16
+docker tag cpsu/mininblm:0.1.5 cpsu/mininblm:0.1.5-gemma4-12b-w4a16
 docker login
-docker push cpsu/mininblm:0.1.4
-docker push cpsu/mininblm:0.1.4-gemma4-12b-w4a16
+docker push cpsu/mininblm:0.1.5
+docker push cpsu/mininblm:0.1.5-gemma4-12b-w4a16
 
 # 배포 서버의 .env.all-in-one에서 같은 image를 지정
-export MININBLM_ALL_IN_ONE_IMAGE=cpsu/mininblm:0.1.4
+export MININBLM_ALL_IN_ONE_IMAGE=cpsu/mininblm:0.1.5
 ./run_aio.sh --no-build
 ```
 

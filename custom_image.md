@@ -53,16 +53,14 @@ Persistent application data: /data
 
 ## 2. Docker Hub 게시
 
-현재 release namespace는 `cpsu/mininblm`입니다. 12B·31B `0.1.3` compatibility
-tag와 `0.1.4` release tag는 모두 `VLLM_MAX_MODEL_LEN=16384`로 build합니다.
+현재 release namespace는 `cpsu/mininblm`입니다. 12B·31B `0.1.5` release
+tag는 모두 `VLLM_MAX_MODEL_LEN=16384`로 build합니다.
 
 ```bash
 docker login
-docker push cpsu/mininblm:0.1.3-gemma4-12b-w4a16
-docker push cpsu/mininblm:0.1.3-gemma4-31b-w4a16
-docker push cpsu/mininblm:0.1.4
-docker push cpsu/mininblm:0.1.4-gemma4-12b-w4a16
-docker push cpsu/mininblm:0.1.4-gemma4-31b-w4a16
+docker push cpsu/mininblm:0.1.5
+docker push cpsu/mininblm:0.1.5-gemma4-12b-w4a16
+docker push cpsu/mininblm:0.1.5-gemma4-31b-w4a16
 ```
 
 Vast.ai Template에 `VLLM_MAX_MODEL_LEN`이 있으면 image 기본값보다 우선합니다.
@@ -213,13 +211,13 @@ python3 -m json.tool /data/config/llm-endpoints.json >/dev/null
 ### Image
 
 ```text
-cpsu/mininblm:0.1.4
+cpsu/mininblm:0.1.5
 ```
 
 또는 retag한 image:
 
 ```text
-<dockerhub-user>/mininblm:0.1.4-gemma4-12b-w4a16
+<dockerhub-user>/mininblm:0.1.5-gemma4-12b-w4a16
 ```
 
 ### RunPod Raw 환경변수 전체 목록
@@ -287,13 +285,13 @@ Bootstrap 두 변수는 일회성 테스트에서 유지해도 되며, 장기 �
 ### Image
 
 ```text
-cpsu/mininblm:0.1.4-gemma4-31b-w4a16
+cpsu/mininblm:0.1.5-gemma4-31b-w4a16
 ```
 
 또는 retag한 image:
 
 ```text
-<dockerhub-user>/mininblm:0.1.4-gemma4-31b-w4a16
+<dockerhub-user>/mininblm:0.1.5-gemma4-31b-w4a16
 ```
 
 ### RunPod Raw 환경변수 전체 목록
