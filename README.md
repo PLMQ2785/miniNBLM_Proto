@@ -212,6 +212,8 @@ snapshot을 계속 사용합니다. 삭제되거나 비활성화된 endpoint를 
 mount합니다. Secret 파일은 기본적으로 `./data/secrets/llm`에 둡니다. 통합
 컨테이너에서는 endpoint JSON과 secret 파일이 각각
 `/data/config/llm-endpoints.json`, `/data/secrets/llm`에 영속화됩니다.
+통합 컨테이너는 persisted endpoint 파일이 없거나 0 byte이면 이미지 기본 설정을
+복구합니다. 내용이 있는 운영자 파일은 검증에 실패해도 자동으로 덮어쓰지 않습니다.
 
 기존 일반 계정을 추가 관리자로 지정할 때는 CLI를 사용합니다.
 
