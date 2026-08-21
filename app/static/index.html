@@ -158,6 +158,60 @@
         </section>
 
 
+        <section class="algorithm-section" aria-labelledby="language-model-admin-heading">
+          <div class="admin-section-heading llm-admin-heading">
+            <div>
+              <p class="panel-eyebrow">LANGUAGE MODEL ENDPOINTS</p>
+              <h2 id="language-model-admin-heading">언어모델 Endpoint</h2>
+            </div>
+            <span id="llm-config-revision" class="algorithm-change-note"></span>
+          </div>
+          <p class="admin-section-note">
+            Endpoint 정보는 <code>llm-endpoints.json</code>에 원자적으로 저장됩니다. API key 자체는 저장하지 않고 암호화해 관리합니다.
+          </p>
+          <p id="llm-reload-error" class="admin-error" role="alert"></p>
+          <div id="llm-endpoint-list" class="llm-endpoint-grid"></div>
+          <form id="llm-endpoint-form" class="llm-endpoint-form">
+            <label for="llm-endpoint-key">
+              <span>Key</span>
+              <input id="llm-endpoint-key" type="text" minlength="1" maxlength="64" pattern="[a-z0-9][a-z0-9_.\-]*" autocomplete="off" required>
+            </label>
+            <label for="llm-endpoint-display-name">
+              <span>표시 이름</span>
+              <input id="llm-endpoint-display-name" type="text" minlength="1" maxlength="128" required>
+            </label>
+            <label for="llm-endpoint-base-url">
+              <span>Base URL</span>
+              <input id="llm-endpoint-base-url" type="url" maxlength="2048" placeholder="http://127.0.0.1:8010/v1" required>
+            </label>
+            <label for="llm-endpoint-model">
+              <span>Model ID</span>
+              <input id="llm-endpoint-model" type="text" minlength="1" maxlength="256" required>
+            </label>
+            <label for="llm-endpoint-authentication">
+              <span>인증</span>
+              <select id="llm-endpoint-authentication" required>
+                <option value="managed">API key 관리</option>
+                <option value="none">인증 없음</option>
+              </select>
+            </label>
+            <label for="llm-endpoint-api-key">
+              <span>API key</span>
+              <input id="llm-endpoint-api-key" type="password" maxlength="8192" autocomplete="new-password">
+              <small id="llm-endpoint-api-key-note"></small>
+            </label>
+            <div class="llm-endpoint-checks">
+              <label><input id="llm-endpoint-supports-vision" type="checkbox"> Vision 지원</label>
+              <label><input id="llm-endpoint-enabled" type="checkbox" checked> 활성</label>
+            </div>
+            <div class="llm-endpoint-form-actions">
+              <button id="llm-endpoint-submit" type="submit">Endpoint 연결 확인 후 추가</button>
+              <button id="llm-endpoint-cancel" type="button" hidden>편집 취소</button>
+            </div>
+            <p id="llm-endpoint-message" class="admin-error" role="status"></p>
+          </form>
+        </section>
+
         <section class="algorithm-section" aria-labelledby="password-reset-heading">
           <div class="admin-section-heading">
             <p class="panel-eyebrow">USER SECURITY</p>

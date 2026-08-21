@@ -32,9 +32,9 @@ UI는 API 서비스가 정적 파일로 제공하므로 별도 프런트엔드 �
 API가 사용할 OpenAI 호환 모델 endpoint는 `config/llm-endpoints.json`에 등록합니다.
 `default_endpoint`는 사용자가 아직 선택하지 않았거나 등록 endpoint가 사라졌을 때의
 fallback key입니다. 각 endpoint는 `key`, `display_name`, `base_url`, `model`,
-`supports_vision`과 `api_key` 또는 `api_key_env` 중 하나를 가집니다. 로그인한 모든
-사용자는 작업공간 상단의 **언어모델** 선택 메뉴에서 자신의 endpoint를 전환할 수
-있으며 선택은 PostgreSQL에 저장됩니다. JSON을 변경한 뒤에는 API를 재시작합니다.
+`supports_vision`, `authentication`을 가집니다. 로그인한 모든 사용자는 작업공간
+상단의 **언어모델** 선택 메뉴에서 자신의 endpoint를 전환할 수 있으며 선택은
+PostgreSQL에 저장됩니다. 유효한 JSON 변경은 다음 요청부터 자동 적용됩니다.
 
 Docker 실행의 기본 `VISION_CAPTION_MODE=disabled`는 검증된 text-only 경로를
 유지합니다. `risk_only`는 텍스트만으로 불완전한 페이지, 표, 도형이 많은 mixed
@@ -172,6 +172,52 @@ PDF의 해당 페이지가 열립니다. 대화는 전체 또는 선택 문서 �
 관리자는 `관리` 화면에서 일반 사용자의 임시 비밀번호를 설정할 수 있습니다.
 재설정 즉시 해당 사용자의 모든 로그인 세션이 폐기되며, 사용자는 임시 비밀번호로
 로그인한 뒤 새 비밀번호로 변경해야 문서와 채팅에 접근할 수 있습니다.
+
+관리자는 같은 `관리` 화면에서 OpenAI 호환 LLM endpoint를 추가·편집·삭제하고
+기본값을 지정할 수 있습니다. `config/llm-endpoints.json`이 유일한 endpoint
+원본이며 DB에는 사용자별 선택 key만 저장됩니다. 관리자 저장은 최신 파일
+revision을 확인한 뒤 임시 파일과 원자적 rename으로 반영됩니다. 활성 endpoint는
+저장 전에 `/models` 응답에 설정한 model ID가 있는지 검증합니다.
+
+API는 새 요청마다 JSON과 credential master key의 변경을 확인합니다. 변경된 설정은
+다음 요청부터 적용되며 이미 진행 중인 채팅·문서 처리는 시작할 때 고정한 endpoint
+snapshot을 계속 사용합니다. 삭제되거나 비활성화된 endpoint를 선택했던 사용자는
+다음 요청에서 기본 endpoint를 사용합니다. 다른 사용자의 선택 목록은 Web UI를
+새로고침하면 갱신됩니다.
+
+인증이 필요 없는 endpoint는 `authentication`을 `none`으로 지정합니다. 인증이
+필요하면 관리 화면에서 `managed`를 선택하고 API key를 입력합니다. API는 key를
+자동 생성한 Fernet master key로 암호화하며 endpoint JSON에는
+`api_key_ciphertext`만 저장합니다. 평문 key와 암호문은 관리 API 응답이나 Web UI에
+노출되지 않습니다. 편집할 때 API key를 비워 두면 기존 credential을 유지하고 새
+값을 입력하면 교체합니다.
+
+```json
+{
+  "default_endpoint": "remote",
+  "endpoints": [
+    {
+      "key": "remote",
+      "display_name": "Remote model",
+      "base_url": "https://llm.example/v1",
+      "authentication": "none",
+      "model": "remote-model",
+      "supports_vision": false,
+      "enabled": true
+    }
+  ]
+}
+```
+
+기본 Docker 구성은 `./config` 디렉터리를 API의 `/app/config`에 쓰기 가능하게
+mount합니다. Credential master key는 기본적으로
+`./data/secrets/llm/master.key`에 0600 권한으로 자동 생성됩니다. 통합
+컨테이너에서는 endpoint JSON과 master key가 각각
+`/data/config/llm-endpoints.json`, `/data/secrets/llm/master.key`에 영속화됩니다.
+통합 컨테이너는 persisted endpoint 파일이 없거나 0 byte이면 이미지 기본 설정을
+복구합니다. 내용이 있는 운영자 파일은 검증에 실패해도 자동으로 덮어쓰지 않습니다.
+암호화된 credential이 있는 상태에서 master key를 잃으면 안전을 위해 설정 로드가
+실패하므로 endpoint JSON과 master key를 함께 백업해야 합니다.
 
 기존 일반 계정을 추가 관리자로 지정할 때는 CLI를 사용합니다.
 

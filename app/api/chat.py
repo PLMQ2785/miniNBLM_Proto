@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.config import LLMEndpoint
 from app.database import SessionLocal
 from app.dependencies import ensure_retrieval_writes_available, get_current_user, get_current_user_with_language_model, get_db
 from app.models.chat import ChatMessage, ChatSession
@@ -179,7 +180,7 @@ def _chat_event_stream(
     history: list[dict[str, str]],
     trace: RetrievalTrace,
     evidence_matrix,
-    endpoint_key: str,
+    endpoint: LLMEndpoint,
 ):
     """생성 델타·revision·출처·완료를 보내고 최종 교환을 별도 세션에 저장한다."""
     # 스트림은 요청 DB 세션보다 오래 살아 각 DB 단계가 자체 세션을 연다.
@@ -199,7 +200,7 @@ def _chat_event_stream(
         stream_iterator = iter(streamed)
         while True:
             try:
-                with language_model_service.use_endpoint(endpoint_key):
+                with language_model_service.use_endpoint(endpoint):
                     delta = next(stream_iterator)
             except StopIteration:
                 break
@@ -448,7 +449,7 @@ def chat_stream(
         db.refresh(session)
 
     stream_session_id = session.id
-    endpoint_key = language_model_service.get_user_endpoint_key(user)
+    endpoint = language_model_service.get_user_endpoint(user)
     # 생성기는 요청 범위 DB 세션을 닫은 뒤 실행된다.
     db.close()
     return StreamingResponse(
@@ -461,7 +462,7 @@ def chat_stream(
             history=history,
             trace=trace,
             evidence_matrix=evidence_matrix,
-            endpoint_key=endpoint_key,
+            endpoint=endpoint,
         ),
         media_type="text/event-stream",
         headers={

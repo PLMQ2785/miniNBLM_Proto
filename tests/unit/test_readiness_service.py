@@ -1,7 +1,9 @@
+from types import SimpleNamespace
 import httpx
 import pytest
 from sqlalchemy.exc import OperationalError
 
+from app.config import LLMEndpoint
 from app.services import readiness_service
 
 
@@ -48,6 +50,18 @@ def test_llm_check_requires_the_configured_model(monkeypatch: pytest.MonkeyPatch
         200,
         request=httpx.Request("GET", "http://llm/v1/models"),
         json={"data": [{"id": "another-model"}]},
+    )
+    endpoint = LLMEndpoint(
+        key="primary",
+        display_name="Primary",
+        base_url="http://llm/v1",
+        api_key="key",
+        model="configured-model",
+    )
+    monkeypatch.setattr(
+        readiness_service.language_model_service,
+        "get_snapshot",
+        lambda: SimpleNamespace(default_endpoint=endpoint),
     )
     monkeypatch.setattr(readiness_service.httpx, "get", lambda *args, **kwargs: response)
 

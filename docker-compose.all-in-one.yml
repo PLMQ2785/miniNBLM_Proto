@@ -34,7 +34,7 @@ services:
       MODEL_HF_REVISION: ${MODEL_HF_REVISION:-}
       MODEL_KEEP_ARCHIVE: ${MODEL_KEEP_ARCHIVE:-false}
       LLM_ENDPOINTS_FILE: /data/config/llm-endpoints.json
-      XAI_API_KEY: ${XAI_API_KEY:-}
+      LLM_MASTER_KEY_FILE: /data/secrets/llm/master.key
       VISION_CAPTION_MODE: ${VISION_CAPTION_MODE:-disabled}
       VISION_CAPTION_DPI: ${VISION_CAPTION_DPI:-144}
       VISION_CAPTION_VERSION: ${VISION_CAPTION_VERSION:-gemma4-page-caption-v1}
@@ -47,7 +47,6 @@ services:
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
     volumes:
       - mininblm_data:/data
-      - ${MININBLM_LLM_CONFIG_FILE:-./config/llm-endpoints.json}:/data/config/llm-endpoints.json:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/ready >/dev/null"]
       interval: 15s

@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import admin_retrieval, admin_users, auth, chat, documents, health, language_models, metrics
+from app.api import admin_language_models, admin_retrieval, admin_users, auth, chat, documents, health, language_models, metrics
 from app.config import settings
 from app.observability import RequestObservabilityMiddleware, configure_logging
 from app.request_limits import RequestBodyLimitMiddleware
@@ -38,6 +38,7 @@ async def prevent_stale_web_assets(request, call_next):
     return response
 
 app.include_router(language_models.router)
+app.include_router(admin_language_models.router)
 app.include_router(admin_retrieval.router)
 app.include_router(admin_users.router)
 app.include_router(auth.router)
