@@ -5,7 +5,7 @@
       "key": "gemma4",
       "display_name": "Gemma 4 12B W4A16",
       "base_url": "http://127.0.0.1:8010/v1",
-      "api_key_env": "GEMMA4_API_KEY",
+      "authentication": "none",
       "model": "gemma4",
       "supports_vision": true,
       "enabled": true

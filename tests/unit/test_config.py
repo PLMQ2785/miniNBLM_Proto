@@ -10,7 +10,8 @@ def _endpoint(**overrides) -> dict:
         "key": "primary",
         "display_name": "Primary",
         "base_url": "https://models.example/v1",
-        "api_key_env": "PRIMARY_API_KEY",
+        "authentication": "managed",
+        "api_key_ciphertext": "ciphertext-placeholder",
         "model": "model-a",
         "supports_vision": False,
         "enabled": True,
@@ -19,36 +20,31 @@ def _endpoint(**overrides) -> dict:
     return payload
 
 
-def test_settings_only_configures_endpoint_and_secret_paths(tmp_path) -> None:
+def test_settings_only_configures_endpoint_and_master_key_paths(tmp_path) -> None:
     """Settings는 endpoint 내용을 캐시하지 않고 registry 경로만 보관한다."""
     endpoint_file = tmp_path / "llm-endpoints.json"
-    secret_dir = tmp_path / "secrets"
+    master_key_file = tmp_path / "master.key"
 
     configured = Settings(
         _env_file=None,
         llm_endpoints_file=endpoint_file,
-        llm_secrets_dir=secret_dir,
+        llm_master_key_file=master_key_file,
     )
 
     assert configured.llm_endpoints_file == endpoint_file
-    assert configured.llm_secrets_dir == secret_dir
+    assert configured.llm_master_key_file == master_key_file
 
 
-def test_endpoint_file_entry_rejects_inline_credential() -> None:
-    """endpoint JSON에 실제 credential 값을 직접 저장하지 못하게 한다."""
-    payload = _endpoint(api_key="literal-secret")
-    payload.pop("api_key_env")
-
-    with pytest.raises(ValidationError, match="api_key"):
-        LLMEndpointFileEntry.model_validate(payload)
+def test_endpoint_file_entry_rejects_ciphertext_for_none_authentication() -> None:
+    """인증 없음 endpoint에는 credential 암호문을 저장할 수 없다."""
+    with pytest.raises(ValidationError, match="none cannot contain"):
+        LLMEndpointFileEntry.model_validate(_endpoint(authentication="none"))
 
 
-def test_endpoint_file_entry_requires_one_credential_reference() -> None:
-    """환경변수와 secret 파일 참조를 동시에 지정하지 못하게 한다."""
-    with pytest.raises(ValidationError, match="exactly one"):
-        LLMEndpointFileEntry.model_validate(
-            _endpoint(api_key_file="primary-api-key")
-        )
+def test_endpoint_file_entry_requires_ciphertext_for_managed_authentication() -> None:
+    """관리 endpoint에는 credential 암호문이 필수다."""
+    with pytest.raises(ValidationError, match="managed requires"):
+        LLMEndpointFileEntry.model_validate(_endpoint(api_key_ciphertext=None))
 
 
 def test_configuration_rejects_missing_or_disabled_default() -> None:

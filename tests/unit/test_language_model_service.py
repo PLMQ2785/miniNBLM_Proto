@@ -61,7 +61,6 @@ def test_request_context_keeps_endpoint_after_json_reload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """진행 중 요청은 JSON이 바뀌어도 시작 시점 snapshot을 유지한다."""
-    monkeypatch.setenv("PRIMARY_API_KEY", "key-a")
     endpoint_file = tmp_path / "llm-endpoints.json"
     original = {
         "default_endpoint": "primary",
@@ -70,13 +69,13 @@ def test_request_context_keeps_endpoint_after_json_reload(
                 "key": "primary",
                 "display_name": "Primary",
                 "base_url": "http://primary:8000/v1",
-                "api_key_env": "PRIMARY_API_KEY",
+                "authentication": "none",
                 "model": "model-a",
             }
         ],
     }
     endpoint_file.write_text(json.dumps(original), encoding="utf-8")
-    registry = LanguageModelRegistry(endpoint_file, tmp_path / "secrets")
+    registry = LanguageModelRegistry(endpoint_file, tmp_path / "master.key")
     before = registry.initialize()
     monkeypatch.setattr(language_model_service, "registry", registry)
 

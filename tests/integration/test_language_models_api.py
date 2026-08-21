@@ -3,9 +3,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.config import LLMEndpointFileEntry
 from app.repositories import user_repository
 from app.services import language_model_service
+from app.services.language_model_service import LanguageModelEndpointDraft
 
 
 pytestmark = pytest.mark.integration
@@ -31,14 +31,14 @@ def _add_secondary(monkeypatch: pytest.MonkeyPatch) -> None:
     language_model_service.create_endpoint(
         actor_id=1,
         expected_revision=snapshot.revision,
-        endpoint=LLMEndpointFileEntry(
+        draft=LanguageModelEndpointDraft(
             key="secondary",
             display_name="Secondary model",
             base_url="http://secondary:8010/v1",
-            api_key_env="TEST_LLM_API_KEY",
             model="model-b",
             supports_vision=True,
             enabled=True,
+            authentication="none",
         ),
     )
 

@@ -16,6 +16,7 @@ from app.services.language_model_service import (
     LanguageModelConfigurationConflictError,
     LanguageModelConfigurationError,
     LanguageModelEndpointConflictError,
+    LanguageModelEndpointDraft,
     LanguageModelEndpointIncompatibleError,
     LanguageModelEndpointNotFoundError,
     LanguageModelEndpointUnavailableError,
@@ -49,12 +50,6 @@ def _endpoint_response(
     default_endpoint_key: str,
 ) -> AdminLanguageModelEndpointResponse:
     """credential 값 없이 JSON endpoint를 관리자 응답으로 변환한다."""
-    if endpoint.api_key_env is not None:
-        credential_source = "environment"
-        credential_reference = endpoint.api_key_env
-    else:
-        credential_source = "file"
-        credential_reference = endpoint.api_key_file or ""
     return AdminLanguageModelEndpointResponse(
         key=endpoint.key,
         display_name=endpoint.display_name,
@@ -62,8 +57,8 @@ def _endpoint_response(
         model=endpoint.model,
         supports_vision=endpoint.supports_vision,
         enabled=endpoint.enabled,
-        credential_source=credential_source,
-        credential_reference=credential_reference,
+        authentication=endpoint.authentication,
+        api_key_configured=endpoint.api_key_ciphertext is not None,
         is_default=endpoint.key == default_endpoint_key,
     )
 
@@ -84,9 +79,33 @@ def _state_response(
     )
 
 
-def _entry(request: LanguageModelEndpointWriteRequest) -> LLMEndpointFileEntry:
-    """관리자 입력을 JSON 파일 endpoint 계약으로 변환한다."""
-    return LLMEndpointFileEntry.model_validate(request.model_dump())
+def _draft(request: LanguageModelEndpointWriteRequest) -> LanguageModelEndpointDraft:
+    """write-only API key를 service draft 경계에서만 평문으로 꺼낸다."""
+    api_key = (
+        request.api_key.get_secret_value()
+        if request.api_key is not None
+        else None
+    )
+    if request.authentication == "none" and api_key is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Authentication none cannot include an API key",
+        )
+    if api_key is not None and not 1 <= len(api_key) <= 8192:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="API key length is invalid",
+        )
+    return LanguageModelEndpointDraft(
+        key=request.key,
+        display_name=request.display_name,
+        base_url=request.base_url,
+        model=request.model,
+        supports_vision=request.supports_vision,
+        enabled=request.enabled,
+        authentication=request.authentication,
+        api_key=api_key,
+    )
 
 
 def _raise_service_error(exc: Exception) -> NoReturn:
@@ -144,7 +163,7 @@ def create_language_model_endpoint(
         snapshot = language_model_service.create_endpoint(
             actor_id=admin.id,
             expected_revision=revision,
-            endpoint=_entry(request),
+            draft=_draft(request),
         )
     except Exception as exc:
         _raise_service_error(exc)
@@ -164,7 +183,7 @@ def update_language_model_endpoint(
             actor_id=admin.id,
             expected_revision=revision,
             endpoint_key=endpoint_key,
-            endpoint=_entry(request),
+            draft=_draft(request),
         )
     except Exception as exc:
         _raise_service_error(exc)

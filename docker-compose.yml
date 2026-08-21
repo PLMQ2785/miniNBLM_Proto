@@ -32,9 +32,7 @@ services:
       MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-53477376}
       EMBEDDING_BASE_URL: http://127.0.0.1:8070
       LLM_ENDPOINTS_FILE: /app/config/llm-endpoints.json
-      LLM_SECRETS_DIR: /app/data/secrets/llm
-      GEMMA4_API_KEY: ${GEMMA4_API_KEY:-EMPTY}
-      XAI_API_KEY: ${XAI_API_KEY:-}
+      LLM_MASTER_KEY_FILE: /app/data/secrets/llm/master.key
       VISION_CAPTION_MODE: ${VISION_CAPTION_MODE:-disabled}
       VISION_CAPTION_DPI: ${VISION_CAPTION_DPI:-144}
       VISION_CAPTION_VERSION: ${VISION_CAPTION_VERSION:-gemma4-page-caption-v1}

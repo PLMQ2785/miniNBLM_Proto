@@ -1,4 +1,3 @@
-import os
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -32,49 +31,28 @@ class LLMEndpoint(BaseModel):
 
 
 class LLMEndpointFileEntry(BaseModel):
-    """JSON endpoint 메타데이터와 외부 credential 참조를 검증한다."""
+    """JSON endpoint 메타데이터와 선택적 암호문 credential을 검증한다."""
     model_config = ConfigDict(extra="forbid", frozen=True)
     key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_.-]*$")
     display_name: str = Field(min_length=1, max_length=128)
     base_url: str
-    api_key_env: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=128,
-        pattern=r"^[A-Z_][A-Z0-9_]*$",
-    )
-    api_key_file: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=128,
-        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$",
-    )
+    authentication: Literal["none", "managed"]
+    api_key_ciphertext: str | None = Field(default=None, min_length=1, max_length=8192, repr=False)
     model: str = Field(min_length=1, max_length=256)
     supports_vision: bool = False
     enabled: bool = True
 
     @model_validator(mode="after")
-    def validate_api_key_source(self) -> "LLMEndpointFileEntry":
-        """환경변수와 secret 파일 중 정확히 하나만 선택하게 한다."""
-        if (self.api_key_env is None) == (self.api_key_file is None):
-            raise ValueError("Configure exactly one of api_key_env or api_key_file")
+    def validate_authentication(self) -> "LLMEndpointFileEntry":
+        """인증 없음에는 암호문을 금지하고 managed 인증에는 필수화한다."""
+        if self.authentication == "none" and self.api_key_ciphertext is not None:
+            raise ValueError("authentication none cannot contain an API key ciphertext")
+        if self.authentication == "managed" and self.api_key_ciphertext is None:
+            raise ValueError("authentication managed requires an API key ciphertext")
         return self
 
-    def resolve(self, secret_dir: Path) -> LLMEndpoint:
-        """외부 credential을 읽어 호출 가능한 immutable snapshot으로 변환한다."""
-        if self.api_key_env is not None:
-            api_key = os.environ.get(self.api_key_env, "")
-            source = f"environment variable {self.api_key_env}"
-        else:
-            assert self.api_key_file is not None
-            secret_path = secret_dir / self.api_key_file
-            source = f"secret file {self.api_key_file}"
-            try:
-                api_key = secret_path.read_text(encoding="utf-8").rstrip("\r\n")
-            except OSError as exc:
-                raise ValueError(f"Cannot read {source}") from exc
-        if not api_key:
-            raise ValueError(f"Credential is empty or unavailable: {source}")
+    def resolve(self, api_key: str) -> LLMEndpoint:
+        """복호화된 credential을 호출 가능한 immutable snapshot에만 결합한다."""
         return LLMEndpoint(
             key=self.key,
             display_name=self.display_name,
@@ -126,7 +104,7 @@ class Settings(BaseSettings):
 
 
     llm_endpoints_file: Path = Path("config/llm-endpoints.json")
-    llm_secrets_dir: Path = Path("data/secrets/llm")
+    llm_master_key_file: Path = Path("data/secrets/llm/master.key")
     vision_caption_mode: Literal["disabled", "risk_only", "all_visual"] = "disabled"
     vision_caption_dpi: int = Field(default=144, ge=72, le=200)
     vision_caption_version: str = "gemma4-page-caption-v1"

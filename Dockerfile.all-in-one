@@ -108,8 +108,7 @@ ENV NATIVE_ENV_DIR=/app/.venv-native \
     VLLM_MODEL_PATH=/data/models/gemma4 \
     EMBEDDING_BASE_URL=http://127.0.0.1:8070 \
     LLM_ENDPOINTS_FILE=/data/config/llm-endpoints.json \
-    LLM_SECRETS_DIR=/data/secrets/llm \
-    GEMMA4_API_KEY=EMPTY \
+    LLM_MASTER_KEY_FILE=/data/secrets/llm/master.key \
     STARTUP_TIMEOUT=1800
 
 VOLUME ["/data"]

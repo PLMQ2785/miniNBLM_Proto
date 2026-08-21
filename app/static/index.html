@@ -167,7 +167,7 @@
             <span id="llm-config-revision" class="algorithm-change-note"></span>
           </div>
           <p class="admin-section-note">
-            Endpoint 정보는 <code>llm-endpoints.json</code>에 원자적으로 저장됩니다. Credential 값은 저장하지 않고 환경변수 또는 secret 파일 참조만 사용합니다.
+            Endpoint 정보는 <code>llm-endpoints.json</code>에 원자적으로 저장됩니다. API key 자체는 저장하지 않고 암호화해 관리합니다.
           </p>
           <p id="llm-reload-error" class="admin-error" role="alert"></p>
           <div id="llm-endpoint-list" class="llm-endpoint-grid"></div>
@@ -188,16 +188,17 @@
               <span>Model ID</span>
               <input id="llm-endpoint-model" type="text" minlength="1" maxlength="256" required>
             </label>
-            <label for="llm-endpoint-credential-source">
-              <span>Credential 저장소</span>
-              <select id="llm-endpoint-credential-source">
-                <option value="environment">환경변수</option>
-                <option value="file">Secret 파일</option>
+            <label for="llm-endpoint-authentication">
+              <span>인증</span>
+              <select id="llm-endpoint-authentication" required>
+                <option value="managed">API key 관리</option>
+                <option value="none">인증 없음</option>
               </select>
             </label>
-            <label for="llm-endpoint-credential-reference">
-              <span>Credential 참조</span>
-              <input id="llm-endpoint-credential-reference" type="text" minlength="1" maxlength="128" placeholder="REMOTE_LLM_API_KEY" required>
+            <label for="llm-endpoint-api-key">
+              <span>API key</span>
+              <input id="llm-endpoint-api-key" type="password" maxlength="8192" autocomplete="new-password">
+              <small id="llm-endpoint-api-key-note"></small>
             </label>
             <div class="llm-endpoint-checks">
               <label><input id="llm-endpoint-supports-vision" type="checkbox"> Vision 지원</label>

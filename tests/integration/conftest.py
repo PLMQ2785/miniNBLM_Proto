@@ -58,10 +58,8 @@ def reset_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator
     """각 테스트 전후 DB와 업로드 경로를 격리한다."""
     _reset_mutable_data()
     monkeypatch.setattr(settings, "upload_dir", str(tmp_path / "uploads"))
-    monkeypatch.setenv("TEST_LLM_API_KEY", "integration-secret")
     endpoint_file = tmp_path / "llm-endpoints.json"
-    secret_dir = tmp_path / "llm-secrets"
-    secret_dir.mkdir()
+    master_key_file = tmp_path / "master.key"
     endpoint_file.write_text(
         json.dumps(
             {
@@ -71,7 +69,7 @@ def reset_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator
                         "key": "primary",
                         "display_name": "Primary model",
                         "base_url": "http://primary:8010/v1",
-                        "api_key_env": "TEST_LLM_API_KEY",
+                        "authentication": "none",
                         "model": "model-a",
                         "supports_vision": True,
                         "enabled": True,
@@ -84,7 +82,7 @@ def reset_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator
     monkeypatch.setattr(
         language_model_service,
         "registry",
-        LanguageModelRegistry(endpoint_file, secret_dir),
+        LanguageModelRegistry(endpoint_file, master_key_file),
     )
     yield
     _reset_mutable_data()

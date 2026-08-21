@@ -2,6 +2,8 @@ import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass, field
+from typing import Literal
 
 import httpx
 from pydantic import ValidationError
@@ -25,7 +27,7 @@ active_endpoint_context: ContextVar[LLMEndpoint | None] = ContextVar(
 )
 registry = LanguageModelRegistry(
     settings.llm_endpoints_file,
-    settings.llm_secrets_dir,
+    settings.llm_master_key_file,
     vision_caption_mode=settings.vision_caption_mode,
 )
 
@@ -46,8 +48,22 @@ class LanguageModelEndpointConflictError(Exception):
     """중복 key나 기본 endpoint 보호로 변경할 수 없음을 나타낸다."""
 
 
+@dataclass(frozen=True)
+class LanguageModelEndpointDraft:
+    """관리 API가 전달하는 write-only credential 포함 endpoint 후보값이다."""
+
+    key: str
+    display_name: str
+    base_url: str
+    model: str
+    supports_vision: bool
+    enabled: bool
+    authentication: Literal["none", "managed"]
+    api_key: str | None = field(default=None, repr=False)
+
+
 def initialize_configuration() -> None:
-    """요청 수신 전에 JSON 원본과 모든 credential 참조를 검증한다."""
+    """요청 수신 전에 JSON 원본과 모든 암호화 credential을 검증한다."""
     registry.initialize()
 
 
@@ -153,12 +169,13 @@ def create_endpoint(
     *,
     actor_id: int,
     expected_revision: str,
-    endpoint: LLMEndpointFileEntry,
+    draft: LanguageModelEndpointDraft,
 ) -> LanguageModelSnapshot:
-    """새 endpoint를 검증한 뒤 JSON에 원자적으로 추가한다."""
+    """새 endpoint의 API key를 암호화한 뒤 JSON에 원자적으로 추가한다."""
     current = get_snapshot().configuration
-    if current.get_endpoint(endpoint.key) is not None:
+    if current.get_endpoint(draft.key) is not None:
         raise LanguageModelEndpointConflictError("Language model endpoint key already exists")
+    endpoint = _entry_from_draft(draft)
     candidate = _configuration(
         default_endpoint=current.default_endpoint,
         endpoints=(*current.endpoints, endpoint),
@@ -177,14 +194,16 @@ def update_endpoint(
     actor_id: int,
     expected_revision: str,
     endpoint_key: str,
-    endpoint: LLMEndpointFileEntry,
+    draft: LanguageModelEndpointDraft,
 ) -> LanguageModelSnapshot:
-    """key는 유지하고 검증된 endpoint 값만 JSON에 반영한다."""
+    """key는 유지하고 선택적으로 rotation한 API key와 메타데이터를 반영한다."""
     current = get_snapshot().configuration
-    if current.get_endpoint(endpoint_key) is None:
+    existing = current.get_endpoint(endpoint_key)
+    if existing is None:
         raise LanguageModelEndpointNotFoundError
-    if endpoint.key != endpoint_key:
+    if draft.key != endpoint_key:
         raise LanguageModelEndpointConflictError("Language model endpoint key cannot be changed")
+    endpoint = _entry_from_draft(draft, existing=existing)
     candidate = _configuration(
         default_endpoint=current.default_endpoint,
         endpoints=tuple(endpoint if item.key == endpoint_key else item for item in current.endpoints),
@@ -243,6 +262,35 @@ def delete_endpoint(
     snapshot = registry.replace(candidate, expected_revision=expected_revision)
     _log_admin_change(actor_id, "delete", endpoint_key, snapshot.revision)
     return snapshot
+
+
+def _entry_from_draft(
+    draft: LanguageModelEndpointDraft,
+    *,
+    existing: LLMEndpointFileEntry | None = None,
+) -> LLMEndpointFileEntry:
+    """새 API key는 암호화하고 비어 있는 편집 입력은 기존 암호문을 유지한다."""
+    if draft.authentication == "none":
+        ciphertext = None
+    elif draft.api_key:
+        ciphertext = registry.encrypt_api_key(draft.api_key)
+    elif existing is not None and existing.authentication == "managed":
+        ciphertext = existing.api_key_ciphertext
+    else:
+        raise LanguageModelConfigurationError("API key is required for managed authentication")
+    try:
+        return LLMEndpointFileEntry(
+            key=draft.key,
+            display_name=draft.display_name,
+            base_url=draft.base_url,
+            authentication=draft.authentication,
+            api_key_ciphertext=ciphertext,
+            model=draft.model,
+            supports_vision=draft.supports_vision,
+            enabled=draft.enabled,
+        )
+    except ValidationError as exc:
+        raise LanguageModelConfigurationError(str(exc)) from exc
 
 
 def _configuration(

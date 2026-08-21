@@ -13,6 +13,11 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from app.config import LLMConfigurationFile, LLMEndpoint
+from app.services.language_model_credential_service import (
+    LanguageModelCredentialCipher,
+    LanguageModelCredentialError,
+    LanguageModelMasterKeyError,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -58,12 +63,13 @@ class LanguageModelRegistry:
     def __init__(
         self,
         endpoint_file: Path,
-        secret_dir: Path,
+        master_key_file: Path,
         *,
         vision_caption_mode: str = "disabled",
     ) -> None:
         self.endpoint_file = endpoint_file.expanduser()
-        self.secret_dir = secret_dir.expanduser()
+        self.master_key_file = master_key_file.expanduser()
+        self.credential_cipher = LanguageModelCredentialCipher(self.master_key_file)
         self.vision_caption_mode = vision_caption_mode
         self.lock_file = self.endpoint_file.with_name(f".{self.endpoint_file.name}.lock")
         self._mutex = threading.RLock()
@@ -75,6 +81,10 @@ class LanguageModelRegistry:
     def reload_error(self) -> str | None:
         """최근 외부 파일 변경을 적용하지 못한 안전한 오류를 반환한다."""
         return self._reload_error
+
+    def encrypt_api_key(self, api_key: str) -> str:
+        """관리자가 입력한 API key를 현재 registry master key로 암호화한다."""
+        return self.credential_cipher.encrypt(api_key)
 
     def initialize(self) -> LanguageModelSnapshot:
         """API 요청을 받기 전에 현재 JSON과 credential을 필수 검증한다."""
@@ -88,7 +98,7 @@ class LanguageModelRegistry:
         with self._mutex:
             if self._snapshot is None:
                 return self.initialize()
-            signature = self._source_signature(self._snapshot.configuration)
+            signature = self._source_signature()
             if signature == self._observed_signature:
                 return self._snapshot
             try:
@@ -165,10 +175,28 @@ class LanguageModelRegistry:
         configuration: LLMConfigurationFile,
         revision: str,
     ) -> LanguageModelSnapshot:
-        """모든 외부 credential과 Vision 기본값 계약을 함께 검증한다."""
+        """master key와 모든 JSON 암호문을 검증해 요청 snapshot을 만든다."""
+        encrypted_credentials_exist = any(
+            endpoint.authentication == "managed"
+            for endpoint in configuration.endpoints
+        )
         try:
-            endpoints = tuple(endpoint.resolve(self.secret_dir) for endpoint in configuration.endpoints)
-        except ValueError as exc:
+            self.credential_cipher.initialize(
+                encrypted_credentials_exist=encrypted_credentials_exist
+            )
+            endpoints = tuple(
+                endpoint.resolve(
+                    "EMPTY"
+                    if endpoint.authentication == "none"
+                    else self.credential_cipher.decrypt(endpoint.api_key_ciphertext or "")
+                )
+                for endpoint in configuration.endpoints
+            )
+        except (
+            LanguageModelCredentialError,
+            LanguageModelMasterKeyError,
+            ValueError,
+        ) as exc:
             raise LanguageModelConfigurationError(str(exc)) from exc
         snapshot = LanguageModelSnapshot(
             revision=revision,
@@ -184,18 +212,15 @@ class LanguageModelRegistry:
     def _publish_snapshot(self, snapshot: LanguageModelSnapshot) -> None:
         """정상 snapshot과 해당 원본 signature를 한 임계구역에서 공개한다."""
         self._snapshot = snapshot
-        self._observed_signature = self._source_signature(snapshot.configuration)
+        self._observed_signature = self._source_signature()
         self._reload_error = None
 
-    def _source_signature(self, configuration: LLMConfigurationFile) -> tuple[object, ...]:
-        """endpoint JSON과 참조 secret 파일 변경을 감지할 signature를 만든다."""
-        signature: list[object] = [self._file_signature(self.endpoint_file)]
-        for endpoint in configuration.endpoints:
-            if endpoint.api_key_file is not None:
-                signature.append(
-                    (endpoint.api_key_file, self._file_signature(self.secret_dir / endpoint.api_key_file))
-                )
-        return tuple(signature)
+    def _source_signature(self) -> tuple[object, ...]:
+        """endpoint JSON과 master key의 교체·변경·유실을 감지한다."""
+        return (
+            self._file_signature(self.endpoint_file),
+            self._file_signature(self.master_key_file),
+        )
 
     @staticmethod
     def _file_signature(path: Path) -> tuple[int, int, int] | tuple[str]:
