@@ -32,9 +32,9 @@ UI는 API 서비스가 정적 파일로 제공하므로 별도 프런트엔드 �
 API가 사용할 OpenAI 호환 모델 endpoint는 `config/llm-endpoints.json`에 등록합니다.
 `default_endpoint`는 사용자가 아직 선택하지 않았거나 등록 endpoint가 사라졌을 때의
 fallback key입니다. 각 endpoint는 `key`, `display_name`, `base_url`, `model`,
-`supports_vision`과 `api_key` 또는 `api_key_env` 중 하나를 가집니다. 로그인한 모든
-사용자는 작업공간 상단의 **언어모델** 선택 메뉴에서 자신의 endpoint를 전환할 수
-있으며 선택은 PostgreSQL에 저장됩니다. JSON을 변경한 뒤에는 API를 재시작합니다.
+`supports_vision`, `authentication`을 가집니다. 로그인한 모든 사용자는 작업공간
+상단의 **언어모델** 선택 메뉴에서 자신의 endpoint를 전환할 수 있으며 선택은
+PostgreSQL에 저장됩니다. 유효한 JSON 변경은 다음 요청부터 자동 적용됩니다.
 
 Docker 실행의 기본 `VISION_CAPTION_MODE=disabled`는 검증된 text-only 경로를
 유지합니다. `risk_only`는 텍스트만으로 불완전한 페이지, 표, 도형이 많은 mixed
@@ -80,7 +80,7 @@ image layer에서 제외되어 12B·31B image는 런타임 코드 차이만 가�
 직접 다운로드 URL과 SHA-256을 `.env.all-in-one-31b`에 설정합니다. 기존 checkpoint의
 10개 Safetensors weight 합은 `19,073,960,528` bytes입니다. 모델은 첫 실행에서
 `/data/models/gemma4`에 설치되고 이후 재사용됩니다.
-배포 image는 `cpsu/mininblm:0.1.4-gemma4-31b-w4a16`이며 12B `0.1.4`와 동일하게
+배포 image는 `cpsu/mininblm:0.1.5-gemma4-31b-w4a16`이며 12B `0.1.5`와 동일하게
 Hugging Face snapshot downloader와 소유권 변경 제한 storage 대응을 포함합니다.
 현재 Google Drive의 `gemma-4-31B-it-W4A16.tar` archive SHA-256은
 `1a28093ac67542780473b4c74f659fb3988d7c69e1fbf974772b2ab94c0f6ebf`입니다.
@@ -92,7 +92,7 @@ cp .env.all-in-one-31b.example .env.all-in-one-31b
 # 이미지 build만 수행
 docker compose --env-file .env.all-in-one-31b \
   -f docker-compose.all-in-one.yml build mininblm
-docker push cpsu/mininblm:0.1.4-gemma4-31b-w4a16
+docker push cpsu/mininblm:0.1.5-gemma4-31b-w4a16
 
 # 배포 서버에서 실행
 AIO_ENV_FILE=.env.all-in-one-31b ./run_aio.sh --no-build
@@ -106,13 +106,13 @@ AIO_ENV_FILE=.env.all-in-one-31b ./run_aio.sh --no-build
 ```bash
 docker compose --env-file .env.all-in-one \
   -f docker-compose.all-in-one.yml build mininblm
-docker tag cpsu/mininblm:0.1.4 cpsu/mininblm:0.1.4-gemma4-12b-w4a16
+docker tag cpsu/mininblm:0.1.5 cpsu/mininblm:0.1.5-gemma4-12b-w4a16
 docker login
-docker push cpsu/mininblm:0.1.4
-docker push cpsu/mininblm:0.1.4-gemma4-12b-w4a16
+docker push cpsu/mininblm:0.1.5
+docker push cpsu/mininblm:0.1.5-gemma4-12b-w4a16
 
 # 배포 서버의 .env.all-in-one에서 같은 image를 지정
-export MININBLM_ALL_IN_ONE_IMAGE=cpsu/mininblm:0.1.4
+export MININBLM_ALL_IN_ONE_IMAGE=cpsu/mininblm:0.1.5
 ./run_aio.sh --no-build
 ```
 
@@ -151,11 +151,14 @@ ipconfig
 ```
 
 Web UI에서 사용자명과 비밀번호로 계정을 만든 뒤 PDF를 추가합니다. 상태가
-`인덱싱 완료`가 될 때까지 기다린 후 질문합니다. 문서와 대화는 로그인한
-사용자별로 분리되며, 답변 아래의 페이지 버튼을 누르면 원본 PDF의 해당
-페이지가 열립니다. 대화는 계정별 세션으로 저장되고, 로그인하거나 새로고침하면
-가장 최근 대화가 자동으로 복원됩니다. 작업공간 상단에서 새 대화를 시작하거나
-이전 대화로 전환·삭제할 수 있습니다. `계정` 화면에서는 일반 사용자도 현재
+`인덱싱 완료`가 되면 별도 선택 없이 전체 문서를 대상으로 질의할 수 있습니다.
+왼쪽 목록에서 특정 PDF를 선택하면 검색과 후속 질문이 해당 문서 안으로
+제한되며, `전체 문서`를 선택하면 다시 기존 전체 검색으로 돌아갑니다. 문서와
+대화는 로그인한 사용자별로 분리되며, 답변 아래의 페이지 버튼을 누르면 원본
+PDF의 해당 페이지가 열립니다. 대화는 전체 또는 선택 문서 범위에 귀속되어
+저장되고, 로그인하거나 새로고침하면 가장 최근 대화와 질의 범위가 함께
+복원됩니다. 작업공간 상단에서 새 대화를 시작하거나 이전 대화로 전환·삭제할
+수 있습니다. `계정` 화면에서는 일반 사용자도 현재
 비밀번호를 변경하거나, 비밀번호와 사용자명을 다시 확인한 뒤 계정과 소유
 데이터를 모두 삭제할 수 있습니다.
 
@@ -169,6 +172,52 @@ Web UI에서 사용자명과 비밀번호로 계정을 만든 뒤 PDF를 추가�
 관리자는 `관리` 화면에서 일반 사용자의 임시 비밀번호를 설정할 수 있습니다.
 재설정 즉시 해당 사용자의 모든 로그인 세션이 폐기되며, 사용자는 임시 비밀번호로
 로그인한 뒤 새 비밀번호로 변경해야 문서와 채팅에 접근할 수 있습니다.
+
+관리자는 같은 `관리` 화면에서 OpenAI 호환 LLM endpoint를 추가·편집·삭제하고
+기본값을 지정할 수 있습니다. `config/llm-endpoints.json`이 유일한 endpoint
+원본이며 DB에는 사용자별 선택 key만 저장됩니다. 관리자 저장은 최신 파일
+revision을 확인한 뒤 임시 파일과 원자적 rename으로 반영됩니다. 활성 endpoint는
+저장 전에 `/models` 응답에 설정한 model ID가 있는지 검증합니다.
+
+API는 새 요청마다 JSON과 credential master key의 변경을 확인합니다. 변경된 설정은
+다음 요청부터 적용되며 이미 진행 중인 채팅·문서 처리는 시작할 때 고정한 endpoint
+snapshot을 계속 사용합니다. 삭제되거나 비활성화된 endpoint를 선택했던 사용자는
+다음 요청에서 기본 endpoint를 사용합니다. 다른 사용자의 선택 목록은 Web UI를
+새로고침하면 갱신됩니다.
+
+인증이 필요 없는 endpoint는 `authentication`을 `none`으로 지정합니다. 인증이
+필요하면 관리 화면에서 `managed`를 선택하고 API key를 입력합니다. API는 key를
+자동 생성한 Fernet master key로 암호화하며 endpoint JSON에는
+`api_key_ciphertext`만 저장합니다. 평문 key와 암호문은 관리 API 응답이나 Web UI에
+노출되지 않습니다. 편집할 때 API key를 비워 두면 기존 credential을 유지하고 새
+값을 입력하면 교체합니다.
+
+```json
+{
+  "default_endpoint": "remote",
+  "endpoints": [
+    {
+      "key": "remote",
+      "display_name": "Remote model",
+      "base_url": "https://llm.example/v1",
+      "authentication": "none",
+      "model": "remote-model",
+      "supports_vision": false,
+      "enabled": true
+    }
+  ]
+}
+```
+
+기본 Docker 구성은 `./config` 디렉터리를 API의 `/app/config`에 쓰기 가능하게
+mount합니다. Credential master key는 기본적으로
+`./data/secrets/llm/master.key`에 0600 권한으로 자동 생성됩니다. 통합
+컨테이너에서는 endpoint JSON과 master key가 각각
+`/data/config/llm-endpoints.json`, `/data/secrets/llm/master.key`에 영속화됩니다.
+통합 컨테이너는 persisted endpoint 파일이 없거나 0 byte이면 이미지 기본 설정을
+복구합니다. 내용이 있는 운영자 파일은 검증에 실패해도 자동으로 덮어쓰지 않습니다.
+암호화된 credential이 있는 상태에서 master key를 잃으면 안전을 위해 설정 로드가
+실패하므로 endpoint JSON과 master key를 함께 백업해야 합니다.
 
 기존 일반 계정을 추가 관리자로 지정할 때는 CLI를 사용합니다.
 
@@ -382,12 +431,12 @@ curl -b session.cookie \
 
 curl -b session.cookie \
   -H "Content-Type: application/json" \
-  -d '{"question":"업로드한 자료의 핵심 내용을 설명해 주세요."}' \
+  -d '{"question":"전체 자료의 핵심 내용을 설명해 주세요."}' \
   http://localhost:8080/chat
 
 curl -N -b session.cookie \
   -H "Content-Type: application/json" \
-  -d '{"question":"업로드한 자료의 핵심 내용을 설명해 주세요."}' \
+  -d '{"document_id":<DOCUMENT_ID>,"question":"선택한 자료의 핵심 내용을 설명해 주세요."}' \
   http://localhost:8080/chat/stream
 ```
 
@@ -404,14 +453,15 @@ curl -N -b session.cookie \
 - 명시적 관리자 bootstrap, 최초 로그인 비밀번호 변경 강제와 관리자 지원 비밀번호 재설정
 - pgvector Dense, PostgreSQL FTS, pg_trgm 및 RRF Hybrid 검색
 - Dense/Hybrid 후보의 BGE-M3 cosine 재정렬과 goal별 최상위 후보 보존
-- 로그인 사용자의 모든 indexed 문서를 대상으로 하는 작업공간 RAG 검색
+- 전체 indexed 문서 또는 사용자가 선택한 문서 하나를 대상으로 하는 RAG 검색
 - 좌표 기반 PDF 텍스트 순서, 반복 머리말·꼬리말 제거와 표 행·열 보존
 - 페이지별 시각 의존도 감지, 선택적 Gemma 4 구조화 caption과 시각 근거가 검색되지
   않은 화면·도표 질문의 명시적 거부
 - 고유 `goal_id`가 있는 최대 4개 원자적 근거 목표, goal별 후보 보존과 부분 근거 답변
-- 여러 대화 세션 저장, 최근 대화 자동 복원과 직전 대화 기반 후속 검색 질의 재작성
+- 전체·문서별 대화 세션 저장, 최근 대화·질의 범위 자동 복원과 직전 대화 기반 질의 재작성
 - 여러 OpenAI 호환 endpoint 등록과 기본 endpoint 선택을 통한 Gemma 4 12B W4A16 답변 생성
 - SSE 기반 답변 스트리밍과 완료된 대화의 이력 저장
+- 모델 context 초과 시 출력 예산 조정·입력 축소·최종 근거 발췌로 SSE 응답 완료
 - 모델이 실제 인용한 `Source N`만 `문서명 · 페이지` 출처로 표시하고 원본 PDF 연결
 - 반응형 Web UI와 문서 처리 상태 polling
 - 관리자 청킹 프리셋 5개, 검색 알고리즘 4개와 변경 영향 판정

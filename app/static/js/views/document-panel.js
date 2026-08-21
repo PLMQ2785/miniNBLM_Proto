@@ -2,7 +2,7 @@ import { formatDate, formatStatus } from "../formatters.js";
 
 // 작업공간 문서 상태에 연결되어 업로드 목록과 작업 버튼을 렌더링한다.
 export class DocumentPanel {
-  // 문서 패널 요소와 업로드·새로고침·삭제 이벤트를 연결한다.
+  // 문서 패널 요소와 선택·업로드·새로고침·삭제 이벤트를 연결한다.
   constructor({ listRoot, uploadForm, fileInput, uploadStatus, refreshButton }) {
     this.listRoot = listRoot;
     this.uploadForm = uploadForm;
@@ -12,6 +12,7 @@ export class DocumentPanel {
     this.uploadHandler = null;
     this.deleteHandler = null;
     this.refreshHandler = null;
+    this.selectHandler = null;
 
     this.fileInput.addEventListener("change", () => {
       const files = Array.from(this.fileInput.files || []);
@@ -28,10 +29,19 @@ export class DocumentPanel {
         this.refreshHandler();
         return;
       }
+      const allDocumentsButton = event.target.closest("[data-select-all-documents]");
+      if (allDocumentsButton && this.selectHandler) {
+        this.selectHandler(null);
+        return;
+      }
       const deleteButton = event.target.closest("[data-delete-document-id]");
       if (deleteButton && this.deleteHandler) {
         this.deleteHandler(Number(deleteButton.dataset.deleteDocumentId));
         return;
+      }
+      const selectButton = event.target.closest("[data-select-document-id]");
+      if (selectButton && this.selectHandler) {
+        this.selectHandler(Number(selectButton.dataset.selectDocumentId));
       }
     });
   }
@@ -51,6 +61,11 @@ export class DocumentPanel {
     this.refreshHandler = handler;
   }
 
+  // 질의 대상으로 고른 문서를 처리할 핸들러를 등록한다.
+  onSelect(handler) {
+    this.selectHandler = handler;
+  }
+
   // 재선택할 수 있도록 브라우저 파일 선택값을 비운다.
   clearFileInput() {
     this.fileInput.value = "";
@@ -63,6 +78,7 @@ export class DocumentPanel {
     isUploading,
     uploadProgress,
     deletingDocumentId,
+    selectedDocumentId,
   }) {
     this.uploadStatus.textContent = isUploading && uploadProgress?.total > 1
       ? `업로드 중 ${uploadProgress.current}/${uploadProgress.total}`
@@ -85,14 +101,27 @@ export class DocumentPanel {
       return;
     }
 
+    const indexedCount = documents.filter((documentSummary) => (
+      documentSummary.status === "indexed"
+    )).length;
+    this.listRoot.append(this.allDocumentsRow(indexedCount, selectedDocumentId === null));
+
     for (const documentSummary of documents) {
       const row = document.createElement("div");
       row.className = "document-row";
+      row.dataset.selected = String(documentSummary.document_id === selectedDocumentId);
 
-      const item = document.createElement("div");
+      const item = document.createElement("button");
+      const isSelectable = documentSummary.status === "indexed";
+      const isSelected = documentSummary.document_id === selectedDocumentId;
+      item.type = "button";
       item.className = "document-item";
-      item.dataset.documentId = documentSummary.document_id;
+      item.dataset.selectDocumentId = documentSummary.document_id;
       item.dataset.status = documentSummary.status;
+      item.dataset.selected = String(isSelected);
+      item.disabled = !isSelectable;
+      item.setAttribute("aria-pressed", String(isSelected));
+      item.setAttribute("aria-label", `${documentSummary.title} 질의 대상으로 선택`);
 
       const title = document.createElement("span");
       title.className = "document-title";
@@ -111,7 +140,11 @@ export class DocumentPanel {
 
       meta.append(status, date);
       item.append(title, meta);
-      if (documentSummary.error_message) item.title = documentSummary.error_message;
+      if (documentSummary.error_message) {
+        item.title = documentSummary.error_message;
+      } else if (!isSelectable) {
+        item.title = "인덱싱 완료 후 질의 대상으로 선택할 수 있습니다.";
+      }
 
       const deleteButton = document.createElement("button");
       const isActive = ["uploaded", "processing"].includes(documentSummary.status);
@@ -127,6 +160,34 @@ export class DocumentPanel {
       row.append(item, deleteButton);
       this.listRoot.append(row);
     }
+  }
+
+  // 선택이 없는 전체 문서 범위를 목록의 명시적인 첫 항목으로 만든다.
+  allDocumentsRow(indexedCount, isSelected) {
+    const row = document.createElement("div");
+    row.className = "document-row document-scope-row";
+    row.dataset.selected = String(isSelected);
+
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "document-item";
+    item.dataset.selectAllDocuments = "true";
+    item.dataset.selected = String(isSelected);
+    item.disabled = indexedCount === 0;
+    item.setAttribute("aria-pressed", String(isSelected));
+    item.setAttribute("aria-label", "전체 문서를 질의 대상으로 선택");
+
+    const title = document.createElement("span");
+    title.className = "document-title";
+    title.textContent = "전체 문서";
+
+    const meta = document.createElement("span");
+    meta.className = "document-meta document-scope-meta";
+    meta.textContent = `인덱싱 완료 ${indexedCount}개`;
+
+    item.append(title, meta);
+    row.append(item);
+    return row;
   }
 
   // 문서 목록의 빈 상태 안내 요소를 만든다.

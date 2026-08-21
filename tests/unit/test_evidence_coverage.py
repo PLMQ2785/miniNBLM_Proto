@@ -206,7 +206,7 @@ def test_targeted_retry_searches_only_unresolved_goal_and_merges_evidence(
             ),
         ]
     )
-    captured: list[tuple[EvidenceGoal, ...]] = []
+    captured: list[dict] = []
     monkeypatch.setattr(
         evidence_coverage,
         "assess_evidence_coverage",
@@ -214,8 +214,8 @@ def test_targeted_retry_searches_only_unresolved_goal_and_merges_evidence(
     )
 
     def retrieve(**kwargs):
-        """재검색 목표를 기록하고 해당 목표의 근거를 반환한다."""
-        captured.append(kwargs["goals"])
+        """재검색 인자를 기록하고 해당 목표의 근거를 반환한다."""
+        captured.append(kwargs)
         return [_chunk(12, "revert는 역커밋을 생성한다.", 8)]
 
     monkeypatch.setattr(evidence_coverage, "retrieve_chunks", retrieve)
@@ -226,11 +226,13 @@ def test_targeted_retry_searches_only_unresolved_goal_and_merges_evidence(
         question="왜 revert인가요?",
         goals=_goals(),
         chunks=[_chunk(11, "reset은 공유 이력을 변경한다.", 3)],
+        document_id=10,
     )
 
     assert [chunk.chunk_id for chunk in result] == [11, 12]
-    assert tuple(goal.goal_id for goal in captured[0]) == ("revert",)
-    assert captured[0][0].queries == ("revert inverse commit",)
+    assert tuple(goal.goal_id for goal in captured[0]["goals"]) == ("revert",)
+    assert captured[0]["goals"][0].queries == ("revert inverse commit",)
+    assert captured[0]["document_id"] == 10
 
 
 def test_unresolved_evidence_uses_exactly_two_bounded_retrieval_actions(

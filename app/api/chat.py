@@ -5,11 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.config import LLMEndpoint
 from app.database import SessionLocal
 from app.dependencies import ensure_retrieval_writes_available, get_current_user, get_current_user_with_language_model, get_db
 from app.models.chat import ChatMessage, ChatSession
 from app.models.user import User
-from app.repositories import chat_repository
+from app.repositories import chat_repository, document_repository
 from app.schemas.chat import (
     ChatMessageResponse,
     ChatRequest,
@@ -36,10 +37,39 @@ def _session_summary(session: ChatSession) -> ChatSessionSummary:
     """세션 목록과 완료 이벤트에 쓰는 공통 요약 응답을 만든다."""
     return ChatSessionSummary(
         session_id=session.id,
+        document_id=session.document_id,
         title=session.title or "제목 없는 대화",
         created_at=session.created_at,
         updated_at=session.updated_at,
     )
+
+
+
+def _require_indexed_document(
+    db: Session,
+    owner_id: int,
+    document_id: int | None,
+) -> None:
+    """선택 문서가 있으면 소유권과 검색 가능 상태를 강제한다."""
+    if document_id is None:
+        return
+    document = document_repository.get_document(db, document_id, owner_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    if document.status != "indexed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Document is not indexed",
+        )
+
+
+def _require_session_document(session: ChatSession, document_id: int | None) -> None:
+    """대화 도중 전체·개별 문서 검색 범위가 바뀌는 것을 막는다."""
+    if session.document_id != document_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Chat session belongs to a different document scope",
+        )
 
 
 def _source_document_ids(messages: list[ChatMessage]) -> set[int]:
@@ -150,7 +180,7 @@ def _chat_event_stream(
     history: list[dict[str, str]],
     trace: RetrievalTrace,
     evidence_matrix,
-    endpoint_key: str,
+    endpoint: LLMEndpoint,
 ):
     """생성 델타·revision·출처·완료를 보내고 최종 교환을 별도 세션에 저장한다."""
     # 스트림은 요청 DB 세션보다 오래 살아 각 DB 단계가 자체 세션을 연다.
@@ -170,7 +200,7 @@ def _chat_event_stream(
         stream_iterator = iter(streamed)
         while True:
             try:
-                with language_model_service.use_endpoint(endpoint_key):
+                with language_model_service.use_endpoint(endpoint):
                     delta = next(stream_iterator)
             except StopIteration:
                 break
@@ -289,10 +319,12 @@ def chat(
     _: None = Depends(ensure_retrieval_writes_available),
 ) -> ChatResponse:
     """검색 계획부터 생성·인용 저장까지 동기 RAG 요청을 처리한다."""
+    _require_indexed_document(db, user.id, request.document_id)
     if request.session_id is None:
         session = chat_repository.create_session(
             db,
             owner_id=user.id,
+            document_id=request.document_id,
             title=request.question.strip()[:80] or "새 대화",
         )
         history: list[dict[str, str]] = []
@@ -300,6 +332,7 @@ def chat(
         session = chat_repository.get_session(db, request.session_id, user.id)
         if session is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
+        _require_session_document(session, request.document_id)
         recent_messages = chat_repository.list_recent_messages(
             db,
             session.id,
@@ -315,6 +348,7 @@ def chat(
     chunks = retrieve_chunks(
         db=db,
         owner_id=user.id,
+        document_id=request.document_id,
         question=retrieval_plan.standalone_query,
         goals=goals,
         trace=trace,
@@ -322,6 +356,7 @@ def chat(
     chunks = complete_evidence_coverage(
         db=db,
         owner_id=user.id,
+        document_id=request.document_id,
         question=request.question,
         goals=goals,
         chunks=chunks,
@@ -362,6 +397,7 @@ def chat_stream(
     _: None = Depends(ensure_retrieval_writes_available),
 ) -> StreamingResponse:
     """동기와 같은 검색을 마친 뒤 생성 결과를 SSE로 전달한다."""
+    _require_indexed_document(db, user.id, request.document_id)
     owner_id = user.id
     session_created = request.session_id is None
     if session_created:
@@ -371,6 +407,7 @@ def chat_stream(
         session = chat_repository.get_session(db, request.session_id, owner_id)
         if session is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
+        _require_session_document(session, request.document_id)
         recent_messages = chat_repository.list_recent_messages(
             db,
             session.id,
@@ -385,6 +422,7 @@ def chat_stream(
     chunks = retrieve_chunks(
         db=db,
         owner_id=owner_id,
+        document_id=request.document_id,
         question=retrieval_plan.standalone_query,
         goals=goals,
         trace=trace,
@@ -392,6 +430,7 @@ def chat_stream(
     chunks = complete_evidence_coverage(
         db=db,
         owner_id=owner_id,
+        document_id=request.document_id,
         question=request.question,
         goals=goals,
         chunks=chunks,
@@ -403,13 +442,14 @@ def chat_stream(
         session = chat_repository.create_session(
             db,
             owner_id=owner_id,
+            document_id=request.document_id,
             title=request.question.strip()[:80] or "새 대화",
         )
         db.commit()
         db.refresh(session)
 
     stream_session_id = session.id
-    endpoint_key = language_model_service.get_user_endpoint_key(user)
+    endpoint = language_model_service.get_user_endpoint(user)
     # 생성기는 요청 범위 DB 세션을 닫은 뒤 실행된다.
     db.close()
     return StreamingResponse(
@@ -422,7 +462,7 @@ def chat_stream(
             history=history,
             trace=trace,
             evidence_matrix=evidence_matrix,
-            endpoint_key=endpoint_key,
+            endpoint=endpoint,
         ),
         media_type="text/event-stream",
         headers={

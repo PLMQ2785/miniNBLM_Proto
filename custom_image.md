@@ -53,16 +53,14 @@ Persistent application data: /data
 
 ## 2. Docker Hub 게시
 
-현재 release namespace는 `cpsu/mininblm`입니다. 12B·31B `0.1.3` compatibility
-tag와 `0.1.4` release tag는 모두 `VLLM_MAX_MODEL_LEN=16384`로 build합니다.
+현재 release namespace는 `cpsu/mininblm`입니다. 12B·31B `0.1.5` release
+tag는 모두 `VLLM_MAX_MODEL_LEN=16384`로 build합니다.
 
 ```bash
 docker login
-docker push cpsu/mininblm:0.1.3-gemma4-12b-w4a16
-docker push cpsu/mininblm:0.1.3-gemma4-31b-w4a16
-docker push cpsu/mininblm:0.1.4
-docker push cpsu/mininblm:0.1.4-gemma4-12b-w4a16
-docker push cpsu/mininblm:0.1.4-gemma4-31b-w4a16
+docker push cpsu/mininblm:0.1.5
+docker push cpsu/mininblm:0.1.5-gemma4-12b-w4a16
+docker push cpsu/mininblm:0.1.5-gemma4-31b-w4a16
 ```
 
 Vast.ai Template에 `VLLM_MAX_MODEL_LEN`이 있으면 image 기본값보다 우선합니다.
@@ -191,95 +189,35 @@ BOOTSTRAP_ADMIN_PASSWORD=<안전한-임시-비밀번호>
 ### 4.1 실행 후 Grok endpoint 추가
 
 배포 image와 기본 endpoint JSON에는 실제 API key나 Grok endpoint를 넣지 않습니다.
-첫 실행 후 persistent volume의 `/data/config/llm-endpoints.json`을 수정합니다.
-Vast Template에서 `LLM_ENDPOINTS_FILE`을 다른 persistent 경로로 지정했다면 그
-경로를 사용합니다.
+기본 local `gemma4` endpoint는 `authentication: "none"`으로 시작합니다. 최초
+관리자 로그인 후 **관리** 화면에서 Grok endpoint를 추가하고 인증 방식을 `managed`로
+선택한 뒤 API key를 입력합니다. 12B와 31B 모두 local endpoint 식별자와 vLLM served
+model name은 `gemma4`이며 표시 이름으로 variant를 구분합니다.
 
-12B는 다음처럼 local `gemma4`를 기본값으로 유지하고 Grok을 추가합니다.
+관리자가 입력한 API key는 자동 생성된
+`/data/secrets/llm/master.key`로 암호화되며 persistent endpoint JSON에는
+`api_key_ciphertext`만 저장됩니다. 평문 key와 암호문은 관리 API 응답에 포함되지
+않습니다. Endpoint JSON과 master key를 함께 백업하고 master key 권한을 0600으로
+유지합니다. Master key를 잃으면 기존 암호문을 복구할 수 없습니다.
 
-```json
-{
-  "default_endpoint": "gemma4",
-  "endpoints": [
-    {
-      "key": "gemma4",
-      "display_name": "Gemma 4 12B W4A16",
-      "base_url": "http://127.0.0.1:8010/v1",
-      "api_key": "EMPTY",
-      "model": "gemma4",
-      "supports_vision": true
-    },
-    {
-      "key": "grok",
-      "display_name": "Grok 4.6",
-      "base_url": "https://api.x.ai/v1",
-      "api_key": "<실제-xAI-API-key>",
-      "model": "grok-4.6",
-      "supports_vision": true
-    }
-  ]
-}
-```
-
-31B도 local endpoint 식별자와 vLLM served model name을 `gemma4`로 고정하고
-표시 이름으로 31B variant를 구분합니다.
-
-```json
-{
-  "default_endpoint": "gemma4",
-  "endpoints": [
-    {
-      "key": "gemma4",
-      "display_name": "Gemma 4 31B W4A16",
-      "base_url": "http://127.0.0.1:8010/v1",
-      "api_key": "EMPTY",
-      "model": "gemma4",
-      "supports_vision": true
-    },
-    {
-      "key": "grok",
-      "display_name": "Grok 4.6",
-      "base_url": "https://api.x.ai/v1",
-      "api_key": "<실제-xAI-API-key>",
-      "model": "grok-4.6",
-      "supports_vision": true
-    }
-  ]
-}
-```
-
-`api_key`와 `api_key_env`를 동시에 지정할 수 없습니다. 저장 후 JSON을 검증하고
-읽기 권한을 제한합니다.
+Persistent 파일을 직접 점검해야 한다면 JSON 구문만 검증합니다.
 
 ```bash
 python3 -m json.tool /data/config/llm-endpoints.json >/dev/null
-chown root:root /data/config/llm-endpoints.json
-chmod 600 /data/config/llm-endpoints.json
 ```
-
-그다음 API만 재시작합니다.
-
-```bash
-cd /app
-./run-native.sh stop-api
-./run-native.sh start-api
-```
-
-배포 image에는 key가 없지만 persistent endpoint JSON과 이를 포함하는 backup에는
-평문 key가 있으므로 둘 다 secret으로 취급합니다.
 
 ## 5. 12B Template
 
 ### Image
 
 ```text
-cpsu/mininblm:0.1.4
+cpsu/mininblm:0.1.5
 ```
 
 또는 retag한 image:
 
 ```text
-<dockerhub-user>/mininblm:0.1.4-gemma4-12b-w4a16
+<dockerhub-user>/mininblm:0.1.5-gemma4-12b-w4a16
 ```
 
 ### RunPod Raw 환경변수 전체 목록
@@ -347,13 +285,13 @@ Bootstrap 두 변수는 일회성 테스트에서 유지해도 되며, 장기 �
 ### Image
 
 ```text
-cpsu/mininblm:0.1.4-gemma4-31b-w4a16
+cpsu/mininblm:0.1.5-gemma4-31b-w4a16
 ```
 
 또는 retag한 image:
 
 ```text
-<dockerhub-user>/mininblm:0.1.4-gemma4-31b-w4a16
+<dockerhub-user>/mininblm:0.1.5-gemma4-31b-w4a16
 ```
 
 ### RunPod Raw 환경변수 전체 목록

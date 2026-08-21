@@ -27,10 +27,10 @@ def get_current_user(user: User = Depends(get_authenticated_user)) -> User:
 async def get_current_user_with_language_model(
     user: User = Depends(get_current_user),
 ) -> AsyncGenerator[User, None]:
-    """요청 동안 사용자의 활성 언어 모델을 하위 호출에 고정한다."""
-    # 하위 모델 클라이언트는 ContextVar에서 요청별 엔드포인트를 읽는다.
-    endpoint_key = language_model_service.get_user_endpoint_key(user)
-    with language_model_service.use_endpoint(endpoint_key):
+    """요청 시작 시 사용자의 endpoint snapshot을 고정한다."""
+    # 하위 모델 클라이언트는 설정 파일이 바뀌어도 이 객체를 계속 쓴다.
+    endpoint = language_model_service.get_user_endpoint(user)
+    with language_model_service.use_endpoint(endpoint):
         yield user
 
 

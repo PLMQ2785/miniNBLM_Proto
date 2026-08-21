@@ -8,7 +8,7 @@ from app.models.chat import ChatMessage, ChatSession
 from app.repositories import user_repository
 from app.schemas.chat import SourceRef
 from app.services.generator import GeneratedAnswer
-from app.clients.llm_client import LLMClient
+from app.clients.llm_client import ContextLengthExceededError, LLMClient
 from app.services.query_rewriter import EvidenceGoal, RetrievalQueryPlan
 from app.services.retriever import RetrievedChunk
 
@@ -98,11 +98,12 @@ def test_chat_persists_messages_and_returns_sources(
 
     response = client.post(
         "/chat",
-        json={"question": "낙상 후 무엇을 먼저 하나요?"},
+        json={"document_id": document.id, "question": "낙상 후 무엇을 먼저 하나요?"},
     )
 
     assert response.status_code == 200
     session_id = response.json()["session"]["session_id"]
+    assert response.json()["session"]["document_id"] == document.id
     assert response.json()["session"]["title"] == "낙상 후 무엇을 먼저 하나요?"
     assert response.json()["sources"] == [
         {
@@ -124,16 +125,20 @@ def test_chat_persists_messages_and_returns_sources(
     assert trace["outcome"]["final_chunk_ids"] == [101]
     session = db.scalar(select(ChatSession))
     assert session.owner_id == user.id
-    assert session.document_id is None
+    assert session.document_id == document.id
     assert retrieval_calls[0]["owner_id"] == user.id
+    assert retrieval_calls[0]["document_id"] == document.id
     assert retrieval_calls[0]["question"] == "낙상 후 무엇을 먼저 하나요?"
     assert retrieval_calls[0]["goals"][0].queries == ("낙상 후 무엇을 먼저 하나요?",)
-    assert "document_id" not in retrieval_calls[0]
     assert generation_calls[0]["history"] == []
 
     follow_up = client.post(
         "/chat",
-        json={"session_id": session_id, "question": "그 다음에는 무엇을 하나요?"},
+        json={
+            "session_id": session_id,
+            "document_id": document.id,
+            "question": "그 다음에는 무엇을 하나요?",
+        },
     )
 
     assert follow_up.status_code == 200
@@ -152,9 +157,11 @@ def test_chat_persists_messages_and_returns_sources(
     session_list = client.get("/chat/sessions")
     assert session_list.status_code == 200
     assert [item["session_id"] for item in session_list.json()["sessions"]] == [session_id]
+    assert session_list.json()["sessions"][0]["document_id"] == document.id
 
     session_detail = client.get(f"/chat/sessions/{session_id}?limit=2")
     assert session_detail.status_code == 200
+    assert session_detail.json()["document_id"] == document.id
     assert session_detail.json()["has_more"] is True
     assert [message["role"] for message in session_detail.json()["messages"]] == ["user", "assistant"]
     assert session_detail.json()["messages"][1]["sources"][0]["available"] is True
@@ -168,25 +175,95 @@ def test_chat_persists_messages_and_returns_sources(
     assert older_messages.json()["messages"][0]["content"] == "낙상 후 무엇을 먼저 하나요?"
 
     assert client.delete(f"/documents/{document.id}").status_code == 204
-    history_after_document_delete = client.get(f"/chat/sessions/{session_id}").json()
-    source = history_after_document_delete["messages"][1]["sources"][0]
-    assert source["document_title"] == document.title
-    assert source["available"] is False
+    assert client.get(f"/chat/sessions/{session_id}").status_code == 404
+    assert client.get("/chat/sessions").json() == {"sessions": []}
+
+
+
+def test_chat_rejects_session_scope_changes_and_unindexed_documents(
+    client: TestClient,
+    db: Session,
+    document_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """세션 문서 변경과 색인되지 않은 문서 질의를 검색 전에 거부한다."""
+    assert client.post(
+        "/auth/register",
+        json={"username": "scope-owner", "password": "password123"},
+    ).status_code == 201
+    user = user_repository.get_user_by_username(db, "scope-owner")
+    first_document = document_factory(user, title="first.pdf")
+    second_document = document_factory(user, title="second.pdf")
+    processing_document = document_factory(user, title="processing.pdf", status="processing")
+    retrieval_calls = []
+    monkeypatch.setattr(
+        chat_api,
+        "retrieve_chunks",
+        lambda **kwargs: retrieval_calls.append(kwargs) or [],
+    )
+
+    created = client.post(
+        "/chat",
+        json={"document_id": first_document.id, "question": "첫 질문"},
+    )
+    assert created.status_code == 200
+    session_id = created.json()["session"]["session_id"]
+
+    changed = client.post(
+        "/chat",
+        json={
+            "session_id": session_id,
+            "document_id": second_document.id,
+            "question": "다른 문서 질문",
+        },
+    )
+    not_indexed = client.post(
+        "/chat",
+        json={"document_id": processing_document.id, "question": "처리 중 질문"},
+    )
+    global_session = client.post(
+        "/chat",
+        json={"question": "전체 문서 질문"},
+    )
+    assert global_session.status_code == 200
+    global_changed = client.post(
+        "/chat",
+        json={
+            "session_id": global_session.json()["session"]["session_id"],
+            "document_id": first_document.id,
+            "question": "개별 문서로 변경",
+        },
+    )
+
+
+    assert changed.status_code == 409
+    assert changed.json()["detail"] == "Chat session belongs to a different document scope"
+    assert not_indexed.status_code == 409
+    assert not_indexed.json()["detail"] == "Document is not indexed"
+    assert global_changed.status_code == 409
+    assert global_changed.json()["detail"] == "Chat session belongs to a different document scope"
+    assert len(retrieval_calls) == 2
 
 
 def test_chat_sessions_are_isolated_and_can_be_deleted(
     client: TestClient,
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
+    document_factory,
 ) -> None:
     """대화 세션 접근이 사용자별로 격리되고 삭제가 전파되는지 검증한다."""
     assert client.post(
         "/auth/register",
         json={"username": "session-owner", "password": "password123"},
     ).status_code == 201
+    user = user_repository.get_user_by_username(db, "session-owner")
+    document = document_factory(user)
     monkeypatch.setattr(chat_api, "retrieve_chunks", lambda **kwargs: [])
 
-    created = client.post("/chat", json={"question": "내 대화"})
+    created = client.post(
+        "/chat",
+        json={"document_id": document.id, "question": "내 대화"},
+    )
     assert created.status_code == 200
     session_id = created.json()["session"]["session_id"]
 
@@ -200,7 +277,11 @@ def test_chat_sessions_are_isolated_and_can_be_deleted(
         assert other.delete(f"/chat/sessions/{session_id}").status_code == 404
         assert other.post(
             "/chat",
-            json={"session_id": session_id, "question": "가로채기"},
+            json={
+                "session_id": session_id,
+                "document_id": document.id,
+                "question": "가로채기",
+            },
         ).status_code == 404
 
     assert client.delete(f"/chat/sessions/{session_id}").status_code == 204
@@ -260,25 +341,35 @@ def test_legacy_chat_history_filters_retrieval_candidates_by_citation(
     assert sources[0]["page"] == 9
 
 
-def test_chat_returns_a_grounded_empty_result_without_document_selection(
+def test_chat_without_selection_queries_the_whole_workspace(
     client: TestClient,
+    db: Session,
+    document_factory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """선택 문서가 없어도 출처 없는 근거 제한 답변을 반환하는지 검증한다."""
+    """문서 선택이 없으면 기존처럼 전체 문서 범위로 검색한다."""
     assert client.post(
         "/auth/register",
-        json={"username": "empty-workspace", "password": "password123"},
+        json={"username": "whole-workspace", "password": "password123"},
     ).status_code == 201
-    monkeypatch.setattr(chat_api, "retrieve_chunks", lambda **kwargs: [])
+    user = user_repository.get_user_by_username(db, "whole-workspace")
+    document_factory(user, title="first.pdf")
+    document_factory(user, title="second.pdf")
+    retrieval_calls = []
+    monkeypatch.setattr(
+        chat_api,
+        "retrieve_chunks",
+        lambda **kwargs: retrieval_calls.append(kwargs) or [],
+    )
 
     response = client.post(
         "/chat",
-        json={"question": "질문"},
+        json={"question": "전체 질문"},
     )
 
     assert response.status_code == 200
-    assert response.json()["sources"] == []
-    assert "자료" in response.json()["answer"]
+    assert response.json()["session"]["document_id"] is None
+    assert retrieval_calls[0]["document_id"] is None
 
 
 def test_chat_streams_answer_and_persists_only_after_completion(
@@ -313,7 +404,11 @@ def test_chat_streams_answer_and_persists_only_after_completion(
         ),
     )
 
-    with client.stream("POST", "/chat/stream", json={"question": "낙상 후 조치는?"}) as response:
+    with client.stream(
+        "POST",
+        "/chat/stream",
+        json={"document_id": document.id, "question": "낙상 후 조치는?"},
+    ) as response:
         body = "".join(response.iter_text())
 
     assert response.status_code == 200
@@ -361,7 +456,11 @@ def test_chat_stream_hides_fragmented_no_source_marker(
         ),
     )
 
-    with client.stream("POST", "/chat/stream", json={"question": "자료 밖 질문"}) as response:
+    with client.stream(
+        "POST",
+        "/chat/stream",
+        json={"document_id": document.id, "question": "자료 밖 질문"},
+    ) as response:
         body = "".join(response.iter_text())
 
     assert response.status_code == 200
@@ -415,7 +514,11 @@ def test_chat_stream_revises_and_persists_citation_repair(
         ),
     )
 
-    with client.stream("POST", "/chat/stream", json={"question": "낙상 후 조치는?"}) as response:
+    with client.stream(
+        "POST",
+        "/chat/stream",
+        json={"document_id": document.id, "question": "낙상 후 조치는?"},
+    ) as response:
         body = "".join(response.iter_text())
 
     assert response.status_code == 200
@@ -428,20 +531,79 @@ def test_chat_stream_revises_and_persists_citation_repair(
     assert assistant.message_metadata["sources"][0]["page"] == 7
 
 
+def test_chat_stream_persists_extractive_fallback_after_context_overflow(
+    client: TestClient,
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    document_factory,
+) -> None:
+    """모든 생성 단계의 입력 초과가 SSE 오류 없이 발췌 답변으로 완료되는지 검증한다."""
+    assert client.post(
+        "/auth/register",
+        json={"username": "overflow-stream", "password": "password123"},
+    ).status_code == 201
+    user = user_repository.get_user_by_username(db, "overflow-stream")
+    document = document_factory(user)
+    retrieved = RetrievedChunk(
+        chunk_id=581,
+        document_id=document.id,
+        document_title=document.title,
+        content="낙상 후에는 손상 여부를 확인한다.",
+        page_start=7,
+        page_end=7,
+        score=0.9,
+        source_refs={"page": 7},
+    )
+    monkeypatch.setattr(chat_api, "retrieve_chunks", lambda **kwargs: [retrieved])
+    calls = 0
+
+    def overflow_stream(*args, **kwargs):
+        """일반·축소·최소 생성 단계에서 모두 컨텍스트 초과를 반환한다."""
+        nonlocal calls
+        calls += 1
+        raise ContextLengthExceededError("context overflow")
+        yield ""
+
+    monkeypatch.setattr(LLMClient, "stream_chat_completion", overflow_stream)
+
+    with client.stream(
+        "POST",
+        "/chat/stream",
+        json={"document_id": document.id, "question": "낙상 후 조치는?"},
+    ) as response:
+        body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert calls == 3
+    assert "event: error" not in body
+    assert "검색된 핵심 근거" in body
+    assert "[Source 1, Page 7]" in body
+    assert "event: sources" in body
+    assert "event: done" in body
+    db.expire_all()
+    messages = list(db.scalars(select(ChatMessage).order_by(ChatMessage.id)))
+    assert [message.role for message in messages] == ["user", "assistant"]
+    assert "검색된 핵심 근거" in messages[1].content
+    assert messages[1].message_metadata["sources"][0]["chunk_id"] == 581
+
+
 def test_failed_new_chat_stream_removes_empty_session(
     client: TestClient,
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
+    document_factory,
 ) -> None:
     """신규 SSE 생성 실패가 빈 대화 세션과 메시지를 남기지 않는지 검증한다."""
     assert client.post(
         "/auth/register",
         json={"username": "failed-stream", "password": "password123"},
     ).status_code == 201
+    user = user_repository.get_user_by_username(db, "failed-stream")
+    document = document_factory(user)
     retrieved = RetrievedChunk(
         chunk_id=601,
-        document_id=1,
-        document_title="lesson.pdf",
+        document_id=document.id,
+        document_title=document.title,
         content="검색 결과",
         page_start=1,
         page_end=1,
@@ -456,7 +618,11 @@ def test_failed_new_chat_stream_removes_empty_session(
 
     monkeypatch.setattr(LLMClient, "stream_chat_completion", fail_stream)
 
-    with client.stream("POST", "/chat/stream", json={"question": "실패 질문"}) as response:
+    with client.stream(
+        "POST",
+        "/chat/stream",
+        json={"document_id": document.id, "question": "실패 질문"},
+    ) as response:
         body = "".join(response.iter_text())
 
     assert response.status_code == 200

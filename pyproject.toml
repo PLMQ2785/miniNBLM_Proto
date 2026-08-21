@@ -1,6 +1,6 @@
 [project]
 name = "mininblm"
-version = "0.1.4"
+version = "0.1.5"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12, <3.13"
@@ -16,6 +16,7 @@ common = [
 api = [
     { include-group = "common" },
     "alembic==1.16.2",
+    "cryptography==46.0.3",
     "httpx==0.28.1",
     "openai==1.93.0",
     "pgvector==0.4.1",

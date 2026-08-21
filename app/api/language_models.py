@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.config import LLMEndpoint, settings
+from app.config import LLMEndpoint
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.schemas.language_models import (
@@ -30,9 +30,12 @@ def _endpoint_response(endpoint: LLMEndpoint) -> LanguageModelEndpointResponse:
 
 
 def _state_response(user: User) -> LanguageModelStateResponse:
-    """사용자의 활성 선택과 전체 모델 목록을 응답으로 묶는다."""
+    """최신 JSON의 선택 가능 목록과 실제 사용자 endpoint를 묶는다."""
     return LanguageModelStateResponse(
-        endpoints=[_endpoint_response(endpoint) for endpoint in settings.llm_endpoints],
+        endpoints=[
+            _endpoint_response(endpoint)
+            for endpoint in language_model_service.list_enabled_endpoints()
+        ],
         active_endpoint_key=language_model_service.get_user_endpoint_key(user),
     )
 

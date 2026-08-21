@@ -8,6 +8,7 @@ import { NotificationView } from "./views/notification-view.js";
 import { SourcePanel } from "./views/source-panel.js";
 import { AuthView } from "./views/auth-view.js";
 import { AdminView } from "./views/admin-view.js";
+import { LanguageModelAdminView } from "./views/language-model-admin-view.js";
 import { PasswordChangeView } from "./views/password-change-view.js";
 import { AccountView } from "./views/account-view.js";
 
@@ -18,6 +19,9 @@ const documentPanelRoot = byId("document-panel");
 const sourcePanelRoot = byId("source-panel");
 const backdrop = byId("drawer-backdrop");
 const appRoot = byId("app");
+const workspaceRoot = appRoot.querySelector(".workspace");
+const documentPanelCollapse = byId("document-panel-collapse");
+const sourcePanelCollapse = byId("source-panel-collapse");
 const adminRoot = byId("admin-view");
 const passwordChangeRoot = byId("password-change-view");
 const accountRoot = byId("account-view");
@@ -56,6 +60,25 @@ const adminView = new AdminView({
   temporaryPasswordConfirmation: byId("reset-temporary-password-confirmation"),
   passwordResetMessage: byId("admin-password-reset-message"),
   passwordResetButton: byId("admin-password-reset-button"),
+});
+
+const languageModelAdminView = new LanguageModelAdminView({
+  list: byId("llm-endpoint-list"),
+  form: byId("llm-endpoint-form"),
+  key: byId("llm-endpoint-key"),
+  displayName: byId("llm-endpoint-display-name"),
+  baseUrl: byId("llm-endpoint-base-url"),
+  model: byId("llm-endpoint-model"),
+  authentication: byId("llm-endpoint-authentication"),
+  apiKey: byId("llm-endpoint-api-key"),
+  apiKeyNote: byId("llm-endpoint-api-key-note"),
+  supportsVision: byId("llm-endpoint-supports-vision"),
+  enabled: byId("llm-endpoint-enabled"),
+  submit: byId("llm-endpoint-submit"),
+  cancel: byId("llm-endpoint-cancel"),
+  message: byId("llm-endpoint-message"),
+  revision: byId("llm-config-revision"),
+  reloadError: byId("llm-reload-error"),
 });
 
 const passwordChangeView = new PasswordChangeView({
@@ -128,6 +151,26 @@ const controller = new AppController({
   notificationView,
 });
 
+// 데스크톱 문서 목록을 좁은 복원 레일로 접거나 원래 너비로 펼친다.
+function setDocumentPanelCollapsed(collapsed) {
+  const actionLabel = collapsed ? "문서 목록 펼치기" : "문서 목록 숨기기";
+  workspaceRoot.classList.toggle("is-document-panel-collapsed", collapsed);
+  documentPanelCollapse.setAttribute("aria-expanded", String(!collapsed));
+  documentPanelCollapse.setAttribute("aria-label", actionLabel);
+  documentPanelCollapse.title = actionLabel;
+  documentPanelCollapse.querySelector("[aria-hidden]").textContent = collapsed ? "›" : "‹";
+}
+
+// 데스크톱 PDF 미리보기를 좁은 복원 레일로 접거나 원래 너비로 펼친다.
+function setSourcePanelCollapsed(collapsed) {
+  const actionLabel = collapsed ? "PDF 미리보기 펼치기" : "PDF 미리보기 숨기기";
+  workspaceRoot.classList.toggle("is-source-panel-collapsed", collapsed);
+  sourcePanelCollapse.setAttribute("aria-expanded", String(!collapsed));
+  sourcePanelCollapse.setAttribute("aria-label", actionLabel);
+  sourcePanelCollapse.title = actionLabel;
+  sourcePanelCollapse.querySelector("[aria-hidden]").textContent = collapsed ? "‹" : "›";
+}
+
 // 모바일 서랍 상태에 맞춰 공통 배경막을 동기화한다.
 function syncBackdrop() {
   const open = documentPanelRoot.classList.contains("is-mobile-open")
@@ -150,6 +193,13 @@ function closeDrawers() {
   byId("documents-toggle").setAttribute("aria-expanded", "false");
   syncBackdrop();
 }
+
+documentPanelCollapse.addEventListener("click", () => {
+  setDocumentPanelCollapsed(!workspaceRoot.classList.contains("is-document-panel-collapsed"));
+});
+sourcePanelCollapse.addEventListener("click", () => {
+  setSourcePanelCollapsed(!workspaceRoot.classList.contains("is-source-panel-collapsed"));
+});
 
 byId("documents-toggle").addEventListener("click", openDocuments);
 byId("documents-close").addEventListener("click", closeDrawers);
@@ -194,12 +244,22 @@ async function refreshAdminState() {
   }
 }
 
+// 관리자용 JSON endpoint 전체 상태와 revision을 카드 목록에 반영한다.
+async function refreshLanguageModelAdminState() {
+  try {
+    const state = await apiClient.getLanguageModelAdminState();
+    languageModelAdminView.render(state);
+  } catch (error) {
+    languageModelAdminView.showMessage(error.message, true);
+  }
+}
+
 // 작업공간 폴링을 멈추고 관리자 화면으로 전환한다.
 async function openAdmin() {
   controller.pollingService.stopAll();
   appRoot.hidden = true;
   adminView.show();
-  await refreshAdminState();
+  await Promise.all([refreshAdminState(), refreshLanguageModelAdminState()]);
 }
 
 // 설정 변경 여부에 따라 작업공간을 복원하거나 새로고침한다.
@@ -323,7 +383,7 @@ function closeAccount() {
   accountView.hide();
   if (accountReturnView === "admin") {
     adminView.show();
-    refreshAdminState();
+    Promise.all([refreshAdminState(), refreshLanguageModelAdminState()]);
   } else {
     appRoot.hidden = false;
   }
@@ -398,6 +458,63 @@ adminView.onActivateAlgorithm(async (algorithmKey) => {
     adminView.showError(error.message);
   } finally {
     adminView.setBusy(false);
+  }
+});
+
+languageModelAdminView.onSave(async (editingKey, payload, revision) => {
+  languageModelAdminView.setBusy(true);
+  languageModelAdminView.showMessage("");
+  try {
+    const state = editingKey
+      ? await apiClient.updateLanguageModelEndpoint(editingKey, payload, revision)
+      : await apiClient.createLanguageModelEndpoint(payload, revision);
+    languageModelAdminView.render(state);
+    languageModelAdminView.resetForm();
+    await loadLanguageModels();
+    languageModelAdminView.showMessage(
+      editingKey ? "Endpoint 변경을 JSON에 적용했습니다." : "Endpoint를 JSON에 추가했습니다.",
+    );
+  } catch (error) {
+    if (error.status === 409) await refreshLanguageModelAdminState();
+    languageModelAdminView.showMessage(error.message, true);
+  } finally {
+    languageModelAdminView.setBusy(false);
+  }
+});
+
+languageModelAdminView.onSetDefault(async (endpointKey, revision) => {
+  if (!window.confirm(`${endpointKey} endpoint를 기본값으로 지정할까요?`)) return;
+  languageModelAdminView.setBusy(true);
+  languageModelAdminView.showMessage("");
+  try {
+    const state = await apiClient.setDefaultLanguageModelEndpoint(endpointKey, revision);
+    languageModelAdminView.render(state);
+    await loadLanguageModels();
+    languageModelAdminView.showMessage("기본 endpoint를 변경했습니다.");
+  } catch (error) {
+    if (error.status === 409) await refreshLanguageModelAdminState();
+    languageModelAdminView.showMessage(error.message, true);
+  } finally {
+    languageModelAdminView.setBusy(false);
+  }
+});
+
+languageModelAdminView.onDelete(async (endpointKey, revision) => {
+  if (!window.confirm(`${endpointKey} endpoint를 삭제할까요? 해당 사용자는 다음 요청부터 기본값을 사용합니다.`)) {
+    return;
+  }
+  languageModelAdminView.setBusy(true);
+  languageModelAdminView.showMessage("");
+  try {
+    const state = await apiClient.deleteLanguageModelEndpoint(endpointKey, revision);
+    languageModelAdminView.render(state);
+    await loadLanguageModels();
+    languageModelAdminView.showMessage("Endpoint를 JSON에서 삭제했습니다.");
+  } catch (error) {
+    if (error.status === 409) await refreshLanguageModelAdminState();
+    languageModelAdminView.showMessage(error.message, true);
+  } finally {
+    languageModelAdminView.setBusy(false);
   }
 });
 

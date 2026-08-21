@@ -1,4 +1,4 @@
-import { formatPage } from "../formatters.js";
+import { formatPage, formatStatus } from "../formatters.js";
 
 // 작업공간 상태에 연결되어 대화 이력과 질문·답변 메시지를 렌더링한다.
 export class ChatPanel {
@@ -121,19 +121,24 @@ export class ChatPanel {
     isLoadingOlderMessages,
     hasOlderMessages,
     deletingSessionId,
+    selectedDocumentId,
   }) {
     const indexedCount = documents.filter((document) => document.status === "indexed").length;
     const processingCount = documents.filter(
       (document) => document.status === "uploaded" || document.status === "processing",
     ).length;
     const failedCount = documents.filter((document) => document.status === "failed").length;
-    const isReady = indexedCount > 0;
+    const selectedDocument = documents.find(
+      (document) => document.document_id === selectedDocumentId,
+    ) || null;
+    const isReady = selectedDocument ? selectedDocument.status === "indexed" : indexedCount > 0;
 
     this.status.textContent = this.workspaceStatus({
       indexedCount,
       processingCount,
       failedCount,
       isLoading,
+      selectedDocument,
     });
     this.renderSessionControls(chatSessions, activeSessionId, {
       isGenerating,
@@ -142,6 +147,9 @@ export class ChatPanel {
       isLoadingOlderMessages,
       deletingSessionId,
     });
+    this.input.placeholder = selectedDocument
+      ? `${selectedDocument.title} 문서에 대해 질문하세요.`
+      : "전체 문서에 대해 질문하세요.";
     this.input.disabled = !isReady || isGenerating || isLoadingConversation;
     this.sendButton.disabled = !isReady || isGenerating || isLoadingConversation;
     this.sendButton.textContent = isGenerating ? "답변 생성 중" : "질문 보내기";
@@ -150,14 +158,16 @@ export class ChatPanel {
     if (isLoadingConversation) {
       this.messageList.append(this.emptyState("대화를 불러오는 중입니다."));
     } else if (messages.length === 0) {
-      let emptyMessage = "업로드한 전체 자료에 대해 질문하세요.";
+      let emptyMessage = selectedDocument
+        ? `“${selectedDocument.title}” 문서에 대해 질문하세요.`
+        : "업로드한 전체 문서에 대해 질문하세요.";
       if (isLoading && documents.length === 0) {
         emptyMessage = "문서를 불러오는 중입니다.";
-      } else if (!isReady && processingCount > 0) {
+      } else if (indexedCount === 0 && processingCount > 0) {
         emptyMessage = "문서를 인덱싱하고 있습니다.";
-      } else if (!isReady) {
+      } else if (indexedCount === 0) {
         emptyMessage = documents.length === 0
-          ? "PDF를 추가하면 전체 자료를 대상으로 질문할 수 있습니다."
+          ? "PDF를 추가하면 문서별로 질문할 수 있습니다."
           : "검색 가능한 문서가 없습니다. 실패 상태를 확인하거나 PDF를 추가하세요.";
       }
       this.messageList.append(this.emptyState(emptyMessage));
@@ -215,14 +225,17 @@ export class ChatPanel {
     this.deleteSessionButton.textContent = deletingSessionId === activeSessionId ? "삭제 중" : "삭제";
   }
 
-  // 문서 처리 상태를 채팅 헤더용 한 줄 문구로 만든다.
-  workspaceStatus({ indexedCount, processingCount, failedCount, isLoading }) {
+  // 문서 처리 현황과 현재 전체·개별 질의 범위를 채팅 헤더 문구로 만든다.
+  workspaceStatus({ indexedCount, processingCount, failedCount, isLoading, selectedDocument }) {
+    if (selectedDocument) {
+      return `질의 대상 · ${selectedDocument.title} · ${formatStatus(selectedDocument.status)}`;
+    }
     const parts = [];
     if (indexedCount > 0) parts.push(`검색 가능 ${indexedCount}개`);
     if (processingCount > 0) parts.push(`처리 중 ${processingCount}개`);
     if (failedCount > 0) parts.push(`실패 ${failedCount}개`);
     if (parts.length === 0) return isLoading ? "목록 확인 중" : "등록된 문서 없음";
-    return parts.join(" · ");
+    return `${parts.join(" · ")} · 전체 문서 질의`;
   }
 
   // 역할·상태·출처를 포함한 대화 메시지 요소를 만든다.

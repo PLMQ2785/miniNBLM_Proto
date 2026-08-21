@@ -134,6 +134,7 @@ load_config() {
   EMBEDDING_BASE_URL_VALUE="${EMBEDDING_BASE_URL:-$(env_value EMBEDDING_BASE_URL "http://127.0.0.1:$EMBEDDING_PORT")}"
   LLM_HEALTH_URL="${NATIVE_LLM_HEALTH_URL:-$(env_value NATIVE_LLM_HEALTH_URL "http://127.0.0.1:$LLM_PORT/v1/models")}"
   LLM_ENDPOINTS_FILE_VALUE="$(absolute_path "${LLM_ENDPOINTS_FILE:-$(env_value LLM_ENDPOINTS_FILE config/llm-endpoints.json)}")"
+  LLM_MASTER_KEY_FILE_VALUE="$(absolute_path "${LLM_MASTER_KEY_FILE:-$(env_value LLM_MASTER_KEY_FILE data/secrets/llm/master.key)}")"
   [[ -f "$LLM_ENDPOINTS_FILE_VALUE" ]] || {
     echo "오류: 언어모델 설정 파일을 찾을 수 없습니다: $LLM_ENDPOINTS_FILE_VALUE" >&2
     return 1
@@ -144,7 +145,7 @@ load_config() {
   VLLM_BIN="${NATIVE_VLLM_BIN:-$VLLM_ENV_DIR/bin/vllm}"
   POSTGRES_SOCKET_DIR="$RUNTIME_DIR/postgres-socket"
 
-  mkdir -p "$RUNTIME_DIR" "$LOG_DIR" "$HF_HOME_DIR" "$UPLOAD_DIR_VALUE"
+  mkdir -p "$RUNTIME_DIR" "$LOG_DIR" "$HF_HOME_DIR" "$UPLOAD_DIR_VALUE" "$(dirname -- "$LLM_MASTER_KEY_FILE_VALUE")"
 }
 
 # 서비스별 PID 파일 경로를 만든다.
@@ -470,7 +471,9 @@ start_llm() {
 validate_api_config() {
   echo "API 설정을 검증합니다."
   if ! env LLM_ENDPOINTS_FILE="$LLM_ENDPOINTS_FILE_VALUE" \
-      "$NATIVE_PYTHON" -c 'from app.config import settings' ; then
+      LLM_MASTER_KEY_FILE="$LLM_MASTER_KEY_FILE_VALUE" \
+      "$NATIVE_PYTHON" -c \
+      'from app.services.language_model_service import initialize_configuration; initialize_configuration()' ; then
     echo "오류: API 설정이 유효하지 않습니다: $LLM_ENDPOINTS_FILE_VALUE" >&2
     return 1
   fi
@@ -484,6 +487,7 @@ start_api() {
     env DATABASE_URL="$DATABASE_URL_VALUE" UPLOAD_DIR="$UPLOAD_DIR_VALUE" \
     EMBEDDING_BASE_URL="$EMBEDDING_BASE_URL_VALUE" \
     LLM_ENDPOINTS_FILE="$LLM_ENDPOINTS_FILE_VALUE" \
+    LLM_MASTER_KEY_FILE="$LLM_MASTER_KEY_FILE_VALUE" \
     "$NATIVE_PYTHON" -m uvicorn app.main:app \
     --host "$API_HOST" --port "$API_PORT" --no-access-log
 }

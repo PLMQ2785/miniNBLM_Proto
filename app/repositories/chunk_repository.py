@@ -71,11 +71,12 @@ def search_chunks_by_embedding(
     owner_id: int,
     query_embedding: list[float],
     top_k: int,
+    document_id: int | None = None,
 ) -> list[tuple[Chunk, float, str]]:
-    """사용자 소유의 색인된 청크를 벡터 거리로 검색한다."""
+    """사용자 소유의 선택 문서 청크를 벡터 거리로 검색한다."""
     # 문서 조인으로 모든 검색에 소유권과 색인 상태를 강제한다.
     distance = Chunk.embedding.cosine_distance(query_embedding).label("distance")
-    rows = (
+    query = (
         db.query(Chunk, distance, Document.title)
         .join(Document, Document.id == Chunk.document_id)
         .filter(
@@ -85,10 +86,10 @@ def search_chunks_by_embedding(
             Chunk.deleted_at.is_(None),
             Chunk.embedding.is_not(None),
         )
-        .order_by(distance)
-        .limit(top_k)
-        .all()
     )
+    if document_id is not None:
+        query = query.filter(Chunk.document_id == document_id)
+    rows = query.order_by(distance).limit(top_k).all()
     return [(chunk, float(score), title) for chunk, score, title in rows]
 
 
@@ -97,12 +98,13 @@ def search_chunks_by_keyword(
     owner_id: int,
     question: str,
     top_k: int,
+    document_id: int | None = None,
 ) -> list[tuple[Chunk, float, str]]:
-    """사용자 소유의 색인된 청크를 키워드 순위로 검색한다."""
+    """사용자 소유의 선택 문서 청크를 키워드 순위로 검색한다."""
     document_vector = func.to_tsvector("simple", Chunk.content)
-    query = build_keyword_query(question)
-    rank = func.ts_rank_cd(document_vector, query).label("rank")
-    rows = (
+    keyword_query = build_keyword_query(question)
+    rank = func.ts_rank_cd(document_vector, keyword_query).label("rank")
+    query = (
         db.query(Chunk, rank, Document.title)
         .join(Document, Document.id == Chunk.document_id)
         .filter(
@@ -110,12 +112,12 @@ def search_chunks_by_keyword(
             Document.status == "indexed",
             Document.deleted_at.is_(None),
             Chunk.deleted_at.is_(None),
-            document_vector.op("@@")(query),
+            document_vector.op("@@")(keyword_query),
         )
-        .order_by(rank.desc(), Chunk.id)
-        .limit(top_k)
-        .all()
     )
+    if document_id is not None:
+        query = query.filter(Chunk.document_id == document_id)
+    rows = query.order_by(rank.desc(), Chunk.id).limit(top_k).all()
     return [(chunk, float(score), title) for chunk, score, title in rows]
 
 
@@ -177,13 +179,14 @@ def search_chunks_by_substring(
     owner_id: int,
     question: str,
     top_k: int,
+    document_id: int | None = None,
 ) -> list[tuple[Chunk, float, str]]:
-    """사용자 소유의 색인된 청크를 부분 문자열 유사도로 검색한다."""
+    """사용자 소유의 선택 문서 청크를 부분 문자열 유사도로 검색한다."""
     similarity = func.greatest(
         func.similarity(Chunk.content, question),
         func.word_similarity(question, Chunk.content),
     ).label("similarity")
-    rows = (
+    query = (
         db.query(Chunk, similarity, Document.title)
         .join(Document, Document.id == Chunk.document_id)
         .filter(
@@ -193,8 +196,8 @@ def search_chunks_by_substring(
             Chunk.deleted_at.is_(None),
             similarity > 0,
         )
-        .order_by(similarity.desc(), Chunk.id)
-        .limit(top_k)
-        .all()
     )
+    if document_id is not None:
+        query = query.filter(Chunk.document_id == document_id)
+    rows = query.order_by(similarity.desc(), Chunk.id).limit(top_k).all()
     return [(chunk, float(score), title) for chunk, score, title in rows]

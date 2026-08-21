@@ -144,9 +144,10 @@ def complete_evidence_coverage(
     question: str,
     goals: tuple[EvidenceGoal, ...],
     chunks: list[RetrievedChunk],
+    document_id: int | None = None,
     trace: RetrievalTrace | None = None,
 ) -> list[RetrievedChunk]:
-    """계층 폴백과 목표 재검색을 합쳐 최대 두 동작으로 근거를 보완한다."""
+    """선택 문서 범위에서 계층 폴백과 목표 재검색으로 근거를 보완한다."""
     if not goals:
         return chunks
 
@@ -159,6 +160,7 @@ def complete_evidence_coverage(
             db=db,
             owner_id=owner_id,
             queries=hierarchy_queries,
+            document_id=document_id,
             trace=trace,
             trace_stage="hierarchical_retry_1",
         )
@@ -192,6 +194,7 @@ def complete_evidence_coverage(
             question=question,
             goals=retry_goals,
             trace=trace,
+            document_id=document_id,
             trace_stage=f"targeted_retry_{actions}",
         )
         RETRIEVAL_RETRIES.labels(

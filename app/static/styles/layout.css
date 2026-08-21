@@ -130,6 +130,57 @@
   line-height: 20px;
 }
 
+.llm-admin-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.llm-endpoint-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.llm-endpoint-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 12px;
+  align-items: end;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+}
+
+.llm-endpoint-form > label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-body);
+  font-size: 12px;
+}
+
+.llm-endpoint-checks {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 14px;
+  color: var(--text-body);
+  font-size: 12px;
+}
+
+.llm-endpoint-form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.llm-endpoint-form .admin-error {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .admin-password-reset-form {
   display: grid;
   grid-template-columns: minmax(140px, 0.7fr) repeat(2, minmax(190px, 1fr)) auto;
@@ -174,10 +225,12 @@
 /* 관리자 화면의 좁은 폭 배치 */
 @media (max-width: 900px) {
   .preset-grid,
-  .algorithm-grid {
+  .algorithm-grid,
+  .llm-endpoint-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .llm-endpoint-form,
   .admin-password-reset-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -210,12 +263,18 @@
   }
 
   .preset-grid,
-  .algorithm-grid {
+  .algorithm-grid,
+  .llm-endpoint-grid {
     grid-template-columns: 1fr;
   }
 
+  .llm-endpoint-form,
   .admin-password-reset-form {
     grid-template-columns: 1fr;
+  }
+
+  .llm-endpoint-form-actions {
+    flex-direction: column;
   }
 
   .preset-actions {
@@ -338,8 +397,10 @@
 }
 
 .workspace {
+  --document-panel-width: minmax(248px, 280px);
+  --source-panel-width: minmax(320px, 36vw);
   display: grid;
-  grid-template-columns: minmax(248px, 280px) minmax(380px, 1fr) minmax(320px, 36vw);
+  grid-template-columns: var(--document-panel-width) minmax(380px, 1fr) var(--source-panel-width);
   height: calc(100dvh - var(--header-height));
   min-height: 0;
 }
@@ -383,7 +444,8 @@
   border-bottom: 1px solid var(--border);
 }
 
-.panel-heading-actions {
+.panel-heading-actions,
+.source-heading-actions {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -447,10 +509,37 @@
   display: none;
 }
 
+/* 데스크톱에서는 접힌 패널의 복원 버튼만 좁은 레일에 남긴다. */
+@media (min-width: 901px) {
+  .workspace.is-document-panel-collapsed {
+    --document-panel-width: 44px;
+  }
+
+  .workspace.is-source-panel-collapsed {
+    --source-panel-width: 44px;
+  }
+
+  .workspace.is-document-panel-collapsed .document-panel .panel-heading > :first-child,
+  .workspace.is-document-panel-collapsed .document-refresh-button,
+  .workspace.is-document-panel-collapsed .upload-form,
+  .workspace.is-document-panel-collapsed .document-list,
+  .workspace.is-source-panel-collapsed .source-header > :first-child,
+  .workspace.is-source-panel-collapsed .source-content {
+    display: none;
+  }
+
+  .workspace.is-document-panel-collapsed .panel-heading,
+  .workspace.is-source-panel-collapsed .source-header {
+    justify-content: center;
+    padding-right: 4px;
+    padding-left: 4px;
+  }
+}
 /* 작업공간의 태블릿·모바일 서랍 배치 */
 @media (max-width: 1100px) {
   .workspace {
-    grid-template-columns: 250px minmax(380px, 1fr) 340px;
+    --document-panel-width: 250px;
+    --source-panel-width: 340px;
   }
 }
 

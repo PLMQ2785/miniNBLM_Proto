@@ -5,11 +5,11 @@ services:
       context: .
       dockerfile: Dockerfile.all-in-one
       args:
-        MININBLM_IMAGE_VERSION: ${MININBLM_IMAGE_VERSION:-0.1.4}
+        MININBLM_IMAGE_VERSION: ${MININBLM_IMAGE_VERSION:-0.1.5}
         MININBLM_MODEL_VARIANT: ${MININBLM_MODEL_VARIANT:-gemma4-12b-w4a16}
         MININBLM_MODEL_DISPLAY_NAME: ${MININBLM_MODEL_DISPLAY_NAME:-Gemma 4 12B W4A16}
         MININBLM_LLM_CONFIG_SOURCE: ${MININBLM_LLM_CONFIG_FILE:-config/llm-endpoints.json}
-    image: ${MININBLM_ALL_IN_ONE_IMAGE:-cpsu/mininblm:0.1.4}
+    image: ${MININBLM_ALL_IN_ONE_IMAGE:-cpsu/mininblm:0.1.5}
     gpus: all
     ipc: host
     network_mode: host
@@ -34,7 +34,7 @@ services:
       MODEL_HF_REVISION: ${MODEL_HF_REVISION:-}
       MODEL_KEEP_ARCHIVE: ${MODEL_KEEP_ARCHIVE:-false}
       LLM_ENDPOINTS_FILE: /data/config/llm-endpoints.json
-      XAI_API_KEY: ${XAI_API_KEY:-}
+      LLM_MASTER_KEY_FILE: /data/secrets/llm/master.key
       VISION_CAPTION_MODE: ${VISION_CAPTION_MODE:-disabled}
       VISION_CAPTION_DPI: ${VISION_CAPTION_DPI:-144}
       VISION_CAPTION_VERSION: ${VISION_CAPTION_VERSION:-gemma4-page-caption-v1}
@@ -47,7 +47,6 @@ services:
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
     volumes:
       - mininblm_data:/data
-      - ${MININBLM_LLM_CONFIG_FILE:-./config/llm-endpoints.json}:/data/config/llm-endpoints.json:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/ready >/dev/null"]
       interval: 15s

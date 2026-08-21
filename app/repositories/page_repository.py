@@ -33,12 +33,13 @@ def search_pages_by_keyword(
     owner_id: int,
     query_text: str,
     limit: int,
+    document_id: int | None = None,
 ) -> list[tuple[DocumentPage, float, str]]:
-    """사용자 소유 문서의 페이지를 키워드 순위로 검색한다."""
+    """사용자 소유의 선택 문서 페이지를 키워드 순위로 검색한다."""
     document_vector = func.to_tsvector("simple", DocumentPage.text)
-    query = build_keyword_query(query_text)
-    rank = func.ts_rank_cd(document_vector, query).label("rank")
-    rows = (
+    keyword_query = build_keyword_query(query_text)
+    rank = func.ts_rank_cd(document_vector, keyword_query).label("rank")
+    query = (
         db.query(DocumentPage, rank, Document.title)
         .join(Document, Document.id == DocumentPage.document_id)
         .filter(
@@ -46,12 +47,12 @@ def search_pages_by_keyword(
             Document.status == "indexed",
             Document.deleted_at.is_(None),
             DocumentPage.text.is_not(None),
-            document_vector.op("@@")(query),
+            document_vector.op("@@")(keyword_query),
         )
-        .order_by(rank.desc(), DocumentPage.id)
-        .limit(limit)
-        .all()
     )
+    if document_id is not None:
+        query = query.filter(DocumentPage.document_id == document_id)
+    rows = query.order_by(rank.desc(), DocumentPage.id).limit(limit).all()
     return [(page, float(score), title) for page, score, title in rows]
 
 
@@ -60,13 +61,14 @@ def search_pages_by_substring(
     owner_id: int,
     query_text: str,
     limit: int,
+    document_id: int | None = None,
 ) -> list[tuple[DocumentPage, float, str]]:
-    """사용자 소유 문서의 페이지를 부분 문자열 유사도로 검색한다."""
+    """사용자 소유의 선택 문서 페이지를 부분 문자열 유사도로 검색한다."""
     similarity = func.greatest(
         func.similarity(DocumentPage.text, query_text),
         func.word_similarity(query_text, DocumentPage.text),
     ).label("similarity")
-    rows = (
+    query = (
         db.query(DocumentPage, similarity, Document.title)
         .join(Document, Document.id == DocumentPage.document_id)
         .filter(
@@ -76,8 +78,8 @@ def search_pages_by_substring(
             DocumentPage.text.is_not(None),
             similarity > 0,
         )
-        .order_by(similarity.desc(), DocumentPage.id)
-        .limit(limit)
-        .all()
     )
+    if document_id is not None:
+        query = query.filter(DocumentPage.document_id == document_id)
+    rows = query.order_by(similarity.desc(), DocumentPage.id).limit(limit).all()
     return [(page, float(score), title) for page, score, title in rows]

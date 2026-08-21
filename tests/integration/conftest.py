@@ -1,5 +1,6 @@
-from collections.abc import Callable, Generator
+import json
 import os
+from collections.abc import Callable, Generator
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,9 @@ from app.database import SessionLocal, engine
 from app.main import app
 from app.models.document import Document
 from app.models.user import User
+from app.services import language_model_service
 from app.services.auth_service import password_hash
+from app.services.language_model_registry import LanguageModelRegistry
 
 
 # 개발자 DB를 잘못 비우지 않도록 격리 설정을 먼저 확인한다.
@@ -55,6 +58,32 @@ def reset_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator
     """각 테스트 전후 DB와 업로드 경로를 격리한다."""
     _reset_mutable_data()
     monkeypatch.setattr(settings, "upload_dir", str(tmp_path / "uploads"))
+    endpoint_file = tmp_path / "llm-endpoints.json"
+    master_key_file = tmp_path / "master.key"
+    endpoint_file.write_text(
+        json.dumps(
+            {
+                "default_endpoint": "primary",
+                "endpoints": [
+                    {
+                        "key": "primary",
+                        "display_name": "Primary model",
+                        "base_url": "http://primary:8010/v1",
+                        "authentication": "none",
+                        "model": "model-a",
+                        "supports_vision": True,
+                        "enabled": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        language_model_service,
+        "registry",
+        LanguageModelRegistry(endpoint_file, master_key_file),
+    )
     yield
     _reset_mutable_data()
 

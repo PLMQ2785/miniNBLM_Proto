@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-from app.clients.llm_client import LLMClient
+from app.clients.llm_client import ContextLengthExceededError, LLMClient
 from app.services.evidence_coverage import (
     EvidenceMatrix,
     EvidenceMatrixGoal,
@@ -502,3 +502,77 @@ def test_generate_answer_maps_citations_to_prioritized_bounded_context(
 
     assert "[Source 1]\nDocument: document-5.pdf" in captured_messages[-1]["content"]
     assert generated.sources[0].chunk_id == 5
+
+
+def test_generate_answer_retries_with_compact_context_after_overflow(
+    monkeypatch: pytest.MonkeyPatch,
+    retrieved_chunk: RetrievedChunk,
+) -> None:
+    """일반 입력 초과 뒤 더 짧은 근거와 이력으로 답변 생성을 복구한다."""
+    calls: list[list[dict[str, str]]] = []
+
+    def complete(self, messages, **kwargs):
+        """첫 입력만 거부하고 축소 입력에는 근거 답변을 반환한다."""
+        calls.append(messages)
+        if len(calls) == 1:
+            raise ContextLengthExceededError("context overflow")
+        return "자료에서는 낙상 예방 교육을 시행합니다. [Source 1, Page 3]"
+
+    monkeypatch.setattr(LLMClient, "chat_completion", complete)
+    long_chunk = replace(retrieved_chunk, content="낙상 예방 근거 " * 1200)
+    history = [
+        {"role": "user", "content": "가" * 4000},
+        {"role": "assistant", "content": "나" * 4000},
+    ]
+
+    generated = generate_answer(
+        "낙상 예방은?",
+        [long_chunk],
+        history=history,
+    )
+
+    assert len(calls) == 2
+    assert sum(len(message["content"]) for message in calls[1]) < sum(
+        len(message["content"]) for message in calls[0]
+    )
+    assert generated.answer.endswith("[Source 1, Page 3]")
+    assert [source.chunk_id for source in generated.sources] == [retrieved_chunk.chunk_id]
+
+
+def test_generate_answer_returns_extractive_evidence_when_every_attempt_overflows(
+    monkeypatch: pytest.MonkeyPatch,
+    retrieved_chunk: RetrievedChunk,
+) -> None:
+    """모든 생성 입력이 초과해도 검색 근거와 출처가 있는 정상 응답을 반환한다."""
+    calls = 0
+
+    def overflow(self, messages, **kwargs):
+        """모든 생성 단계에서 컨텍스트 초과를 반환한다."""
+        nonlocal calls
+        calls += 1
+        raise ContextLengthExceededError("context overflow")
+
+    monkeypatch.setattr(LLMClient, "chat_completion", overflow)
+
+    generated = generate_answer("낙상 예방은?", [retrieved_chunk])
+
+    assert calls == 3
+    assert "검색된 핵심 근거" in generated.answer
+    assert "낙상 예방 교육 내용" in generated.answer
+    assert "[Source 1, Page 3]" in generated.answer
+    assert [source.chunk_id for source in generated.sources] == [retrieved_chunk.chunk_id]
+
+
+def test_generate_answer_does_not_hide_non_context_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    retrieved_chunk: RetrievedChunk,
+) -> None:
+    """서비스 장애는 근거 발췌로 가장하지 않고 기존 오류 경로로 전달한다."""
+    monkeypatch.setattr(
+        LLMClient,
+        "chat_completion",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("service unavailable")),
+    )
+
+    with pytest.raises(RuntimeError, match="service unavailable"):
+        generate_answer("낙상 예방은?", [retrieved_chunk])

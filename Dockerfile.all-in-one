@@ -8,7 +8,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.9.28 /uv /uvx /bin/
 ARG MININBLM_MODEL_VARIANT=gemma4-12b-w4a16
 ARG MININBLM_MODEL_DISPLAY_NAME="Gemma 4 12B W4A16"
 ARG MININBLM_LLM_CONFIG_SOURCE=config/llm-endpoints.json
-ARG MININBLM_IMAGE_VERSION=0.1.4
+ARG MININBLM_IMAGE_VERSION=0.1.5
 LABEL org.opencontainers.image.version="${MININBLM_IMAGE_VERSION}" \
       io.mininblm.model.variant="${MININBLM_MODEL_VARIANT}" \
       io.mininblm.model.display-name="${MININBLM_MODEL_DISPLAY_NAME}" \
@@ -85,7 +85,7 @@ RUN chmod +x /app/run-native.sh /app/backup.sh /app/restore.sh \
         /app/scripts/backup.sh /app/scripts/restore.sh \
         /usr/local/bin/all-in-one-entrypoint /usr/local/bin/prepare-model \
     && : > /app/.env \
-    && mkdir -p /data/config /data/models /data/model-cache /data/postgres /data/uploads /data/huggingface /data/logs /data/backups /run/mininblm
+    && mkdir -p /data/config /data/models /data/model-cache /data/postgres /data/uploads /data/secrets/llm /data/huggingface /data/logs /data/backups /run/mininblm
 
 ENV NATIVE_ENV_DIR=/app/.venv-native \
     NATIVE_VLLM_BIN=/usr/local/bin/vllm \
@@ -108,6 +108,7 @@ ENV NATIVE_ENV_DIR=/app/.venv-native \
     VLLM_MODEL_PATH=/data/models/gemma4 \
     EMBEDDING_BASE_URL=http://127.0.0.1:8070 \
     LLM_ENDPOINTS_FILE=/data/config/llm-endpoints.json \
+    LLM_MASTER_KEY_FILE=/data/secrets/llm/master.key \
     STARTUP_TIMEOUT=1800
 
 VOLUME ["/data"]
