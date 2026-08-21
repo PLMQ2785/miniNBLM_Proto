@@ -5,7 +5,7 @@ from collections.abc import Iterator
 
 from openai import OpenAI
 
-from app.config import settings
+from app.config import LLMEndpoint
 from app.observability import (
     LLM_CONTEXT_RECOVERIES,
     LLM_DURATION,
@@ -121,9 +121,9 @@ def _reduced_output_token_budget(exc: Exception, current_max_tokens: int) -> int
 
 class LLMClient:
     """RAG 단계별 LLM 호출과 관측 지표를 한 경로에서 관리한다."""
-    def __init__(self, endpoint_key: str | None = None) -> None:
-        """사용자에게 선택된 엔드포인트로 OpenAI 호환 클라이언트를 만든다."""
-        endpoint = settings.get_llm_endpoint(endpoint_key) if endpoint_key else get_active_endpoint()
+    def __init__(self, endpoint: LLMEndpoint | None = None) -> None:
+        """요청에 고정된 endpoint 또는 명시적으로 받은 snapshot을 사용한다."""
+        endpoint = endpoint or get_active_endpoint()
         self.endpoint_key = endpoint.key
         self.model = endpoint.model
         self.supports_vision = endpoint.supports_vision

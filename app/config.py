@@ -1,24 +1,25 @@
-import json
 import os
 import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.password_policy import validate_secure_password
 
 
 class LLMEndpoint(BaseModel):
-    """런타임 모델 호출에 필요한 검증된 엔드포인트 설정이다."""
+    """한 요청이 끝날 때까지 고정해서 사용할 모델 endpoint snapshot이다."""
+    model_config = ConfigDict(frozen=True)
     key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_.-]*$")
     display_name: str = Field(min_length=1, max_length=128)
     base_url: str
     api_key: str = Field(repr=False)
     model: str = Field(min_length=1, max_length=256)
     supports_vision: bool = False
+    enabled: bool = True
 
     @field_validator("base_url")
     @classmethod
@@ -31,39 +32,49 @@ class LLMEndpoint(BaseModel):
 
 
 class LLMEndpointFileEntry(BaseModel):
-    """설정 파일에서 API 키 직접값 또는 환경 변수 참조를 받는다."""
-    model_config = ConfigDict(extra="forbid")
+    """JSON endpoint 메타데이터와 외부 credential 참조를 검증한다."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
     key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_.-]*$")
     display_name: str = Field(min_length=1, max_length=128)
     base_url: str
-    api_key: SecretStr | None = Field(default=None, repr=False)
     api_key_env: str | None = Field(
         default=None,
         min_length=1,
         max_length=128,
         pattern=r"^[A-Z_][A-Z0-9_]*$",
     )
+    api_key_file: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+    )
     model: str = Field(min_length=1, max_length=256)
     supports_vision: bool = False
+    enabled: bool = True
 
     @model_validator(mode="after")
     def validate_api_key_source(self) -> "LLMEndpointFileEntry":
-        """API 키 출처가 정확히 하나만 지정되었는지 확인한다."""
-        if (self.api_key is None) == (self.api_key_env is None):
-            raise ValueError("Configure exactly one of api_key or api_key_env")
+        """환경변수와 secret 파일 중 정확히 하나만 선택하게 한다."""
+        if (self.api_key_env is None) == (self.api_key_file is None):
+            raise ValueError("Configure exactly one of api_key_env or api_key_file")
         return self
 
-    def resolve(self) -> LLMEndpoint:
-        """비밀 키 참조를 풀어 런타임 엔드포인트 설정으로 변환한다."""
+    def resolve(self, secret_dir: Path) -> LLMEndpoint:
+        """외부 credential을 읽어 호출 가능한 immutable snapshot으로 변환한다."""
         if self.api_key_env is not None:
-            api_key = os.environ.get(self.api_key_env)
-            if not api_key:
-                raise ValueError(
-                    f"Environment variable {self.api_key_env} is required by LLM endpoint {self.key}"
-                )
+            api_key = os.environ.get(self.api_key_env, "")
+            source = f"environment variable {self.api_key_env}"
         else:
-            assert self.api_key is not None
-            api_key = self.api_key.get_secret_value()
+            assert self.api_key_file is not None
+            secret_path = secret_dir / self.api_key_file
+            source = f"secret file {self.api_key_file}"
+            try:
+                api_key = secret_path.read_text(encoding="utf-8").rstrip("\r\n")
+            except OSError as exc:
+                raise ValueError(f"Cannot read {source}") from exc
+        if not api_key:
+            raise ValueError(f"Credential is empty or unavailable: {source}")
         return LLMEndpoint(
             key=self.key,
             display_name=self.display_name,
@@ -71,39 +82,34 @@ class LLMEndpointFileEntry(BaseModel):
             api_key=api_key,
             model=self.model,
             supports_vision=self.supports_vision,
+            enabled=self.enabled,
         )
-
-
-class LLMConfiguration(BaseModel):
-    """런타임에서 사용할 모델 엔드포인트 목록과 기본 선택을 묶는다."""
-    default_endpoint: str = Field(min_length=1, max_length=64)
-    endpoints: list[LLMEndpoint]
-
-    @model_validator(mode="after")
-    def validate_endpoint_keys(self) -> "LLMConfiguration":
-        """엔드포인트 키의 존재·고유성과 기본 선택을 검증한다."""
-        endpoint_keys = [endpoint.key for endpoint in self.endpoints]
-        if not endpoint_keys:
-            raise ValueError("LLM endpoint configuration must contain at least one endpoint")
-        if len(endpoint_keys) != len(set(endpoint_keys)):
-            raise ValueError("LLM endpoint keys must be unique")
-        if self.default_endpoint not in endpoint_keys:
-            raise ValueError("default_endpoint must match a configured endpoint")
-        return self
 
 
 class LLMConfigurationFile(BaseModel):
-    """모델 엔드포인트 JSON 파일의 최상위 입력 경계다."""
-    model_config = ConfigDict(extra="forbid")
+    """핫 리로드와 관리자 수정의 유일한 endpoint JSON 계약이다."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
     default_endpoint: str = Field(min_length=1, max_length=64)
-    endpoints: list[LLMEndpointFileEntry]
+    endpoints: tuple[LLMEndpointFileEntry, ...]
 
-    def resolve(self) -> LLMConfiguration:
-        """파일 입력을 비밀값이 해석된 런타임 설정으로 변환한다."""
-        return LLMConfiguration(
-            default_endpoint=self.default_endpoint,
-            endpoints=[endpoint.resolve() for endpoint in self.endpoints],
-        )
+    @model_validator(mode="after")
+    def validate_endpoint_keys(self) -> "LLMConfigurationFile":
+        """endpoint key의 고유성과 활성 기본 endpoint 존재를 검증한다."""
+        if not self.endpoints:
+            raise ValueError("LLM endpoint configuration must contain at least one endpoint")
+        endpoint_keys = [endpoint.key for endpoint in self.endpoints]
+        if len(endpoint_keys) != len(set(endpoint_keys)):
+            raise ValueError("LLM endpoint keys must be unique")
+        default = self.get_endpoint(self.default_endpoint)
+        if default is None:
+            raise ValueError("default_endpoint must match a configured endpoint")
+        if not default.enabled:
+            raise ValueError("default_endpoint must be enabled")
+        return self
+
+    def get_endpoint(self, key: str) -> LLMEndpointFileEntry | None:
+        """지정 key의 파일 endpoint를 반환한다."""
+        return next((endpoint for endpoint in self.endpoints if endpoint.key == key), None)
 
 
 class Settings(BaseSettings):
@@ -120,7 +126,7 @@ class Settings(BaseSettings):
 
 
     llm_endpoints_file: Path = Path("config/llm-endpoints.json")
-    llm_configuration: LLMConfiguration = Field(exclude=True)
+    llm_secrets_dir: Path = Path("data/secrets/llm")
     vision_caption_mode: Literal["disabled", "risk_only", "all_visual"] = "disabled"
     vision_caption_dpi: int = Field(default=144, ge=72, le=200)
     vision_caption_version: str = "gemma4-page-caption-v1"
@@ -133,20 +139,6 @@ class Settings(BaseSettings):
     bootstrap_admin_username: str | None = None
     bootstrap_admin_password: str | None = None
 
-    @model_validator(mode="before")
-    @classmethod
-    def load_llm_configuration(cls, values: object) -> object:
-        """모델 설정 파일 오류를 시작 단계에서 검증해 런타임 우회를 막는다."""
-        # 엔드포인트 설정 오류는 런타임 대체 없이 시작 오류로 처리한다.
-        if not isinstance(values, dict) or values.get("llm_configuration") is not None:
-            return values
-        path = Path(values.get("llm_endpoints_file", "config/llm-endpoints.json")).expanduser()
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(f"Cannot load LLM endpoint configuration from {path}: {exc}") from exc
-        values["llm_configuration"] = LLMConfigurationFile.model_validate(payload).resolve()
-        return values
 
     @field_validator("bootstrap_admin_username", "bootstrap_admin_password", mode="before")
     @classmethod
@@ -163,7 +155,6 @@ class Settings(BaseSettings):
         if self.max_request_body_bytes <= self.max_upload_bytes:
             raise ValueError("MAX_REQUEST_BODY_BYTES must be greater than MAX_UPLOAD_BYTES")
         return self
-
 
     @model_validator(mode="after")
     def validate_bootstrap_administrator(self) -> "Settings":
@@ -183,34 +174,6 @@ class Settings(BaseSettings):
         validate_secure_password(password, normalized_username)
         self.bootstrap_admin_username = normalized_username
         return self
-
-    @model_validator(mode="after")
-    def validate_llm_configuration(self) -> "Settings":
-        """비전 캡션 사용 시 기본 모델의 이미지 지원을 검증한다."""
-        if (
-            self.vision_caption_mode != "disabled"
-            and not self.get_llm_endpoint().supports_vision
-        ):
-            raise ValueError("The default LLM endpoint must support vision when captioning is enabled")
-        return self
-
-    @property
-    def llm_endpoints(self) -> list[LLMEndpoint]:
-        """설정된 모델 엔드포인트 목록을 노출한다."""
-        return self.llm_configuration.endpoints
-
-    @property
-    def llm_default_endpoint(self) -> str:
-        """기본 모델 엔드포인트 키를 노출한다."""
-        return self.llm_configuration.default_endpoint
-
-    def get_llm_endpoint(self, key: str | None = None) -> LLMEndpoint:
-        """지정 키 또는 기본 키에 해당하는 모델 엔드포인트를 찾는다."""
-        selected_key = key or self.llm_default_endpoint
-        for endpoint in self.llm_endpoints:
-            if endpoint.key == selected_key:
-                return endpoint
-        raise KeyError(f"Unknown LLM endpoint: {selected_key}")
 
 
 @lru_cache

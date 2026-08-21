@@ -3,42 +3,43 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.api import language_models
-from app.config import LLMConfiguration, LLMEndpoint
+from app.config import LLMEndpointFileEntry
 from app.repositories import user_repository
+from app.services import language_model_service
 
 
 pytestmark = pytest.mark.integration
 
 
-def _endpoints() -> list[LLMEndpoint]:
-    """사용자별 모델 선택 검증에 사용할 두 엔드포인트를 만든다."""
-    return [
-        LLMEndpoint(
-            key="primary",
-            display_name="Primary model",
-            base_url="http://primary:8010/v1",
-            api_key="key-a",
-            model="model-a",
-            supports_vision=False,
-        ),
-        LLMEndpoint(
+def _models_response(model: str = "model-b") -> httpx.Response:
+    """연결 검증에 사용할 OpenAI 호환 models 응답을 만든다."""
+    return httpx.Response(
+        200,
+        request=httpx.Request("GET", "http://secondary:8010/v1/models"),
+        json={"data": [{"id": model}]},
+    )
+
+
+def _add_secondary(monkeypatch: pytest.MonkeyPatch) -> None:
+    """JSON registry에 사용자 선택 검증용 두 번째 endpoint를 추가한다."""
+    monkeypatch.setattr(
+        language_model_service.httpx,
+        "get",
+        lambda *args, **kwargs: _models_response(),
+    )
+    snapshot = language_model_service.get_snapshot()
+    language_model_service.create_endpoint(
+        actor_id=1,
+        expected_revision=snapshot.revision,
+        endpoint=LLMEndpointFileEntry(
             key="secondary",
             display_name="Secondary model",
             base_url="http://secondary:8010/v1",
-            api_key="key-b",
+            api_key_env="TEST_LLM_API_KEY",
             model="model-b",
             supports_vision=True,
+            enabled=True,
         ),
-    ]
-
-
-def _configure_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
-    """언어 모델 API가 참조할 엔드포인트 설정을 고정한다."""
-    monkeypatch.setattr(
-        language_models.settings,
-        "llm_configuration",
-        LLMConfiguration(default_endpoint="primary", endpoints=_endpoints()),
     )
 
 
@@ -46,8 +47,8 @@ def test_language_models_require_login_and_are_available_to_regular_users(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """모델 목록은 로그인을 요구하고 일반 사용자에게 제공되는지 검증한다."""
-    _configure_endpoints(monkeypatch)
+    """최신 JSON 모델 목록은 로그인을 요구하고 일반 사용자에게 제공된다."""
+    _add_secondary(monkeypatch)
     assert client.get("/language-models").status_code == 401
 
     assert client.post(
@@ -70,16 +71,7 @@ def test_user_activates_available_language_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """가용한 모델 선택이 응답과 사용자 DB 설정에 반영되는지 검증한다."""
-    _configure_endpoints(monkeypatch)
-    response = httpx.Response(
-        200,
-        request=httpx.Request("GET", "http://secondary:8010/v1/models"),
-        json={"data": [{"id": "model-b"}]},
-    )
-    monkeypatch.setattr(
-        "app.services.language_model_service.httpx.get",
-        lambda *args, **kwargs: response,
-    )
+    _add_secondary(monkeypatch)
     assert client.post(
         "/auth/register",
         json={"username": "student", "password": "password123"},
@@ -98,17 +90,8 @@ def test_language_model_selection_is_per_user(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """활성 언어 모델 선택이 사용자 사이에 격리되는지 검증한다."""
-    _configure_endpoints(monkeypatch)
-    response = httpx.Response(
-        200,
-        request=httpx.Request("GET", "http://secondary:8010/v1/models"),
-        json={"data": [{"id": "model-b"}]},
-    )
-    monkeypatch.setattr(
-        "app.services.language_model_service.httpx.get",
-        lambda *args, **kwargs: response,
-    )
+    """활성 언어모델 선택이 사용자 사이에 격리되는지 검증한다."""
+    _add_secondary(monkeypatch)
     client.post("/auth/register", json={"username": "first", "password": "password123"})
     assert client.post("/language-models/secondary/activate").status_code == 200
     assert client.post("/auth/logout").status_code == 204
@@ -124,16 +107,12 @@ def test_user_rejects_unavailable_language_model(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """설정 모델을 제공하지 않는 엔드포인트 활성화를 거부하는지 검증한다."""
-    _configure_endpoints(monkeypatch)
-    response = httpx.Response(
-        200,
-        request=httpx.Request("GET", "http://secondary:8010/v1/models"),
-        json={"data": [{"id": "wrong-model"}]},
-    )
+    """선택 model을 제공하지 않는 endpoint 활성화를 거부하는지 검증한다."""
+    _add_secondary(monkeypatch)
     monkeypatch.setattr(
-        "app.services.language_model_service.httpx.get",
-        lambda *args, **kwargs: response,
+        language_model_service.httpx,
+        "get",
+        lambda *args, **kwargs: _models_response("wrong-model"),
     )
     client.post("/auth/register", json={"username": "student", "password": "password123"})
 

@@ -11,6 +11,7 @@ from sqlalchemy.pool import NullPool
 
 from app.config import settings
 from app.schemas.health import ReadinessComponent, ReadinessResponse
+from app.services import language_model_service
 
 
 class InvalidComponentResponseError(Exception):
@@ -92,8 +93,8 @@ def _check_embedding(timeout: float) -> None:
 
 
 def _check_llm(timeout: float) -> None:
-    """설정한 LLM 엔드포인트가 대상 모델을 실제 제공하는지 확인한다."""
-    endpoint = settings.get_llm_endpoint()
+    """현재 JSON 기본 endpoint가 대상 모델을 실제 제공하는지 확인한다."""
+    endpoint = language_model_service.get_snapshot().default_endpoint
     response = httpx.get(
         f"{endpoint.base_url}/models",
         headers={"Authorization": f"Bearer {endpoint.api_key}"},

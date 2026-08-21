@@ -66,9 +66,9 @@ def process_document(
         owner = user_repository.get_user_by_id(db, document.owner_id)
         if owner is None:
             raise ValueError("Document owner not found")
-        # 시각 캡션에는 문서 소유자가 선택한 모델 엔드포인트를 쓴다.
-        endpoint_key = language_model_service.get_user_endpoint_key(owner)
-        with language_model_service.use_endpoint(endpoint_key):
+        # 시각 캡션에는 처리 시작 시점의 소유자 endpoint snapshot을 쓴다.
+        endpoint = language_model_service.get_user_endpoint(owner)
+        with language_model_service.use_endpoint(endpoint):
             pages = enrich_pages_with_vision_captions(document.file_path, pages)
         if not pages:
             raise ValueError("No pages found in PDF")

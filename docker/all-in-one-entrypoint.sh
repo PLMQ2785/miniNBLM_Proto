@@ -20,7 +20,8 @@ fi
 # 모델 준비 전에 API 설정 오류를 먼저 확인한다.
 echo "API 설정을 검증합니다."
 env LLM_ENDPOINTS_FILE="$LLM_CONFIG_PATH" \
-  /app/.venv-native/bin/python -c 'from app.config import settings'
+  /app/.venv-native/bin/python -c \
+  'from app.services.language_model_service import initialize_configuration; initialize_configuration()'
 
 # 설정 검증 뒤 모델을 준비해야 잘못된 기동에서 큰 다운로드를 피할 수 있다.
 /usr/local/bin/prepare-model

@@ -96,6 +96,51 @@ export class ApiClient {
     });
   }
 
+  // 관리자용 JSON endpoint 전체 상태와 revision을 조회한다.
+  async getLanguageModelAdminState() {
+    return this.request("/admin/language-models");
+  }
+
+  // 새 endpoint를 연결 검증한 뒤 JSON에 추가한다.
+  async createLanguageModelEndpoint(payload, revision) {
+    return this.request("/admin/language-models", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "If-Match": revision,
+      },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  // 기존 key를 유지하며 endpoint 메타데이터와 credential 참조를 교체한다.
+  async updateLanguageModelEndpoint(endpointKey, payload, revision) {
+    return this.request(`/admin/language-models/${encodeURIComponent(endpointKey)}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "If-Match": revision,
+      },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  // 활성 endpoint를 JSON 기본값으로 지정한다.
+  async setDefaultLanguageModelEndpoint(endpointKey, revision) {
+    return this.request(`/admin/language-models/${encodeURIComponent(endpointKey)}/default`, {
+      method: "POST",
+      headers: { "If-Match": revision },
+    });
+  }
+
+  // 기본값이 아닌 endpoint를 JSON에서 삭제한다.
+  async deleteLanguageModelEndpoint(endpointKey, revision) {
+    return this.request(`/admin/language-models/${encodeURIComponent(endpointKey)}`, {
+      method: "DELETE",
+      headers: { "If-Match": revision },
+    });
+  }
+
 
   // 관리자 화면에 필요한 검색 설정과 작업 상태를 조회한다.
   async getRetrievalAdminState() {

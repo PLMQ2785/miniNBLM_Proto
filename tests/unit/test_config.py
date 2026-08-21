@@ -1,134 +1,78 @@
-import json
-
 import pytest
 from pydantic import ValidationError
 
-from app.config import Settings
+from app.config import LLMConfigurationFile, LLMEndpointFileEntry, Settings
 
 
-def _write_configuration(tmp_path, payload: dict) -> str:
-    """테스트용 모델 엔드포인트 설정 파일을 기록한다."""
-    path = tmp_path / "llm-endpoints.json"
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    return str(path)
+def _endpoint(**overrides) -> dict:
+    """파일 계약 검증에 사용할 기본 endpoint 메타데이터를 만든다."""
+    payload = {
+        "key": "primary",
+        "display_name": "Primary",
+        "base_url": "https://models.example/v1",
+        "api_key_env": "PRIMARY_API_KEY",
+        "model": "model-a",
+        "supports_vision": False,
+        "enabled": True,
+    }
+    payload.update(overrides)
+    return payload
 
 
-def test_settings_load_language_models_from_json_file(tmp_path) -> None:
-    """JSON 파일의 기본 엔드포인트와 모델 설정을 불러온다."""
-    path = _write_configuration(
-        tmp_path,
-        {
-            "default_endpoint": "primary",
-            "endpoints": [
-                {
-                    "key": "primary",
-                    "display_name": "Primary",
-                    "base_url": "https://models.example/v1/",
-                    "api_key": "literal-test-key",
-                    "model": "model-a",
-                    "supports_vision": False,
-                }
-            ],
-        },
+def test_settings_only_configures_endpoint_and_secret_paths(tmp_path) -> None:
+    """Settings는 endpoint 내용을 캐시하지 않고 registry 경로만 보관한다."""
+    endpoint_file = tmp_path / "llm-endpoints.json"
+    secret_dir = tmp_path / "secrets"
+
+    configured = Settings(
+        _env_file=None,
+        llm_endpoints_file=endpoint_file,
+        llm_secrets_dir=secret_dir,
     )
 
-    configured = Settings(_env_file=None, llm_endpoints_file=path)
-
-    assert configured.llm_default_endpoint == "primary"
-    assert configured.get_llm_endpoint().base_url == "https://models.example/v1"
-    assert configured.get_llm_endpoint().api_key == "literal-test-key"
+    assert configured.llm_endpoints_file == endpoint_file
+    assert configured.llm_secrets_dir == secret_dir
 
 
-def test_settings_resolve_endpoint_api_key_from_environment(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """환경 변수로 지정한 엔드포인트 API 키를 실제 값으로 해석한다."""
-    monkeypatch.setenv("REMOTE_MODEL_API_KEY", "secret-from-environment")
-    path = _write_configuration(
-        tmp_path,
-        {
-            "default_endpoint": "remote",
-            "endpoints": [
-                {
-                    "key": "remote",
-                    "display_name": "Remote",
-                    "base_url": "https://models.example/v1",
-                    "api_key_env": "REMOTE_MODEL_API_KEY",
-                    "model": "remote-model",
-                    "supports_vision": True,
-                }
-            ],
-        },
-    )
+def test_endpoint_file_entry_rejects_inline_credential() -> None:
+    """endpoint JSON에 실제 credential 값을 직접 저장하지 못하게 한다."""
+    payload = _endpoint(api_key="literal-secret")
+    payload.pop("api_key_env")
 
-    configured = Settings(_env_file=None, llm_endpoints_file=path)
-
-    assert configured.get_llm_endpoint().api_key == "secret-from-environment"
+    with pytest.raises(ValidationError, match="api_key"):
+        LLMEndpointFileEntry.model_validate(payload)
 
 
-def test_settings_reject_missing_api_key_environment_variable(tmp_path) -> None:
-    """API 키 환경 변수가 없으면 설정 로드를 거부한다."""
-    path = _write_configuration(
-        tmp_path,
-        {
-            "default_endpoint": "remote",
-            "endpoints": [
-                {
-                    "key": "remote",
-                    "display_name": "Remote",
-                    "base_url": "https://models.example/v1",
-                    "api_key_env": "MISSING_REMOTE_MODEL_API_KEY",
-                    "model": "remote-model",
-                }
-            ],
-        },
-    )
-
-    with pytest.raises(ValidationError, match="MISSING_REMOTE_MODEL_API_KEY"):
-        Settings(_env_file=None, llm_endpoints_file=path)
+def test_endpoint_file_entry_requires_one_credential_reference() -> None:
+    """환경변수와 secret 파일 참조를 동시에 지정하지 못하게 한다."""
+    with pytest.raises(ValidationError, match="exactly one"):
+        LLMEndpointFileEntry.model_validate(
+            _endpoint(api_key_file="primary-api-key")
+        )
 
 
-def test_settings_reject_invalid_default_endpoint_in_file(tmp_path) -> None:
-    """등록되지 않은 기본 엔드포인트를 가리키는 설정은 거부한다."""
-    path = _write_configuration(
-        tmp_path,
-        {
-            "default_endpoint": "missing",
-            "endpoints": [
-                {
-                    "key": "primary",
-                    "display_name": "Primary",
-                    "base_url": "http://127.0.0.1:8010/v1",
-                    "api_key": "EMPTY",
-                    "model": "primary",
-                }
-            ],
-        },
-    )
-
+def test_configuration_rejects_missing_or_disabled_default() -> None:
+    """기본 endpoint는 JSON에 존재하며 활성 상태여야 한다."""
     with pytest.raises(ValidationError, match="default_endpoint"):
-        Settings(_env_file=None, llm_endpoints_file=path)
+        LLMConfigurationFile.model_validate(
+            {"default_endpoint": "missing", "endpoints": [_endpoint()]}
+        )
+
+    with pytest.raises(ValidationError, match="enabled"):
+        LLMConfigurationFile.model_validate(
+            {
+                "default_endpoint": "primary",
+                "endpoints": [_endpoint(enabled=False)],
+            }
+        )
 
 
-def test_settings_reject_unknown_endpoint_fields(tmp_path) -> None:
-    """오타를 포함한 알 수 없는 엔드포인트 필드는 허용하지 않는다."""
-    path = _write_configuration(
-        tmp_path,
-        {
-            "default_endpoint": "primary",
-            "endpoints": [
-                {
-                    "key": "primary",
-                    "display_name": "Primary",
-                    "base_url": "http://127.0.0.1:8010/v1",
-                    "api_key": "EMPTY",
-                    "model": "primary",
-                    "supports_vison": True,
-                }
-            ],
-        },
-    )
-
+def test_configuration_rejects_unknown_endpoint_fields() -> None:
+    """오타가 포함된 endpoint 필드를 허용하지 않는다."""
     with pytest.raises(ValidationError, match="supports_vison"):
-        Settings(_env_file=None, llm_endpoints_file=path)
+        LLMConfigurationFile.model_validate(
+            {
+                "default_endpoint": "primary",
+                "endpoints": [_endpoint(supports_vison=True)],
+            }
+        )

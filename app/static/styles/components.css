@@ -312,6 +312,135 @@
   cursor: not-allowed;
 }
 
+/* JSON 기반 언어모델 endpoint 카드와 credential 참조 입력 */
+.llm-endpoint-card {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+
+.llm-endpoint-card[data-enabled="false"] {
+  opacity: 0.72;
+}
+
+.llm-endpoint-heading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.llm-endpoint-heading strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.llm-endpoint-heading code {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.llm-endpoint-badges,
+.llm-endpoint-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.llm-endpoint-badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.llm-endpoint-badge[data-state="default"],
+.llm-endpoint-badge[data-state="enabled"] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.llm-endpoint-card dl {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.llm-endpoint-card dl div {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 68px 1fr;
+  gap: 8px;
+}
+
+.llm-endpoint-card dt,
+.llm-endpoint-card dd {
+  overflow: hidden;
+  margin: 0;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.llm-endpoint-card dt {
+  color: var(--text-muted);
+}
+
+.llm-endpoint-card dd {
+  color: var(--text-body);
+}
+
+.llm-endpoint-form input:not([type="checkbox"]),
+.llm-endpoint-form select {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-strong);
+}
+
+.llm-endpoint-actions button,
+.llm-endpoint-form button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text-body);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.llm-endpoint-actions button:hover,
+.llm-endpoint-form button:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.llm-endpoint-actions .danger-button {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  color: var(--danger);
+}
+
+.llm-endpoint-actions button:disabled,
+.llm-endpoint-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .admin-error {
   min-height: 20px;
   margin: 0;

@@ -85,7 +85,7 @@ RUN chmod +x /app/run-native.sh /app/backup.sh /app/restore.sh \
         /app/scripts/backup.sh /app/scripts/restore.sh \
         /usr/local/bin/all-in-one-entrypoint /usr/local/bin/prepare-model \
     && : > /app/.env \
-    && mkdir -p /data/config /data/models /data/model-cache /data/postgres /data/uploads /data/huggingface /data/logs /data/backups /run/mininblm
+    && mkdir -p /data/config /data/models /data/model-cache /data/postgres /data/uploads /data/secrets/llm /data/huggingface /data/logs /data/backups /run/mininblm
 
 ENV NATIVE_ENV_DIR=/app/.venv-native \
     NATIVE_VLLM_BIN=/usr/local/bin/vllm \
@@ -108,6 +108,8 @@ ENV NATIVE_ENV_DIR=/app/.venv-native \
     VLLM_MODEL_PATH=/data/models/gemma4 \
     EMBEDDING_BASE_URL=http://127.0.0.1:8070 \
     LLM_ENDPOINTS_FILE=/data/config/llm-endpoints.json \
+    LLM_SECRETS_DIR=/data/secrets/llm \
+    GEMMA4_API_KEY=EMPTY \
     STARTUP_TIMEOUT=1800
 
 VOLUME ["/data"]

@@ -173,6 +173,46 @@ PDF의 해당 페이지가 열립니다. 대화는 전체 또는 선택 문서 �
 재설정 즉시 해당 사용자의 모든 로그인 세션이 폐기되며, 사용자는 임시 비밀번호로
 로그인한 뒤 새 비밀번호로 변경해야 문서와 채팅에 접근할 수 있습니다.
 
+관리자는 같은 `관리` 화면에서 OpenAI 호환 LLM endpoint를 추가·편집·삭제하고
+기본값을 지정할 수 있습니다. `config/llm-endpoints.json`이 유일한 endpoint
+원본이며 DB에는 사용자별 선택 key만 저장됩니다. 관리자 저장은 최신 파일
+revision을 확인한 뒤 임시 파일과 원자적 rename으로 반영됩니다. 활성 endpoint는
+저장 전에 `/models` 응답에 설정한 model ID가 있는지 검증합니다.
+
+API는 새 요청마다 JSON과 참조 secret 파일의 변경을 확인합니다. 변경된 설정은
+다음 요청부터 적용되며 이미 진행 중인 채팅·문서 처리는 시작할 때 고정한 endpoint
+snapshot을 계속 사용합니다. 삭제되거나 비활성화된 endpoint를 선택했던 사용자는
+다음 요청에서 기본 endpoint를 사용합니다. 다른 사용자의 선택 목록은 Web UI를
+새로고침하면 갱신됩니다.
+
+실제 API key는 endpoint JSON에 저장하지 않습니다. 각 endpoint에는 환경변수
+`api_key_env` 또는 `LLM_SECRETS_DIR` 아래 파일 이름인 `api_key_file` 중 하나만
+지정합니다.
+환경변수 값 자체는 실행 중인 프로세스에서 바뀌지 않으므로 credential을 재시작
+없이 교체하려면 `api_key_file`을 사용합니다.
+
+```json
+{
+  "default_endpoint": "remote",
+  "endpoints": [
+    {
+      "key": "remote",
+      "display_name": "Remote model",
+      "base_url": "https://llm.example/v1",
+      "api_key_file": "remote-api-key",
+      "model": "remote-model",
+      "supports_vision": false,
+      "enabled": true
+    }
+  ]
+}
+```
+
+기본 Docker 구성은 `./config` 디렉터리를 API의 `/app/config`에 쓰기 가능하게
+mount합니다. Secret 파일은 기본적으로 `./data/secrets/llm`에 둡니다. 통합
+컨테이너에서는 endpoint JSON과 secret 파일이 각각
+`/data/config/llm-endpoints.json`, `/data/secrets/llm`에 영속화됩니다.
+
 기존 일반 계정을 추가 관리자로 지정할 때는 CLI를 사용합니다.
 
 ```bash
